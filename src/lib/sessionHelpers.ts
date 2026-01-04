@@ -18,6 +18,8 @@ export function buildSessionSettings(settingsStore: SettingsStoreState): ChatSes
     extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
     webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
     discoveryMode: settingsStore.discoveryMode,
+    frontierReasoningLevel: settingsStore.frontierLLM.reasoningLevel,
+    frontierGeminiThinkingLevel: settingsStore.frontierLLM.geminiThinkingLevel,
     evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
     evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
     evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,

@@ -145,6 +145,9 @@ export interface ChatSessionSettings {
   extendedThinkingBudget: number;
   webSearchEnabled: boolean;
   discoveryMode?: import('./discoveryModes').DiscoveryModeId;
+  // Frontier/chat model thinking settings (optional for backward compatibility)
+  frontierReasoningLevel?: OpenAIReasoningLevel;
+  frontierGeminiThinkingLevel?: GeminiThinkingLevel;
   // Evaluator/discovery pane thinking settings (optional for backward compatibility)
   evaluatorExtendedThinkingEnabled?: boolean;
   evaluatorReasoningLevel?: OpenAIReasoningLevel;

@@ -371,6 +371,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           budgetTokens: settings.extendedThinkingBudget,
         },
         webSearchEnabled: settings.webSearchEnabled,
+        reasoningLevel: settings.frontierReasoningLevel ?? 'low',
+        geminiThinkingLevel: settings.frontierGeminiThinkingLevel ?? 'low',
       },
       evaluatorLLM: {
         ...state.evaluatorLLM,
