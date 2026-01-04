@@ -16,6 +16,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { Tooltip } from '../shared/Tooltip';
 import { extractUsedCSS, getBaseExportStyles } from '../../lib/cssUtils';
 import type { ChatSession, ChatExportData, ApiKeysConfig } from '../../lib/types';
+import { buildSessionSettings } from '../../lib/sessionHelpers';
 
 const MIN_RIGHT_PANE_WIDTH = 200;
 const MIN_LEFT_PANE_WIDTH = 300;
@@ -333,14 +334,7 @@ export function AppLayout() {
           ...item,
           timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
         })),
-        settings: {
-          frontierModel: settingsStore.frontierLLM.model,
-          evaluatorModel: settingsStore.evaluatorLLM.model,
-          extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-          extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-          webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-          discoveryMode: settingsStore.discoveryMode,
-        },
+        settings: buildSessionSettings(settingsStore),
       };
 
       const exportData: ChatExportData = {

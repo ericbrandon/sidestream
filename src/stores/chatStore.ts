@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Message, Attachment, Citation, InlineCitation } from '../lib/types';
+import { deduplicateCitations } from '../lib/citationHelpers';
 import { useSessionStore } from './sessionStore';
 
 interface ChatState {
@@ -87,12 +88,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!state.streamingContent) return;
 
     // Dedupe legacy citations by URL
-    const uniqueCitations = state.streamingCitations.reduce((acc, citation) => {
-      if (!acc.some((c) => c.url === citation.url)) {
-        acc.push(citation);
-      }
-      return acc;
-    }, [] as typeof state.streamingCitations);
+    const uniqueCitations = deduplicateCitations(state.streamingCitations);
 
     // Inline citations are kept as-is (position matters, so no deduplication)
     const inlineCitations = state.streamingInlineCitations;

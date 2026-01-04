@@ -10,64 +10,13 @@ import { useChatStore } from '../../stores/chatStore';
 import { useDiscovery } from '../../hooks/useDiscovery';
 import { getAllDiscoveryModes, getDiscoveryMode, getBestModelForMode } from '../../lib/discoveryModes';
 import { getProviderFromModelId } from '../../lib/models';
-import type { DiscoveryModeId, OpenAIReasoningLevel, GeminiThinkingLevel } from '../../lib/types';
-
-// Reasoning level options for OpenAI dropdown
-const REASONING_OPTIONS: { value: OpenAIReasoningLevel; label: string; letter: string }[] = [
-  { value: 'off', label: 'Off', letter: '' },
-  { value: 'minimal', label: 'Minimal', letter: 'm' },
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'medium', label: 'Medium', letter: 'M' },
-  { value: 'high', label: 'High', letter: 'H' },
-  { value: 'xhigh', label: 'Extra High', letter: 'X' },
-];
-
-// Thinking level options for Gemini 3 Pro (only LOW and HIGH - thinking cannot be disabled)
-const GEMINI_3_PRO_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'high', label: 'High', letter: 'H' },
-];
-
-// Thinking level options for Gemini 3 Flash (minimal is closest to "off" but doesn't guarantee no thinking)
-const GEMINI_3_FLASH_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'minimal', label: 'Minimal', letter: 'm' },
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'medium', label: 'Medium', letter: 'M' },
-  { value: 'high', label: 'High', letter: 'H' },
-];
-
-// Thinking level options for Gemini 2.5 (just off/on)
-const GEMINI_25_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'off', label: 'Off', letter: '' },
-  { value: 'on', label: 'On', letter: '●' },
-];
-
-// Helper to get the right Gemini options based on model
-function getGeminiThinkingOptions(model: string) {
-  if (model.includes('gemini-3') || model.includes('gemini3')) {
-    if (model.includes('flash')) {
-      return GEMINI_3_FLASH_OPTIONS;
-    }
-    return GEMINI_3_PRO_OPTIONS;
-  }
-  // Gemini 2.5
-  return GEMINI_25_OPTIONS;
-}
-
-// Get a valid thinking level for the current model (normalizes invalid values)
-function getValidGeminiThinkingLevel(level: GeminiThinkingLevel, model: string): GeminiThinkingLevel {
-  const options = getGeminiThinkingOptions(model);
-  const isValid = options.some(o => o.value === level);
-  // If current level is valid for this model, use it; otherwise use the first option
-  return isValid ? level : options[0].value;
-}
-
-// Helper to get display letter for current Gemini thinking level
-function getGeminiThinkingLetter(level: GeminiThinkingLevel, model: string): string {
-  const options = getGeminiThinkingOptions(model);
-  const option = options.find(o => o.value === level);
-  return option?.letter || '';
-}
+import {
+  REASONING_OPTIONS,
+  getGeminiThinkingOptions,
+  getValidGeminiThinkingLevel,
+  getGeminiThinkingLetter,
+} from '../../lib/thinkingOptions';
+import type { DiscoveryModeId } from '../../lib/types';
 
 export function DiscoveryContainer() {
   const isSearching = useDiscoveryStore((state) => state.isSearching);

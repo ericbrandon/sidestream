@@ -6,6 +6,8 @@ import type {
   Message,
   DiscoveryItem,
 } from '../lib/types';
+import { buildSessionSettings } from '../lib/sessionHelpers';
+import { remapMessageIds, remapDiscoveryItems } from '../lib/messageHelpers';
 import { useChatStore } from './chatStore';
 import { useDiscoveryStore } from './discoveryStore';
 import { useSettingsStore } from './settingsStore';
@@ -282,17 +284,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             ...item,
             timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
           })),
-        settings: {
-          frontierModel: settingsStore.frontierLLM.model,
-          evaluatorModel: settingsStore.evaluatorLLM.model,
-          extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-          extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-          webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-          discoveryMode: settingsStore.discoveryMode,
-          evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
-          evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
-          evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
-        },
+        settings: buildSessionSettings(settingsStore),
       };
 
       await invoke('save_chat_session', { session });
@@ -424,39 +416,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // Get messages to keep (everything before the target message)
     const messagesToKeep = chatStore.messages.slice(0, targetIndex);
 
-    // Collect all turnIds from messages to keep
-    const oldTurnIds = new Set<string>();
-    for (const msg of messagesToKeep) {
-      if (msg.turnId) {
-        oldTurnIds.add(msg.turnId);
-      }
-    }
-
-    // Create turnId mapping (old -> new)
-    const turnIdMap = new Map<string, string>();
-    for (const oldId of oldTurnIds) {
-      turnIdMap.set(oldId, crypto.randomUUID());
-    }
-
-    // Transform messages with new IDs
-    const newMessages: Message[] = messagesToKeep.map((msg) => ({
-      ...msg,
-      id: crypto.randomUUID(),
-      turnId: msg.turnId ? turnIdMap.get(msg.turnId) : undefined,
-    }));
-
-    // Generate new session ID
+    // Remap message and discovery item IDs
     const newSessionId = crypto.randomUUID();
-
-    // Filter and transform discovery items
-    const newDiscoveryItems: DiscoveryItem[] = discoveryStore.items
-      .filter((item) => oldTurnIds.has(item.turnId))
-      .map((item) => ({
-        ...item,
-        id: crypto.randomUUID(),
-        turnId: turnIdMap.get(item.turnId)!,
-        sessionId: newSessionId,
-      }));
+    const { messages: newMessages, turnIdMap } = remapMessageIds(messagesToKeep);
+    const { items: newDiscoveryItems } = remapDiscoveryItems(
+      discoveryStore.items,
+      turnIdMap,
+      newSessionId
+    );
 
     // Generate fork title
     const originalTitle = currentState.sessionMetas.find(
@@ -498,17 +465,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         ...item,
         timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
       })),
-      settings: {
-        frontierModel: settingsStore.frontierLLM.model,
-        evaluatorModel: settingsStore.evaluatorLLM.model,
-        extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-        extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-        webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-        discoveryMode: settingsStore.discoveryMode,
-        evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
-        evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
-        evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
-      },
+      settings: buildSessionSettings(settingsStore),
     };
 
     await invoke('save_chat_session', { session });
@@ -550,42 +507,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await get().saveCurrentSession();
     }
 
-    // Keep all messages
-    const messagesToKeep = chatStore.messages;
-
-    // Collect all turnIds from messages
-    const oldTurnIds = new Set<string>();
-    for (const msg of messagesToKeep) {
-      if (msg.turnId) {
-        oldTurnIds.add(msg.turnId);
-      }
-    }
-
-    // Create turnId mapping (old -> new)
-    const turnIdMap = new Map<string, string>();
-    for (const oldId of oldTurnIds) {
-      turnIdMap.set(oldId, crypto.randomUUID());
-    }
-
-    // Transform messages with new IDs
-    const newMessages: Message[] = messagesToKeep.map((msg) => ({
-      ...msg,
-      id: crypto.randomUUID(),
-      turnId: msg.turnId ? turnIdMap.get(msg.turnId) : undefined,
-    }));
-
-    // Generate new session ID
+    // Remap message and discovery item IDs
     const newSessionId = crypto.randomUUID();
-
-    // Filter and transform discovery items
-    const newDiscoveryItems: DiscoveryItem[] = discoveryStore.items
-      .filter((item) => oldTurnIds.has(item.turnId))
-      .map((item) => ({
-        ...item,
-        id: crypto.randomUUID(),
-        turnId: turnIdMap.get(item.turnId)!,
-        sessionId: newSessionId,
-      }));
+    const { messages: newMessages, turnIdMap } = remapMessageIds(chatStore.messages);
+    const { items: newDiscoveryItems } = remapDiscoveryItems(
+      discoveryStore.items,
+      turnIdMap,
+      newSessionId
+    );
 
     // Generate fork title
     const originalTitle = currentState.sessionMetas.find(
@@ -619,17 +548,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         ...item,
         timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
       })),
-      settings: {
-        frontierModel: settingsStore.frontierLLM.model,
-        evaluatorModel: settingsStore.evaluatorLLM.model,
-        extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-        extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-        webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-        discoveryMode: settingsStore.discoveryMode,
-        evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
-        evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
-        evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
-      },
+      settings: buildSessionSettings(settingsStore),
     };
 
     await invoke('save_chat_session', { session });

@@ -325,8 +325,17 @@ async fn send_chat_message_openai(
     // Determine reasoning effort from the level string
     // For GPT-5: "off" maps to None reasoning, "low"/"medium"/"high" set effort
     // For o-series: "low"/"medium"/"high" only (no "off" option)
+    // NOTE: OpenAI doesn't allow "minimal" with web_search (per official docs), so bump to "low"
     let reasoning_effort: Option<ReasoningEffort> = if supports_reasoning(&model) {
-        reasoning_level.as_ref().map(|level| string_to_reasoning_effort(level))
+        reasoning_level.as_ref().map(|level| {
+            let effort = string_to_reasoning_effort(level);
+            // OpenAI API rejects "minimal" when web_search is enabled (per official docs)
+            if web_search_enabled && matches!(effort, ReasoningEffort::Minimal) {
+                ReasoningEffort::Low
+            } else {
+                effort
+            }
+        })
     } else {
         None
     };

@@ -1,81 +1,34 @@
-import { useRef, useEffect, useState } from 'react';
-import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useChat } from '../../hooks/useChat';
+import { useChat, useTextInputContextMenu } from '../../hooks';
 import { AttachmentButton } from './AttachmentButton';
 import { AttachmentPreview } from './AttachmentPreview';
 import { VoiceInputButton } from './VoiceInputButton';
 import { Tooltip } from '../shared/Tooltip';
-import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
+import { ContextMenu } from '../shared/ContextMenu';
 import { InlineModelPicker } from '../shared/InlineModelPicker';
 import { getProviderFromModelId } from '../../lib/models';
-import type { OpenAIReasoningLevel, GeminiThinkingLevel } from '../../lib/types';
-
-// Reasoning level options for OpenAI dropdown
-const REASONING_OPTIONS: { value: OpenAIReasoningLevel; label: string; letter: string }[] = [
-  { value: 'off', label: 'Off', letter: '' },
-  { value: 'minimal', label: 'Minimal', letter: 'm' },
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'medium', label: 'Medium', letter: 'M' },
-  { value: 'high', label: 'High', letter: 'H' },
-  { value: 'xhigh', label: 'Extra High', letter: 'X' },
-];
-
-// Thinking level options for Gemini 3 Pro (only LOW and HIGH - thinking cannot be disabled)
-const GEMINI_3_PRO_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'high', label: 'High', letter: 'H' },
-];
-
-// Thinking level options for Gemini 3 Flash (minimal is closest to "off" but doesn't guarantee no thinking)
-const GEMINI_3_FLASH_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'minimal', label: 'Minimal', letter: 'm' },
-  { value: 'low', label: 'Low', letter: 'L' },
-  { value: 'medium', label: 'Medium', letter: 'M' },
-  { value: 'high', label: 'High', letter: 'H' },
-];
-
-// Thinking level options for Gemini 2.5 (just off/on)
-const GEMINI_25_OPTIONS: { value: GeminiThinkingLevel; label: string; letter: string }[] = [
-  { value: 'off', label: 'Off', letter: '' },
-  { value: 'on', label: 'On', letter: '●' },
-];
-
-// Helper to get the right Gemini options based on model
-function getGeminiThinkingOptions(model: string) {
-  if (model.includes('gemini-3') || model.includes('gemini3')) {
-    if (model.includes('flash')) {
-      return GEMINI_3_FLASH_OPTIONS;
-    }
-    return GEMINI_3_PRO_OPTIONS;
-  }
-  // Gemini 2.5
-  return GEMINI_25_OPTIONS;
-}
-
-// Get a valid thinking level for the current model (normalizes invalid values)
-function getValidGeminiThinkingLevel(level: GeminiThinkingLevel, model: string): GeminiThinkingLevel {
-  const options = getGeminiThinkingOptions(model);
-  const isValid = options.some(o => o.value === level);
-  // If current level is valid for this model, use it; otherwise use the first option
-  return isValid ? level : options[0].value;
-}
-
-// Helper to get display letter for current Gemini thinking level
-function getGeminiThinkingLetter(level: GeminiThinkingLevel, model: string): string {
-  const options = getGeminiThinkingOptions(model);
-  const option = options.find(o => o.value === level);
-  return option?.letter || '';
-}
+import {
+  REASONING_OPTIONS,
+  getGeminiThinkingOptions,
+  getValidGeminiThinkingLevel,
+  getGeminiThinkingLetter,
+} from '../../lib/thinkingOptions';
 
 export function ChatInput() {
   const { inputValue, setInput, isStreaming, attachments, registerChatInputFocus } = useChatStore();
   const { frontierLLM, setFrontierLLM, voiceMode } = useSettingsStore();
   const { sendMessage, sendTranscribedMessage, cancelStream } = useChat();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [showThinkingMenu, setShowThinkingMenu] = useState(false);
+
+  const getInputValue = useCallback(() => inputValue, [inputValue]);
+  const { contextMenu, handleContextMenu, closeContextMenu } = useTextInputContextMenu(
+    textareaRef,
+    getInputValue,
+    setInput
+  );
 
   // Register focus function for global keyboard handling
   useEffect(() => {
@@ -102,55 +55,6 @@ export function ChatInput() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
-    }
-  };
-
-  const handleContextMenu = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    // Pre-fetch clipboard using Tauri API for system clipboard access
-    let clipboardText = '';
-    try {
-      clipboardText = await readText() || '';
-    } catch {
-      // Clipboard read failed - paste will be disabled
-    }
-
-    const menuItems: ContextMenuItem[] = [];
-    const selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-
-    if (selectedText) {
-      menuItems.push(
-        { label: 'Cut', onClick: async () => {
-          await writeText(selectedText);
-          const before = textarea.value.substring(0, textarea.selectionStart);
-          const after = textarea.value.substring(textarea.selectionEnd);
-          setInput(before + after);
-        }},
-        { label: 'Copy', onClick: () => writeText(selectedText) }
-      );
-    }
-
-    if (clipboardText) {
-      menuItems.push({
-        label: 'Paste',
-        onClick: () => {
-          const before = textarea.value.substring(0, textarea.selectionStart);
-          const after = textarea.value.substring(textarea.selectionEnd);
-          setInput(before + clipboardText + after);
-        }
-      });
-    }
-
-    if (inputValue) {
-      menuItems.push({ label: 'Select All', onClick: () => textarea.select() });
-    }
-
-    // Only show context menu if there are items to display
-    if (menuItems.length > 0) {
-      setContextMenu({ x: e.clientX, y: e.clientY, items: menuItems });
     }
   };
 
@@ -466,7 +370,7 @@ export function ChatInput() {
           x={contextMenu.x}
           y={contextMenu.y}
           items={contextMenu.items}
-          onClose={() => setContextMenu(null)}
+          onClose={closeContextMenu}
         />
       )}
     </div>

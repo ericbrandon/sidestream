@@ -7,7 +7,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { getDiscoveryMode } from '../lib/discoveryModes';
-import { getProviderFromModelId } from '../lib/models';
+import { buildProviderThinkingParams } from '../lib/llmParameters';
 import type { DiscoveryItem, Message } from '../lib/types';
 
 // Event payload types matching Rust structs
@@ -189,9 +189,6 @@ export function useDiscovery() {
         unlistenError,
       ]);
 
-      // Determine provider to pass appropriate thinking parameters
-      const provider = getProviderFromModelId(evaluatorLLM.model);
-
       // Call the discovery endpoint - returns when streaming starts, not when done
       await invoke('discover_resources', {
         turnId,
@@ -199,13 +196,7 @@ export function useDiscovery() {
         conversation: conversationText,
         systemPrompt: modeConfig.systemPrompt,
         maxResults: MAX_DISCOVERIES_PER_SEARCH,
-        // Provider-specific thinking parameters
-        extendedThinkingEnabled: provider === 'anthropic' ? evaluatorLLM.extendedThinking.enabled : null,
-        thinkingBudget: provider === 'anthropic' && evaluatorLLM.extendedThinking.enabled
-          ? evaluatorLLM.extendedThinking.budgetTokens
-          : null,
-        reasoningLevel: provider === 'openai' ? evaluatorLLM.reasoningLevel : null,
-        geminiThinkingLevel: provider === 'google' ? evaluatorLLM.geminiThinkingLevel : null,
+        ...buildProviderThinkingParams(evaluatorLLM),
       });
     } catch (error) {
       console.error('Discovery invoke error:', error);

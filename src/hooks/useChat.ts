@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
-import { getProviderFromModelId } from '../lib/models';
+import { buildProviderThinkingParams } from '../lib/llmParameters';
 import type { Message, ContentBlock, StreamDelta } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand.`;
@@ -190,24 +190,13 @@ export function useChat() {
           content: formatMessageContent(m),
         }));
 
-        // Determine provider-specific parameters
-        const provider = getProviderFromModelId(frontierLLM.model);
-
         await invoke('send_chat_message', {
           model: frontierLLM.model,
           messages: apiMessages,
           systemPrompt: SYSTEM_PROMPT,
-          // Anthropic parameters
-          extendedThinkingEnabled: provider === 'anthropic' ? frontierLLM.extendedThinking.enabled : false,
-          thinkingBudget: provider === 'anthropic' && frontierLLM.extendedThinking.enabled
-            ? frontierLLM.extendedThinking.budgetTokens
-            : null,
           webSearchEnabled: frontierLLM.webSearchEnabled,
-          // OpenAI parameters
-          reasoningLevel: provider === 'openai' ? frontierLLM.reasoningLevel : null,
-          // Google Gemini parameters
-          geminiThinkingLevel: provider === 'google' ? frontierLLM.geminiThinkingLevel : null,
           sessionId: useSessionStore.getState().activeSessionId,
+          ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {
         console.error('Chat error:', error);

@@ -357,9 +357,10 @@ pub fn string_to_reasoning_effort(level: &str) -> ReasoningEffort {
         "off" | "none" => ReasoningEffort::None,
         "minimal" => ReasoningEffort::Minimal,
         "low" => ReasoningEffort::Low,
+        "medium" => ReasoningEffort::Medium,
         "high" => ReasoningEffort::High,
         "xhigh" => ReasoningEffort::XHigh,
-        _ => ReasoningEffort::Medium, // Default
+        _ => ReasoningEffort::Medium, // Default for unknown values
     }
 }
 

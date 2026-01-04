@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession } from '../lib/types';
+import { buildSessionSettings } from '../lib/sessionHelpers';
+import { deduplicateCitations } from '../lib/citationHelpers';
 import { useChatStore } from './chatStore';
 import { useSessionStore } from './sessionStore';
 import { useSettingsStore } from './settingsStore';
@@ -125,12 +127,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     }
 
     // Deduplicate legacy citations by URL
-    const uniqueCitations = stream.streamingCitations.reduce((acc, citation) => {
-      if (!acc.some((c) => c.url === citation.url)) {
-        acc.push(citation);
-      }
-      return acc;
-    }, [] as Citation[]);
+    const uniqueCitations = deduplicateCitations(stream.streamingCitations);
 
     // Inline citations are kept as-is (position matters)
     const inlineCitations = stream.streamingInlineCitations;
@@ -178,13 +175,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
             ...session,
             messages: [...session.messages, assistantMessage],
             updatedAt: new Date().toISOString(),
-            settings: {
-              frontierModel: settingsStore.frontierLLM.model,
-              evaluatorModel: settingsStore.evaluatorLLM.model,
-              extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-              extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-              webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-            },
+            settings: buildSessionSettings(settingsStore),
           };
 
           await invoke('save_chat_session', { session: updatedSession });
@@ -264,13 +255,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
             ...session,
             discoveryItems: allItems,
             updatedAt: new Date().toISOString(),
-            settings: {
-              frontierModel: settingsStore.frontierLLM.model,
-              evaluatorModel: settingsStore.evaluatorLLM.model,
-              extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-              extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
-              webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
-            },
+            settings: buildSessionSettings(settingsStore),
           };
 
           await invoke('save_chat_session', { session: updatedSession });
