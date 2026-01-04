@@ -1,0 +1,290 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@plugin "@tailwindcss/forms";
+
+/* Enable class-based dark mode */
+@variant dark (&:where(.dark, .dark *));
+
+/* Bundled Noto Sans font - OFL licensed, see public/fonts/OFL.txt */
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/NotoSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/NotoSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/NotoSans-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/NotoSans-BoldItalic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+@theme {
+  /* Override default font to use system fonts first */
+  --default-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', 'DejaVu Sans', Oxygen, Ubuntu, sans-serif;
+
+  /* Custom colors for discovery items */
+  --color-discovery-50: #faf5ff;
+  --color-discovery-100: #f3e8ff;
+  --color-discovery-500: #a855f7;
+  --color-discovery-600: #9333ea;
+  --color-discovery-700: #7c3aed;
+
+  /* Custom animation for shimmer effect */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-shimmer: shimmer 2s linear infinite;
+
+  /* Font scale - controlled via JavaScript */
+  --font-scale: 1;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Breathing glow animation for recording indicator */
+/* Light mode: darker green shadow for contrast on light backgrounds */
+@keyframes recording-glow-light {
+  0%, 100% {
+    box-shadow: 0 0 4px 1px rgba(22, 163, 74, 0.3),
+                0 0 8px 2px rgba(22, 163, 74, 0.15);
+    opacity: 0.7;
+  }
+  50% {
+    box-shadow: 0 0 8px 3px rgba(22, 163, 74, 0.5),
+                0 0 12px 4px rgba(22, 163, 74, 0.25);
+    opacity: 1;
+  }
+}
+
+/* Dark mode: lighter green glow for visibility on dark backgrounds */
+@keyframes recording-glow-dark {
+  0%, 100% {
+    box-shadow: 0 0 4px 1px rgba(74, 222, 128, 0.4),
+                0 0 8px 2px rgba(74, 222, 128, 0.2);
+    opacity: 0.7;
+  }
+  50% {
+    box-shadow: 0 0 8px 3px rgba(74, 222, 128, 0.6),
+                0 0 12px 4px rgba(74, 222, 128, 0.3);
+    opacity: 1;
+  }
+}
+
+.animate-recording-glow-light {
+  animation: recording-glow-light 1.5s ease-in-out infinite;
+}
+
+.animate-recording-glow-dark {
+  animation: recording-glow-dark 1.5s ease-in-out infinite;
+}
+
+@layer base {
+  html, body, #root {
+    @apply h-full overflow-hidden;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    @apply bg-stone-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', 'DejaVu Sans', Oxygen, Ubuntu, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-stone-200 dark:bg-gray-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-stone-400 rounded dark:bg-gray-600;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-stone-500 dark:bg-gray-500;
+  }
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Apply font scale to content areas only (messages, discovery items) */
+  /* Uses zoom for true scaling of all content including Tailwind's rem-based classes */
+  .font-scalable {
+    zoom: var(--font-scale, 1);
+  }
+}
+
+@layer components {
+  .message-bubble {
+    @apply p-4 rounded-lg max-w-[85%];
+  }
+
+  .message-bubble-user {
+    @apply bg-amber-100 ml-auto dark:bg-[#4a2518];
+  }
+
+  .message-bubble-assistant {
+    @apply mr-auto;
+  }
+
+  .discovery-card {
+    @apply bg-white rounded-lg border border-stone-200
+           hover:border-purple-500 transition-all shadow-sm
+           dark:bg-gray-800 dark:border-gray-700;
+  }
+
+  .topic-chip {
+    @apply px-2 py-1 bg-stone-200 rounded-full text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-400;
+  }
+
+  /* Loading shimmer effect */
+  .shimmer {
+    @apply bg-linear-to-r from-stone-200 via-stone-100 to-stone-200 bg-[length:200%_100%] animate-shimmer
+           dark:from-gray-700 dark:via-gray-600 dark:to-gray-700;
+  }
+
+}
+
+/* Prose overrides */
+.prose {
+  font-family: inherit;
+}
+
+/* Tone down bold/strong text in dark mode to reduce contrast with body text */
+.dark strong {
+  color: #d1d5db;
+}
+
+/* Print styles */
+@media print {
+  /* Hide everything except the printable chat */
+  body {
+    background: white !important;
+  }
+
+  #root > *:not(.printable-chat-wrapper) {
+    display: none !important;
+  }
+
+  .printable-chat-wrapper {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+  }
+
+  .printable-chat {
+    display: block !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Typography for print */
+  .printable-chat {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    color: black !important;
+  }
+
+  .printable-chat h1 {
+    font-size: 18pt !important;
+  }
+
+  .printable-chat h2, .printable-chat h3, .printable-chat h4 {
+    font-size: 12pt !important;
+  }
+
+  /* Page break control */
+  .turn {
+    page-break-inside: avoid;
+  }
+
+  .discovery-item {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure background colors print */
+  .user-message {
+    background-color: #fef3c7 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .assistant-message {
+    background-color: #f9fafb !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .discovery-item {
+    background-color: #faf5ff !important;
+    border-color: #e9d5ff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Discovery section banner */
+  .discovery-section > div:first-child {
+    background-color: #f3e8ff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Links should show URL in print */
+  .printable-chat a::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #666;
+  }
+
+  .printable-chat a {
+    color: #2563eb !important;
+    text-decoration: none !important;
+  }
+
+  /* Hide scrollbars and other UI elements */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+}
