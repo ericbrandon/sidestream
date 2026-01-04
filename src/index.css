@@ -153,28 +153,6 @@
 }
 
 @layer components {
-  .message-bubble {
-    @apply p-4 rounded-lg max-w-[85%];
-  }
-
-  .message-bubble-user {
-    @apply bg-amber-100 ml-auto dark:bg-[#4a2518];
-  }
-
-  .message-bubble-assistant {
-    @apply mr-auto;
-  }
-
-  .discovery-card {
-    @apply bg-white rounded-lg border border-stone-200
-           hover:border-purple-500 transition-all shadow-sm
-           dark:bg-gray-800 dark:border-gray-700;
-  }
-
-  .topic-chip {
-    @apply px-2 py-1 bg-stone-200 rounded-full text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-400;
-  }
-
   /* Loading shimmer effect */
   .shimmer {
     @apply bg-linear-to-r from-stone-200 via-stone-100 to-stone-200 bg-[length:200%_100%] animate-shimmer

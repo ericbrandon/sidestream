@@ -93,12 +93,6 @@ export interface LLMConfig {
   webSearchEnabled: boolean;
 }
 
-// API message format for Anthropic
-export interface ApiMessage {
-  role: string;
-  content: string | ContentBlock[];
-}
-
 export interface ContentBlock {
   type: 'text' | 'image' | 'document';
   text?: string;

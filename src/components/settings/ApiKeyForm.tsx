@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { Button } from '../shared/Button';
@@ -55,41 +55,30 @@ const PROVIDERS: ProviderConfig[] = [
   },
 ];
 
-export interface ApiKeyFormHandle {
-  scrollToTop: () => void;
-}
-
 interface ApiKeyFormProps {
   highlight?: boolean;
 }
 
-export const ApiKeyForm = forwardRef<ApiKeyFormHandle, ApiKeyFormProps>(
-  function ApiKeyForm({ highlight }, ref) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { configuredProviders, saveApiKey, deleteApiKey } = useApiKeys();
-    const [apiKeys, setApiKeys] = useState<Record<LLMProvider, string>>({
-      anthropic: '',
-      openai: '',
-      google: '',
-    });
-    const [errors, setErrors] = useState<Record<LLMProvider, string>>({
-      anthropic: '',
-      openai: '',
-      google: '',
-    });
-    const [successes, setSuccesses] = useState<Record<LLMProvider, boolean>>({
-      anthropic: false,
-      openai: false,
-      google: false,
-    });
-    const [isHighlighted, setIsHighlighted] = useState(false);
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
-
-    useImperativeHandle(ref, () => ({
-      scrollToTop: () => {
-        containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      },
-    }));
+export function ApiKeyForm({ highlight }: ApiKeyFormProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { configuredProviders, saveApiKey, deleteApiKey } = useApiKeys();
+  const [apiKeys, setApiKeys] = useState<Record<LLMProvider, string>>({
+    anthropic: '',
+    openai: '',
+    google: '',
+  });
+  const [errors, setErrors] = useState<Record<LLMProvider, string>>({
+    anthropic: '',
+    openai: '',
+    google: '',
+  });
+  const [successes, setSuccesses] = useState<Record<LLMProvider, boolean>>({
+    anthropic: false,
+    openai: false,
+    google: false,
+  });
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
 
     // Handle highlight animation
     useEffect(() => {
@@ -277,5 +266,4 @@ export const ApiKeyForm = forwardRef<ApiKeyFormHandle, ApiKeyFormProps>(
         )}
       </>
     );
-  }
-);
+}

@@ -1,4 +1,4 @@
-import type { ModelDefinition, LLMProvider, ApiKeysConfig } from './types';
+import type { ModelDefinition, LLMProvider } from './types';
 
 export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
@@ -23,11 +23,6 @@ export const PROVIDER_LABELS: Record<LLMProvider, string> = {
   openai: 'OpenAI',
   google: 'Google Gemini',
 };
-
-// Get available models based on configured API keys
-export function getAvailableModels(configuredProviders: ApiKeysConfig): ModelDefinition[] {
-  return ALL_MODELS.filter((m) => configuredProviders[m.provider]);
-}
 
 // Get provider from model ID
 export function getProviderFromModelId(modelId: string): LLMProvider {

@@ -5,15 +5,12 @@ import { useDiscoveryStore } from '../../stores/discoveryStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
+import { stripCiteTags } from '../../lib/chatUtils';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
 import type { DiscoveryItem } from '../../lib/types';
 
 interface DiscoveryCardProps {
   item: DiscoveryItem;
-}
-
-function stripCiteTags(text: string): string {
-  return text.replace(/<cite[^>]*>|<\/cite>/g, '');
 }
 
 function formatContent(item: DiscoveryItem, chatPrefix: string): string {
