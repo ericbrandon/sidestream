@@ -12,6 +12,29 @@ pub fn log_frontend_error(context: String, error: String) {
     eprintln!("[Frontend Error] {}: {}", context, error);
 }
 
+/// Log debug info to a file for debugging packaged apps
+#[tauri::command]
+pub fn log_debug(app: tauri::AppHandle, context: String, message: String) {
+    use std::io::Write;
+    use std::fs::OpenOptions;
+
+    // Get app data directory and create logs folder
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        let logs_dir = app_data_dir.join("logs");
+        let _ = fs::create_dir_all(&logs_dir);
+
+        let log_file = logs_dir.join("debug.log");
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file)
+        {
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+            let _ = writeln!(file, "[{}] [{}] {}", timestamp, context, message);
+        }
+    }
+}
+
 const SESSIONS_STORE_PATH: &str = "chat-sessions.json";
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -14,6 +14,16 @@ export function logError(context: string, error: unknown): void {
 }
 
 /**
+ * Log debug info to a file (for debugging issues in packaged apps).
+ * Writes to logs/debug.log in the app data directory.
+ */
+export function logDebug(context: string, message: string): void {
+  invoke('log_debug', { context, message }).catch(() => {
+    // Silently fail if logging fails
+  });
+}
+
+/**
  * Convert an error into a user-friendly message for display in the chat.
  * Analyzes the error string to provide specific guidance.
  */
