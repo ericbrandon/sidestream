@@ -11,6 +11,19 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <script>
+    function openLightbox() {
+      document.getElementById('lightbox').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeLightbox();
+    });
+  </script>
   <header>
     <nav>
       <div class="logo">
@@ -39,15 +52,27 @@
 
     <section class="app-preview">
       <div class="preview-placeholder">
-        <a href="screenshot.png" class="screenshot-link">
-          <img src="screenshot.png" alt="Sidestream app screenshot" class="app-screenshot">
+        <a href="#" class="screenshot-link" onclick="openLightbox(); return false;">
+          <img
+            src="screenshot.png"
+            srcset="screenshot.png 1512w, screenshot@2x.png 2x"
+            sizes="(max-width: 900px) 100vw, 900px"
+            width="1512"
+            height="1012"
+            alt="Sidestream app screenshot"
+            class="app-screenshot">
         </a>
       </div>
     </section>
 
+    <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+      <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close">&larr; Back</button>
+      <img src="screenshot.png" alt="Sidestream app screenshot">
+    </div>
+
     <section class="why-different">
       <div class="why-intro">
-        <p>Human conversation is usually more rewarding than talking with an AI model - and that's because most people aren't just responding to what you said as a "helpful assistant".</p>
+        <p>Human conversation is usually more rewarding than talking with an AI model - because most people aren't responding to what you said as a "helpful assistant".</p>
       </div>
 
       <div class="insight-blocks">
