@@ -3,11 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   ChatSession,
   ChatSessionMeta,
-  Message,
-  DiscoveryItem,
 } from '../lib/types';
-import { buildSessionSettings } from '../lib/sessionHelpers';
-import { remapMessageIds, remapDiscoveryItems } from '../lib/messageHelpers';
+import { buildSessionSettings, generateChatTitle, serializeMessage, serializeDiscoveryItem } from '../lib/sessionHelpers';
+import { filterSessionMetas } from '../lib/sessionSearch';
+import { forkFromMessage as forkFromMessageImpl, forkCurrentSession as forkCurrentSessionImpl, type ForkStores } from '../lib/sessionFork';
 import { useChatStore } from './chatStore';
 import { useDiscoveryStore } from './discoveryStore';
 import { useSettingsStore } from './settingsStore';
@@ -38,26 +37,6 @@ interface SessionState {
   setSearchQuery: (query: string) => void;
   getFilteredMetas: () => ChatSessionMeta[];
   markDirty: () => void;
-}
-
-function generateChatTitle(firstMessage: string): string {
-  const cleaned = firstMessage.replace(/\n/g, ' ').trim();
-  if (!cleaned) return 'New Chat';
-  return cleaned;
-}
-
-function serializeMessage(msg: Message): Message {
-  return {
-    ...msg,
-    timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
-  };
-}
-
-function serializeDiscoveryItem(item: DiscoveryItem): DiscoveryItem {
-  return {
-    ...item,
-    timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
-  };
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -385,100 +364,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   forkFromMessage: async (messageId: string) => {
     const currentState = get();
-    const chatStore = useChatStore.getState();
-    const discoveryStore = useDiscoveryStore.getState();
-    const settingsStore = useSettingsStore.getState();
+    const stores: ForkStores = {
+      chatStore: useChatStore.getState(),
+      discoveryStore: useDiscoveryStore.getState(),
+      settingsStore: useSettingsStore.getState(),
+      sessionStore: {
+        activeSessionId: currentState.activeSessionId,
+        sessionMetas: currentState.sessionMetas,
+        isDirty: currentState.isDirty,
+        saveCurrentSession: get().saveCurrentSession,
+      },
+    };
 
-    // If streaming is active, cancel it first
-    if (chatStore.isStreaming) {
-      await invoke('cancel_chat_stream');
-      chatStore.clearStreamingContent();
-    }
+    const result = await forkFromMessageImpl(messageId, stores);
+    if (!result) return;
 
-    // Save current session first if dirty
-    if (currentState.activeSessionId && chatStore.messages.length > 0 && currentState.isDirty) {
-      await get().saveCurrentSession();
-    }
-
-    // Find target user message by ID
-    const targetIndex = chatStore.messages.findIndex((m) => m.id === messageId);
-    if (targetIndex === -1) {
-      console.error('Fork target message not found');
-      return;
-    }
-
-    const targetMessage = chatStore.messages[targetIndex];
-    if (targetMessage.role !== 'user') {
-      console.error('Can only fork from user messages');
-      return;
-    }
-
-    // Get messages to keep (everything before the target message)
-    const messagesToKeep = chatStore.messages.slice(0, targetIndex);
-
-    // Remap message and discovery item IDs
-    const newSessionId = crypto.randomUUID();
-    const { messages: newMessages, turnIdMap } = remapMessageIds(messagesToKeep);
-    const { items: newDiscoveryItems } = remapDiscoveryItems(
-      discoveryStore.items,
-      turnIdMap,
-      newSessionId
-    );
-
-    // Generate fork title
-    const originalTitle = currentState.sessionMetas.find(
-      (m) => m.id === currentState.activeSessionId
-    )?.title || 'Chat';
-    const forkTitle = `Fork: ${originalTitle}`;
-
-    // Update chat store with new messages and set input to forked message content
-    chatStore.loadSession(newMessages);
-    chatStore.setInput(targetMessage.content);
-
-    // Restore attachments from the forked message if any
-    chatStore.clearAttachments();
-    if (targetMessage.attachments?.length) {
-      for (const att of targetMessage.attachments) {
-        chatStore.addAttachment(att);
-      }
-    }
-
-    // Update discovery store
-    discoveryStore.loadItems(newDiscoveryItems, newSessionId);
-    discoveryStore.setActiveSessionId(newSessionId);
+    const { newSessionId, newMeta, session } = result;
 
     // Update session state
     set({ activeSessionId: newSessionId, isDirty: true });
 
-    // Build and save the forked session
-    const now = new Date().toISOString();
-    const session: ChatSession = {
-      id: newSessionId,
-      title: forkTitle,
-      createdAt: now,
-      updatedAt: now,
-      messages: newMessages.map((msg) => ({
-        ...msg,
-        timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
-      })),
-      discoveryItems: newDiscoveryItems.map((item) => ({
-        ...item,
-        timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
-      })),
-      settings: buildSessionSettings(settingsStore),
-    };
-
-    await invoke('save_chat_session', { session });
-
     // Update meta list with new forked session
-    const newMeta: ChatSessionMeta = {
-      id: session.id,
-      title: session.title,
-      updatedAt: session.updatedAt,
-      messageCount: session.messages.length,
-      discoveryMode: settingsStore.discoveryMode,
-    };
-
     set((state) => {
       const newMetas = [newMeta, ...state.sessionMetas];
       newMetas.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -492,76 +398,27 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   forkCurrentSession: async () => {
     const currentState = get();
-    const chatStore = useChatStore.getState();
-    const discoveryStore = useDiscoveryStore.getState();
-    const settingsStore = useSettingsStore.getState();
+    const stores: ForkStores = {
+      chatStore: useChatStore.getState(),
+      discoveryStore: useDiscoveryStore.getState(),
+      settingsStore: useSettingsStore.getState(),
+      sessionStore: {
+        activeSessionId: currentState.activeSessionId,
+        sessionMetas: currentState.sessionMetas,
+        isDirty: currentState.isDirty,
+        saveCurrentSession: get().saveCurrentSession,
+      },
+    };
 
-    // If streaming is active, cancel it first
-    if (chatStore.isStreaming) {
-      await invoke('cancel_chat_stream');
-      chatStore.clearStreamingContent();
-    }
+    const result = await forkCurrentSessionImpl(stores);
+    if (!result) return;
 
-    // Save current session first if dirty
-    if (currentState.activeSessionId && chatStore.messages.length > 0 && currentState.isDirty) {
-      await get().saveCurrentSession();
-    }
-
-    // Remap message and discovery item IDs
-    const newSessionId = crypto.randomUUID();
-    const { messages: newMessages, turnIdMap } = remapMessageIds(chatStore.messages);
-    const { items: newDiscoveryItems } = remapDiscoveryItems(
-      discoveryStore.items,
-      turnIdMap,
-      newSessionId
-    );
-
-    // Generate fork title
-    const originalTitle = currentState.sessionMetas.find(
-      (m) => m.id === currentState.activeSessionId
-    )?.title || 'Chat';
-    const forkTitle = `Fork: ${originalTitle}`;
-
-    // Update chat store with new messages (input will be set by caller)
-    chatStore.loadSession(newMessages);
-    chatStore.clearAttachments();
-
-    // Update discovery store
-    discoveryStore.loadItems(newDiscoveryItems, newSessionId);
-    discoveryStore.setActiveSessionId(newSessionId);
+    const { newSessionId, newMeta, session } = result;
 
     // Update session state
     set({ activeSessionId: newSessionId, isDirty: true });
 
-    // Build and save the forked session
-    const now = new Date().toISOString();
-    const session: ChatSession = {
-      id: newSessionId,
-      title: forkTitle,
-      createdAt: now,
-      updatedAt: now,
-      messages: newMessages.map((msg) => ({
-        ...msg,
-        timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
-      })),
-      discoveryItems: newDiscoveryItems.map((item) => ({
-        ...item,
-        timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
-      })),
-      settings: buildSessionSettings(settingsStore),
-    };
-
-    await invoke('save_chat_session', { session });
-
     // Update meta list with new forked session
-    const newMeta: ChatSessionMeta = {
-      id: session.id,
-      title: session.title,
-      updatedAt: session.updatedAt,
-      messageCount: session.messages.length,
-      discoveryMode: settingsStore.discoveryMode,
-    };
-
     set((state) => {
       const newMetas = [newMeta, ...state.sessionMetas];
       newMetas.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -591,88 +448,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   getFilteredMetas: () => {
     const { sessionMetas, sessionCache, searchQuery } = get();
-
-    if (!searchQuery.trim()) {
-      return sessionMetas;
-    }
-
-    // Split query into individual terms, lowercase
-    const searchTerms = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
-
-    if (searchTerms.length === 0) {
-      return sessionMetas;
-    }
-
-    // Parse terms into include/exclude with optional wildcards
-    const includeTerms: { pattern: string; isWildcard: boolean }[] = [];
-    const excludeTerms: { pattern: string; isWildcard: boolean }[] = [];
-
-    for (const term of searchTerms) {
-      if (term.startsWith('-') && term.length > 1) {
-        // Exclusion term
-        const pattern = term.slice(1);
-        excludeTerms.push({
-          pattern: pattern.replace(/\*/g, ''),
-          isWildcard: pattern.includes('*'),
-        });
-      } else {
-        // Inclusion term
-        includeTerms.push({
-          pattern: term.replace(/\*/g, ''),
-          isWildcard: term.includes('*'),
-        });
-      }
-    }
-
-    // Helper to check if text matches a term
-    const matchesTerm = (text: string, term: { pattern: string; isWildcard: boolean }): boolean => {
-      if (term.isWildcard) {
-        // Wildcard: substring match
-        return text.includes(term.pattern);
-      } else {
-        // Non-wildcard: whole word match (word boundaries)
-        const regex = new RegExp(`\\b${term.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-        return regex.test(text);
-      }
-    };
-
-    return sessionMetas.filter((meta) => {
-      const session = sessionCache.get(meta.id);
-      let fullText: string;
-
-      if (!session) {
-        // If not in cache, only search the title
-        fullText = meta.title.toLowerCase();
-      } else {
-        // Build searchable text from all content
-        const textParts: string[] = [session.title];
-
-        // Add all message content
-        for (const msg of session.messages) {
-          textParts.push(msg.content);
-        }
-
-        // Add all discovery item content
-        for (const item of session.discoveryItems) {
-          textParts.push(item.title);
-          textParts.push(item.oneLiner);
-          textParts.push(item.fullSummary);
-          textParts.push(item.relevanceExplanation);
-          if (item.sourceUrl) textParts.push(item.sourceUrl);
-          if (item.sourceDomain) textParts.push(item.sourceDomain);
-        }
-
-        fullText = textParts.join(' ').toLowerCase();
-      }
-
-      // All include terms must match
-      const includesMatch = includeTerms.every((term) => matchesTerm(fullText, term));
-
-      // No exclude terms should match
-      const excludesMatch = excludeTerms.some((term) => matchesTerm(fullText, term));
-
-      return includesMatch && !excludesMatch;
-    });
+    return filterSessionMetas(sessionMetas, sessionCache, searchQuery);
   },
 
   markDirty: () => {

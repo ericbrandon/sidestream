@@ -1,4 +1,4 @@
-import type { ChatSessionSettings, DiscoveryModeId, LLMConfig } from './types';
+import type { ChatSessionSettings, DiscoveryModeId, DiscoveryItem, LLMConfig, Message } from './types';
 
 interface SettingsStoreState {
   frontierLLM: LLMConfig;
@@ -23,5 +23,34 @@ export function buildSessionSettings(settingsStore: SettingsStoreState): ChatSes
     evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
     evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
     evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
+  };
+}
+
+/**
+ * Generate a chat title from the first message content.
+ */
+export function generateChatTitle(firstMessage: string): string {
+  const cleaned = firstMessage.replace(/\n/g, ' ').trim();
+  if (!cleaned) return 'New Chat';
+  return cleaned;
+}
+
+/**
+ * Serialize a message ensuring timestamp is a Date object.
+ */
+export function serializeMessage(msg: Message): Message {
+  return {
+    ...msg,
+    timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
+  };
+}
+
+/**
+ * Serialize a discovery item ensuring timestamp is a Date object.
+ */
+export function serializeDiscoveryItem(item: DiscoveryItem): DiscoveryItem {
+  return {
+    ...item,
+    timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
   };
 }
