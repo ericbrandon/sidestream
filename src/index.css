@@ -116,9 +116,9 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* macOS: use subpixel antialiasing for sharper/thicker text */
+  /* macOS: use default font smoothing with auto text rendering */
   html.platform-macos body {
-    -webkit-font-smoothing: subpixel-antialiased;
+    text-rendering: auto;
   }
 
   /* Linux: use antialiased for better Noto Sans rendering */
