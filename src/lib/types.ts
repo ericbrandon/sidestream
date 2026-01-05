@@ -94,10 +94,10 @@ export interface LLMConfig {
 }
 
 export interface ContentBlock {
-  type: 'text' | 'image' | 'document';
+  type: 'text' | 'image' | 'document' | 'file';
   text?: string;
-  source?: ImageSource | DocumentSource;
-  filename?: string; // For document blocks (OpenAI requires this for PDFs)
+  source?: ImageSource | DocumentSource | FileSource;
+  filename?: string; // For document/file blocks
 }
 
 export interface ImageSource {
@@ -109,6 +109,12 @@ export interface ImageSource {
 export interface DocumentSource {
   type: 'base64';
   media_type: 'application/pdf';
+  data: string;
+}
+
+export interface FileSource {
+  type: 'base64';
+  media_type: string; // Any MIME type
   data: string;
 }
 

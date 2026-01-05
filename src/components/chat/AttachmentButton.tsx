@@ -43,7 +43,7 @@ export function AttachmentButton() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.pdf,.txt,.md,.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.h,.hpp,.rs,.go,.rb,.php,.swift,.kt,.scala,.sh,.bash,.zsh,.json,.xml,.yaml,.yml,.html,.css,.scss,.sass,.less,.sql,.r,.m,.lua,.pl,.ex,.exs,.clj,.hs,.ml,.fs,.csv,.log,.ini,.toml,.cfg,.conf"
+        // Allow all file types - let the LLM handle what it can
         className="hidden"
         onChange={handleFileChange}
       />

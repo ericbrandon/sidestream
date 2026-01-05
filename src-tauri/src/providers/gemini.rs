@@ -188,6 +188,18 @@ impl GeminiClient {
                                     }
                                 }))
                             }
+                            "file" => {
+                                // Generic file: send as inline_data with original MIME type
+                                let source = &block["source"];
+                                let media_type = source["media_type"].as_str()?;
+                                let data = source["data"].as_str()?;
+                                Some(serde_json::json!({
+                                    "inline_data": {
+                                        "mime_type": media_type,
+                                        "data": data
+                                    }
+                                }))
+                            }
                             _ => None,
                         }
                     })

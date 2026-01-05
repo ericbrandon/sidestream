@@ -166,11 +166,28 @@ export function useChat() {
       pendingTurnIdRef.current = turnId;
       setPendingTurnId(turnId);
 
-      // Build user message with turnId
+      // Check attachments for unsupported files before building the message
+      const unsupportedFiles: string[] = [];
+      const supportedAttachments = attachments.filter((attachment) => {
+        if (attachment.type === 'image') return true;
+        if (attachment.mimeType === 'application/pdf') return true;
+        // Try to decode as text
+        try {
+          const textContent = atob(attachment.data);
+          if (!textContent.includes('\0')) return true;
+        } catch {
+          // Decoding failed
+        }
+        // Binary file - not supported
+        unsupportedFiles.push(attachment.name);
+        return false;
+      });
+
+      // Build user message with only supported attachments
       const userMessage: Omit<Message, 'id' | 'timestamp'> = {
         role: 'user',
         content,
-        attachments: attachments.length > 0 ? [...attachments] : undefined,
+        attachments: supportedAttachments.length > 0 ? [...supportedAttachments] : undefined,
         turnId,
       };
 
@@ -183,12 +200,27 @@ export function useChat() {
       // This ensures user can switch back to this session while streaming
       useSessionStore.getState().saveCurrentSession();
 
+      // If there were unsupported files, show error and don't call API
+      if (unsupportedFiles.length > 0) {
+        useBackgroundStreamStore.getState().cancelChatStream(turnId);
+        const fileList = unsupportedFiles.join(', ');
+        addMessage({
+          role: 'assistant',
+          content: `I can't process the following file${unsupportedFiles.length > 1 ? 's' : ''}: **${fileList}**\n\nOnly images, PDFs, and text-based files (code, config files, etc.) are supported. Binary files like executables, archives, or proprietary formats cannot be read.`,
+          turnId,
+        });
+        setStreaming(false);
+        setPendingTurnId(null);
+        pendingTurnIdRef.current = null;
+        return;
+      }
+
       try {
-        // Convert messages to API format
+        // Convert all messages to API format
         const allMessages = [...messages, { ...userMessage, id: '', timestamp: new Date() }];
         const apiMessages = allMessages.map((m) => ({
           role: m.role,
-          content: formatMessageContent(m),
+          content: formatMessageContent(m).content,
         }));
 
         await invoke('send_chat_message', {
@@ -253,43 +285,19 @@ export function useChat() {
   };
 }
 
-// Text-based MIME types that should be sent as text content
-const TEXT_MIME_TYPES = new Set([
-  'text/plain',
-  'text/markdown',
-  'text/x-python',
-  'text/javascript',
-  'application/javascript',
-  'text/typescript',
-  'application/typescript',
-  'text/x-java',
-  'text/x-c',
-  'text/x-c++',
-  'text/x-rust',
-  'text/x-go',
-  'text/html',
-  'text/css',
-  'application/json',
-  'application/xml',
-  'text/xml',
-  'text/x-yaml',
-  'application/x-yaml',
-]);
-
-function isTextMimeType(mimeType: string): boolean {
-  return TEXT_MIME_TYPES.has(mimeType) ||
-         mimeType.startsWith('text/') ||
-         mimeType.endsWith('+json') ||
-         mimeType.endsWith('+xml');
+interface FormatResult {
+  content: string | ContentBlock[];
+  unsupportedFiles: string[]; // Names of files that couldn't be processed
 }
 
-function formatMessageContent(message: Message): string | ContentBlock[] {
+function formatMessageContent(message: Message): FormatResult {
   if (!message.attachments?.length) {
-    return message.content;
+    return { content: message.content, unsupportedFiles: [] };
   }
 
   // Multipart message with attachments
   const parts: ContentBlock[] = [];
+  const unsupportedFiles: string[] = [];
 
   // Add attachments first
   for (const attachment of message.attachments) {
@@ -314,17 +322,23 @@ function formatMessageContent(message: Message): string | ContentBlock[] {
           data: attachment.data,
         },
       });
-    } else if (isTextMimeType(attachment.mimeType)) {
-      // Text files: decode base64 and send as text content
+    } else {
+      // All other files: try to decode as text
       try {
         const textContent = atob(attachment.data);
-        parts.push({
-          type: 'text',
-          text: `--- File: ${attachment.name} ---\n${textContent}\n--- End of ${attachment.name} ---`,
-        });
+        // Check if it's valid UTF-8 text (no null bytes = text file)
+        if (!textContent.includes('\0')) {
+          parts.push({
+            type: 'text',
+            text: `--- File: ${attachment.name} ---\n${textContent}\n--- End of ${attachment.name} ---`,
+          });
+        } else {
+          // Binary file - not supported
+          unsupportedFiles.push(attachment.name);
+        }
       } catch {
-        // If decoding fails, skip this attachment
-        logError('useChat.formatMessageContent', `Failed to decode text file: ${attachment.name}`);
+        // Decoding failed - binary file, not supported
+        unsupportedFiles.push(attachment.name);
       }
     }
   }
@@ -335,5 +349,5 @@ function formatMessageContent(message: Message): string | ContentBlock[] {
     text: message.content,
   });
 
-  return parts;
+  return { content: parts, unsupportedFiles };
 }

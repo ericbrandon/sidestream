@@ -27,9 +27,13 @@ pub async fn send_chat_message_anthropic(
     let client = AnthropicClient::new(api_key);
 
     // Build messages with cache breakpoint on the last message
+    // Transform 'file' blocks to 'document' blocks for Anthropic API compatibility
     let mut api_messages: Vec<serde_json::Value> = messages
         .iter()
-        .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+        .map(|m| {
+            let content = transform_file_blocks_for_anthropic(&m.content);
+            serde_json::json!({"role": m.role, "content": content})
+        })
         .collect();
 
     add_cache_control_to_last_message(&mut api_messages);
@@ -190,4 +194,38 @@ pub async fn send_chat_message_anthropic(
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())
+}
+
+/// Transform 'file' blocks to 'document' blocks for Anthropic API.
+/// We send all files as document blocks and let the API return an error
+/// if the file type isn't supported.
+fn transform_file_blocks_for_anthropic(content: &serde_json::Value) -> serde_json::Value {
+    // If content is a string, return as-is
+    if content.is_string() {
+        return content.clone();
+    }
+
+    // If content is an array, transform any 'file' blocks to 'document' blocks
+    if let Some(arr) = content.as_array() {
+        let transformed: Vec<serde_json::Value> = arr
+            .iter()
+            .map(|block| {
+                if let Some(block_type) = block.get("type").and_then(|t| t.as_str()) {
+                    if block_type == "file" {
+                        // Convert 'file' to 'document' block
+                        let source = &block["source"];
+                        return serde_json::json!({
+                            "type": "document",
+                            "source": source.clone()
+                        });
+                    }
+                }
+                block.clone()
+            })
+            .collect();
+        return serde_json::json!(transformed);
+    }
+
+    // Fallback: return as-is
+    content.clone()
 }

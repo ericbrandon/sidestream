@@ -156,6 +156,18 @@ impl OpenAIClient {
                                     "file_data": format!("data:application/pdf;base64,{}", data)
                                 }))
                             }
+                            "file" => {
+                                // Generic file: send as input_file with original MIME type
+                                let source = &block["source"];
+                                let media_type = source["media_type"].as_str()?;
+                                let data = source["data"].as_str()?;
+                                let filename = block["filename"].as_str().unwrap_or("file");
+                                Some(serde_json::json!({
+                                    "type": "input_file",
+                                    "filename": filename,
+                                    "file_data": format!("data:{};base64,{}", media_type, data)
+                                }))
+                            }
                             _ => None,
                         }
                     })
