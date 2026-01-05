@@ -10,6 +10,8 @@ import type {
   VoiceModel,
   VoiceMode,
 } from '../lib/types';
+
+export type SettingsTab = 'api-keys' | 'preferences' | 'saved-chats' | 'about';
 import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode } from '../lib/discoveryModes';
 import { getProviderFromModelId, getDefaultModelForProvider, getDefaultEvaluatorModelForProvider } from '../lib/models';
 import { useSessionStore } from './sessionStore';
@@ -192,6 +194,7 @@ function getSavedFontScale(): number {
 interface SettingsState {
   isSettingsOpen: boolean;
   highlightApiKeys: boolean;
+  lastSettingsTab: SettingsTab;
   frontierLLM: LLMConfig;
   evaluatorLLM: LLMConfig;
   discoveryMode: DiscoveryModeId;
@@ -206,6 +209,7 @@ interface SettingsState {
   // Actions
   openSettings: (highlightApiKeys?: boolean) => void;
   closeSettings: () => void;
+  setLastSettingsTab: (tab: SettingsTab) => void;
   setFrontierLLM: (config: Partial<LLMConfig>) => void;
   setEvaluatorLLM: (config: Partial<LLMConfig>) => void;
   setApiKeyConfigured: (configured: boolean) => void;
@@ -224,6 +228,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set) => ({
   isSettingsOpen: false,
   highlightApiKeys: false,
+  lastSettingsTab: 'preferences',
   frontierLLM: {
     model: getSavedFrontierModel(),
     apiKeyConfigured: false,
@@ -261,6 +266,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   openSettings: (highlightApiKeys = false) =>
     set({ isSettingsOpen: true, highlightApiKeys }),
   closeSettings: () => set({ isSettingsOpen: false, highlightApiKeys: false }),
+  setLastSettingsTab: (tab) => set({ lastSettingsTab: tab }),
 
   setFrontierLLM: (config) => {
     set((state) => ({

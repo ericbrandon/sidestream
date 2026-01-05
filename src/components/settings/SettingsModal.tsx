@@ -2,18 +2,22 @@ import { useState } from 'react';
 import { Modal } from '../shared/Modal';
 import { ApiKeyForm } from './ApiKeyForm';
 import { SavedChatsSection } from './SavedChatsSection';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
 import type { ThemeMode, VoiceMode } from '../../lib/types';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'api-keys' | 'preferences' | 'saved-chats' | 'about';
-
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const { highlightApiKeys, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<SettingsTab>(highlightApiKeys ? 'api-keys' : 'preferences');
+  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode } = useSettingsStore();
+
+  // highlightApiKeys takes precedence, otherwise use the last remembered tab
+  const activeTab = highlightApiKeys ? 'api-keys' : lastSettingsTab;
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setLastSettingsTab(tab);
+  };
   const [showAutoSelectInfo, setShowAutoSelectInfo] = useState(false);
   const [showCitationsInfo, setShowCitationsInfo] = useState(false);
 
@@ -32,7 +36,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`px-4 py-2 text-sm transition-colors relative ${
                 activeTab === tab.id
                   ? 'font-semibold text-gray-800 dark:text-gray-100'
