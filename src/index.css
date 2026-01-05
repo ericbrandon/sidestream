@@ -116,7 +116,12 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Apply font smoothing only on Linux where it improves rendering */
+  /* macOS: use subpixel antialiasing for sharper/thicker text */
+  html.platform-macos body {
+    -webkit-font-smoothing: subpixel-antialiased;
+  }
+
+  /* Linux: use antialiased for better Noto Sans rendering */
   html.platform-linux body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
