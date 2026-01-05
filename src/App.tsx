@@ -28,6 +28,18 @@ function App() {
     document.documentElement.style.setProperty('--font-scale', fontScale.toString());
   }, [fontScale]);
 
+  // Detect platform and add class for platform-specific CSS (e.g., font smoothing)
+  useEffect(() => {
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes('linux')) {
+      document.documentElement.classList.add('platform-linux');
+    } else if (platform.includes('mac')) {
+      document.documentElement.classList.add('platform-macos');
+    } else if (platform.includes('win')) {
+      document.documentElement.classList.add('platform-windows');
+    }
+  }, []);
+
   // Apply theme to document root
   useEffect(() => {
     const applyTheme = (isDark: boolean) => {
