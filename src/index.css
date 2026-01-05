@@ -193,6 +193,26 @@
   font-family: inherit;
 }
 
+/* KaTeX display math */
+.prose .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Inline KaTeX only: scale up so fractions are readable */
+/* Target .katex that is NOT a descendant of .katex-display */
+.prose p > .katex,
+.prose li > .katex,
+.prose span:not(.katex-display) > .katex {
+  font-size: 1.3em;
+}
+
+/* Display math */
+.prose .katex-display .katex {
+  font-size: 1.3em;
+}
+
 /* Tone down bold/strong text in dark mode to reduce contrast with body text */
 .dark strong {
   color: #d1d5db;

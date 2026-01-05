@@ -224,7 +224,7 @@ export function Message({ message, onFork }: MessageProps) {
         )}
 
         {/* Message content */}
-        <div className="prose prose-sm prose-tight max-w-none prose-gray dark:prose-invert font-scalable">
+        <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}

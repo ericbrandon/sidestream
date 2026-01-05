@@ -149,7 +149,7 @@ export function StreamingMessage({ content, inlineCitations = [] }: StreamingMes
   return (
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] p-4">
-        <div className="prose prose-sm prose-tight max-w-none prose-gray dark:prose-invert font-scalable">
+        <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMath]}
             rehypePlugins={[rehypeKatex]}
