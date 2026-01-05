@@ -4,7 +4,6 @@ import { useSessionStore } from './stores/sessionStore';
 import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useChatStore } from './stores/chatStore';
-import { logDebug } from './lib/logger';
 import './index.css';
 
 function App() {
@@ -34,67 +33,14 @@ function App() {
     const platform = navigator.platform.toLowerCase();
     const userAgent = navigator.userAgent.toLowerCase();
 
-    logDebug('platform-detection', `navigator.platform: "${navigator.platform}"`);
-    logDebug('platform-detection', `navigator.userAgent: "${navigator.userAgent}"`);
-
     // Check both platform and userAgent for robust detection
     if (platform.includes('linux') || userAgent.includes('linux')) {
       document.documentElement.classList.add('platform-linux');
-      logDebug('platform-detection', 'Added class: platform-linux');
     } else if (platform.includes('mac') || userAgent.includes('mac')) {
       document.documentElement.classList.add('platform-macos');
-      logDebug('platform-detection', 'Added class: platform-macos');
     } else if (platform.includes('win') || userAgent.includes('windows')) {
       document.documentElement.classList.add('platform-windows');
-      logDebug('platform-detection', 'Added class: platform-windows');
-    } else {
-      logDebug('platform-detection', 'No platform matched!');
     }
-
-    // Log the final classList
-    logDebug('platform-detection', `HTML classList: "${document.documentElement.className}"`);
-
-    // Log computed styles on body to verify CSS is applied
-    const bodyStyles = window.getComputedStyle(document.body);
-    logDebug('font-styles', `body font-family: "${bodyStyles.fontFamily}"`);
-    logDebug('font-styles', `body font-weight: "${bodyStyles.fontWeight}"`);
-    logDebug('font-styles', `body -webkit-font-smoothing: "${bodyStyles.getPropertyValue('-webkit-font-smoothing')}"`);
-
-    // Check if fonts are loaded
-    if (document.fonts) {
-      document.fonts.ready.then(() => {
-        logDebug('font-loading', 'document.fonts.ready resolved');
-
-        // Log all loaded fonts
-        const loadedFonts: string[] = [];
-        document.fonts.forEach((font) => {
-          loadedFonts.push(`${font.family} ${font.weight} ${font.style} - ${font.status}`);
-        });
-        logDebug('font-loading', `Loaded fonts (${loadedFonts.length}): ${loadedFonts.join('; ')}`);
-
-        // Check specifically for Noto Sans weights
-        const notoWeights = ['400', '500', '600', '700'];
-        notoWeights.forEach((weight) => {
-          const checkResult = document.fonts.check(`${weight} 16px "Noto Sans"`);
-          logDebug('font-loading', `Noto Sans weight ${weight} available: ${checkResult}`);
-        });
-      });
-    } else {
-      logDebug('font-loading', 'document.fonts API not available');
-    }
-
-    // Test font-medium class rendering after a short delay
-    setTimeout(() => {
-      const testEl = document.querySelector('.font-medium');
-      if (testEl) {
-        const testStyles = window.getComputedStyle(testEl);
-        logDebug('font-medium-test', `Found .font-medium element`);
-        logDebug('font-medium-test', `Computed font-family: "${testStyles.fontFamily}"`);
-        logDebug('font-medium-test', `Computed font-weight: "${testStyles.fontWeight}"`);
-      } else {
-        logDebug('font-medium-test', 'No .font-medium element found on page');
-      }
-    }, 1000);
   }, []);
 
   // Apply theme to document root
