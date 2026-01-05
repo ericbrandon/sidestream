@@ -70,7 +70,9 @@ pub async fn send_chat_message_gemini(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                window.emit("chat-stream-cancelled", ()).ok();
+                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                    eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
+                }
                 return Ok(());
             }
             // Process next chunk from stream
@@ -108,7 +110,9 @@ pub async fn send_chat_message_gemini(
                                                 citations: None,
                                                 inline_citations: None,
                                             };
-                                            window.emit("chat-stream-delta", delta).ok();
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
                                         }
                                     }
                                     GeminiStreamEvent::ThinkingDelta => {
@@ -134,12 +138,16 @@ pub async fn send_chat_message_gemini(
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
                                             };
-                                            window.emit("chat-stream-delta", delta).ok();
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
                                         }
                                     }
                                     GeminiStreamEvent::ResponseComplete => {
                                         llm_logger::log_response_complete("chat", &full_response);
-                                        window.emit("chat-stream-done", ()).ok();
+                                        if let Err(err) = window.emit("chat-stream-done", ()) {
+                                            eprintln!("Failed to emit chat-stream-done event: {}", err);
+                                        }
                                         return Ok(());
                                     }
                                     GeminiStreamEvent::Error { message } => {
@@ -159,6 +167,8 @@ pub async fn send_chat_message_gemini(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    window.emit("chat-stream-done", ()).ok();
+    if let Err(err) = window.emit("chat-stream-done", ()) {
+        eprintln!("Failed to emit chat-stream-done event: {}", err);
+    }
     Ok(())
 }

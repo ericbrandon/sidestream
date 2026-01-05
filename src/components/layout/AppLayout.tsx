@@ -14,6 +14,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { Tooltip } from '../shared/Tooltip';
 import { useResizablePanes } from '../../hooks/useResizablePanes';
 import { printChat, exportToHtml, exportToJson } from '../../lib/exportUtils';
+import { logError } from '../../lib/logger';
 import type { ApiKeysConfig } from '../../lib/types';
 
 export function AppLayout() {
@@ -57,7 +58,7 @@ export function AppLayout() {
           setShowApiKeyModal(true);
         }
       } catch (error) {
-        console.error('Failed to check API keys:', error);
+        logError('AppLayout.checkApiKeys', error);
         // Show modal on error as well
         setShowApiKeyModal(true);
       }

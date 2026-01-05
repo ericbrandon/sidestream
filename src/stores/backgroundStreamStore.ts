@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession } from '../lib/types';
 import { buildSessionSettings } from '../lib/sessionHelpers';
 import { deduplicateCitations } from '../lib/citationHelpers';
+import { logError } from '../lib/logger';
 import { useChatStore } from './chatStore';
 import { useSessionStore } from './sessionStore';
 import { useSettingsStore } from './settingsStore';
@@ -184,7 +185,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
           useSessionStore.getState().loadSessionList();
         }
       } catch (error) {
-        console.error('Failed to save background stream to session:', error);
+        logError('backgroundStreamStore.completeChatStream', error);
       }
 
       // Remove the stream
@@ -262,7 +263,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
           useSessionStore.getState().loadSessionList();
         }
       } catch (error) {
-        console.error('Failed to save background discovery to session:', error);
+        logError('backgroundStreamStore.completeDiscoveryStream', error);
       }
     }
 

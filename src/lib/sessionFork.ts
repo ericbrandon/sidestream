@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ChatSession, ChatSessionMeta, Message, DiscoveryItem, Attachment, DiscoveryModeId, LLMConfig } from './types';
 import { buildSessionSettings, serializeMessage, serializeDiscoveryItem } from './sessionHelpers';
 import { remapMessageIds, remapDiscoveryItems } from './messageHelpers';
+import { logError } from './logger';
 
 interface ChatStoreState {
   messages: Message[];
@@ -71,13 +72,13 @@ export async function forkFromMessage(
   // Find target user message by ID
   const targetIndex = chatStore.messages.findIndex((m) => m.id === messageId);
   if (targetIndex === -1) {
-    console.error('Fork target message not found');
+    logError('sessionFork.forkFromMessage', 'Fork target message not found');
     return null;
   }
 
   const targetMessage = chatStore.messages[targetIndex];
   if (targetMessage.role !== 'user') {
-    console.error('Can only fork from user messages');
+    logError('sessionFork.forkFromMessage', 'Can only fork from user messages');
     return null;
   }
 

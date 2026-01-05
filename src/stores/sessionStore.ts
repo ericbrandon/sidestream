@@ -7,6 +7,7 @@ import type {
 import { buildSessionSettings, generateChatTitle, serializeMessage, serializeDiscoveryItem } from '../lib/sessionHelpers';
 import { filterSessionMetas } from '../lib/sessionSearch';
 import { forkFromMessage as forkFromMessageImpl, forkCurrentSession as forkCurrentSessionImpl, type ForkStores } from '../lib/sessionFork';
+import { logError } from '../lib/logger';
 import { useChatStore } from './chatStore';
 import { useDiscoveryStore } from './discoveryStore';
 import { useSettingsStore } from './settingsStore';
@@ -77,7 +78,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       set({ sessionMetas: metas, sessionCache: cache, isLoadingSessions: false });
     } catch (error) {
-      console.error('Failed to load session list:', error);
+      logError('sessionStore.loadSessionList', error);
       set({ isLoadingSessions: false });
     }
   },
@@ -146,7 +147,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       currentState.isDirty &&
       !hasActiveStream
     ) {
-      await get().saveCurrentSession();
+      try {
+        await get().saveCurrentSession();
+      } catch (error) {
+        logError('sessionStore.switchToSession', error);
+      }
     }
 
     // Set new session ID in discovery store BEFORE loading
@@ -209,7 +214,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set({ activeSessionId: sessionId, isDirty: false });
       }
     } catch (error) {
-      console.error('Failed to switch to session:', error);
+      logError('sessionStore.switchToSession', error);
     }
   },
 
@@ -266,7 +271,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         settings: buildSessionSettings(settingsStore),
       };
 
-      await invoke('save_chat_session', { session });
+      try {
+        await invoke('save_chat_session', { session });
+      } catch (error) {
+        logError('sessionStore.saveCurrentSession', error);
+        set({ isSaving: false });
+        return;
+      }
 
       // Update meta list
       const newMeta: ChatSessionMeta = {
@@ -290,7 +301,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         return { sessionMetas: newMetas, sessionCache: newCache, isSaving: false, isDirty: false };
       });
     } catch (error) {
-      console.error('Failed to save session:', error);
+      logError('sessionStore.saveCurrentSession', error);
       set({ isSaving: false });
     }
   },
@@ -298,7 +309,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   deleteSession: async (sessionId: string) => {
     try {
       await invoke('delete_chat_session', { sessionId });
+    } catch (error) {
+      logError('sessionStore.deleteSession', error);
+      return;
+    }
 
+    try {
       const currentState = get();
 
       // Remove from meta list and cache
@@ -323,7 +339,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set({ activeSessionId: newId });
       }
     } catch (error) {
-      console.error('Failed to delete session:', error);
+      logError('sessionStore.deleteSession', error);
     }
   },
 
@@ -332,7 +348,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Load the full session
       const session = await invoke<ChatSession | null>('load_chat_session', { sessionId });
       if (!session) {
-        console.error('Session not found for rename');
+        logError('sessionStore.renameSession', 'Session not found');
         return;
       }
 
@@ -358,7 +374,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         return { sessionMetas: newMetas, sessionCache: newCache };
       });
     } catch (error) {
-      console.error('Failed to rename session:', error);
+      logError('sessionStore.renameSession', error);
     }
   },
 

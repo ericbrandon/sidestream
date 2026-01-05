@@ -18,7 +18,7 @@ use audio::{
 use commands::{
     clear_chat_sessions_store, delete_api_key, delete_chat_session, export_chat_to_html,
     get_configured_providers, has_api_key, list_chat_sessions, load_chat_session,
-    print_webview, save_api_key, save_chat_session,
+    log_frontend_error, print_webview, save_api_key, save_chat_session,
 };
 use discovery::discover_resources;
 use llm::{cancel_chat_stream, send_chat_message, send_voice_message, transcribe_audio_gemini, StreamState};
@@ -115,6 +115,7 @@ pub fn run() {
             clear_chat_sessions_store,
             export_chat_to_html,
             print_webview,
+            log_frontend_error,
             // Native audio capture commands
             start_audio_recording,
             stop_audio_recording,

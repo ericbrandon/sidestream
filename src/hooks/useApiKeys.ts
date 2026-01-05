@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settingsStore';
+import { logError } from '../lib/logger';
 import type { LLMProvider, ApiKeysConfig } from '../lib/types';
 
 const DEFAULT_CONFIG: ApiKeysConfig = {
@@ -22,7 +23,7 @@ export function useApiKeys() {
       setStoreProviders(config);
       return config;
     } catch (error) {
-      console.error('Failed to check API keys:', error);
+      logError('useApiKeys.checkApiKeys', error);
       setConfiguredProviders(DEFAULT_CONFIG);
       setStoreProviders(DEFAULT_CONFIG);
       return DEFAULT_CONFIG;

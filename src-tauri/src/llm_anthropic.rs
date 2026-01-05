@@ -68,7 +68,9 @@ pub async fn send_chat_message_anthropic(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                window.emit("chat-stream-cancelled", ()).ok();
+                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                    eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
+                }
                 return Ok(());
             }
             // Process next chunk from stream
@@ -88,7 +90,9 @@ pub async fn send_chat_message_anthropic(
                                     match anthropic_parse_sse_event(data) {
                                         AnthropicStreamEvent::Done => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            window.emit("chat-stream-done", ()).ok();
+                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                                eprintln!("Failed to emit chat-stream-done event: {}", err);
+                                            }
                                             return Ok(());
                                         }
                                         AnthropicStreamEvent::ContentBlockStart { block_type, content_block: _ } => {
@@ -115,7 +119,9 @@ pub async fn send_chat_message_anthropic(
                                                                 citations: None,
                                                                 inline_citations: None,
                                                             };
-                                                            window.emit("chat-stream-delta", delta).ok();
+                                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                            }
                                                         }
                                                     }
                                                     // Citations will arrive via citations_delta events during streaming
@@ -132,7 +138,9 @@ pub async fn send_chat_message_anthropic(
                                                     citations: None,
                                                     inline_citations: None,
                                                 };
-                                                window.emit("chat-stream-delta", delta).ok();
+                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                    eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                }
                                             }
                                             // Emit citations immediately when they arrive
                                             // The frontend will snap to word boundaries
@@ -148,7 +156,9 @@ pub async fn send_chat_message_anthropic(
                                                     citations: None,
                                                     inline_citations: Some(vec![inline_citation]),
                                                 };
-                                                window.emit("chat-stream-delta", delta).ok();
+                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                    eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                }
                                             }
                                             // Thinking deltas are logged but not displayed
                                         }
@@ -157,7 +167,9 @@ pub async fn send_chat_message_anthropic(
                                         }
                                         AnthropicStreamEvent::MessageStop => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            window.emit("chat-stream-done", ()).ok();
+                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                                eprintln!("Failed to emit chat-stream-done event: {}", err);
+                                            }
                                             return Ok(());
                                         }
                                         AnthropicStreamEvent::Unknown => {}
@@ -174,6 +186,8 @@ pub async fn send_chat_message_anthropic(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    window.emit("chat-stream-done", ()).ok();
+    if let Err(err) = window.emit("chat-stream-done", ()) {
+        eprintln!("Failed to emit chat-stream-done event: {}", err);
+    }
     Ok(())
 }

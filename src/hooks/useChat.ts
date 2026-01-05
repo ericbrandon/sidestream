@@ -7,6 +7,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
+import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
 import type { Message, ContentBlock, StreamDelta } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand.`;
@@ -154,7 +155,7 @@ export function useChat() {
       // Get current session ID for background tracking
       const sessionId = useSessionStore.getState().activeSessionId;
       if (!sessionId) {
-        console.error('No active session for sending message');
+        logError('useChat.sendMessage', 'No active session for sending message');
         return;
       }
 
@@ -199,12 +200,12 @@ export function useChat() {
           ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {
-        console.error('Chat error:', error);
+        logError('useChat.sendMessage', error);
         // Cancel the background stream on error
         useBackgroundStreamStore.getState().cancelChatStream(turnId);
         addMessage({
           role: 'assistant',
-          content: `Error: ${error}. Please check your API key in settings.`,
+          content: getUserFriendlyErrorMessage(error),
           turnId, // Include turnId so error message aligns with user message in exports
         });
         setStreaming(false);
@@ -226,7 +227,11 @@ export function useChat() {
   );
 
   const cancelStream = useCallback(async () => {
-    await invoke('cancel_chat_stream');
+    try {
+      await invoke('cancel_chat_stream');
+    } catch (error) {
+      logError('useChat.cancelStream', error);
+    }
   }, []);
 
   // Send a transcribed voice message (for chat_request mode)
@@ -319,7 +324,7 @@ function formatMessageContent(message: Message): string | ContentBlock[] {
         });
       } catch {
         // If decoding fails, skip this attachment
-        console.error(`Failed to decode text file: ${attachment.name}`);
+        logError('useChat.formatMessageContent', `Failed to decode text file: ${attachment.name}`);
       }
     }
   }

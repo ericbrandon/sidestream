@@ -3,6 +3,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { extractUsedCSS, getBaseExportStyles } from './cssUtils';
 import { buildSessionSettings, serializeMessage, serializeDiscoveryItem } from './sessionHelpers';
+import { logError } from './logger';
 import type { Message, DiscoveryItem, ChatSession, ChatSessionMeta, ChatExportData, LLMConfig, DiscoveryModeId } from './types';
 
 /**
@@ -45,7 +46,7 @@ export async function printChat(): Promise<void> {
   try {
     await invoke('print_webview');
   } catch (error) {
-    console.error('Print failed:', error);
+    logError('exportUtils.printChat', error);
     throw error;
   }
 }

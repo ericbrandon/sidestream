@@ -5,6 +5,13 @@ use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
 const STORE_PATH: &str = "settings.json";
+
+/// Log frontend errors to stderr (visible in terminal where app runs)
+#[tauri::command]
+pub fn log_frontend_error(context: String, error: String) {
+    eprintln!("[Frontend Error] {}: {}", context, error);
+}
+
 const SESSIONS_STORE_PATH: &str = "chat-sessions.json";
 
 #[derive(Debug, Serialize, Deserialize)]

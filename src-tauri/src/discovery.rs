@@ -264,7 +264,7 @@ async fn discover_resources_anthropic(
                     error: e.clone(),
                 },
             )
-            .ok();
+            .unwrap_or_else(|err| eprintln!("Failed to emit discovery-error event: {}", err));
         e
     })?;
 
@@ -280,15 +280,15 @@ async fn discover_resources_anthropic(
             Err(e) => {
                 let error_msg = e.to_string();
                 llm_logger::log_error("discovery", &error_msg);
-                window
-                    .emit(
-                        "discovery-error",
-                        DiscoveryErrorEvent {
-                            turn_id: turn_id.clone(),
-                            error: error_msg,
-                        },
-                    )
-                    .ok();
+                if let Err(err) = window.emit(
+                    "discovery-error",
+                    DiscoveryErrorEvent {
+                        turn_id: turn_id.clone(),
+                        error: error_msg,
+                    },
+                ) {
+                    eprintln!("Failed to emit discovery-error event: {}", err);
+                }
                 break;
             }
         };
@@ -306,14 +306,14 @@ async fn discover_resources_anthropic(
                     match anthropic_parse_sse_event(data) {
                         AnthropicStreamEvent::Done | AnthropicStreamEvent::MessageStop => {
                             llm_logger::log_response_complete("discovery", &full_response);
-                            window
-                                .emit(
-                                    "discovery-done",
-                                    DiscoveryDoneEvent {
-                                        turn_id: turn_id.clone(),
-                                    },
-                                )
-                                .ok();
+                            if let Err(err) = window.emit(
+                                "discovery-done",
+                                DiscoveryDoneEvent {
+                                    turn_id: turn_id.clone(),
+                                },
+                            ) {
+                                eprintln!("Failed to emit discovery-done event: {}", err);
+                            }
                             return Ok(());
                         }
                         AnthropicStreamEvent::ContentBlockDelta { text, thinking: _, citation: _ } => {
@@ -325,15 +325,15 @@ async fn discover_resources_anthropic(
                                     extract_items_from_buffer(&delta_text, &mut parse_state);
 
                                 for item in items {
-                                    window
-                                        .emit(
-                                            "discovery-item",
-                                            DiscoveryItemEvent {
-                                                turn_id: turn_id.clone(),
-                                                item,
-                                            },
-                                        )
-                                        .ok();
+                                    if let Err(err) = window.emit(
+                                        "discovery-item",
+                                        DiscoveryItemEvent {
+                                            turn_id: turn_id.clone(),
+                                            item,
+                                        },
+                                    ) {
+                                        eprintln!("Failed to emit discovery-item event: {}", err);
+                                    }
                                 }
                             }
                         }
@@ -345,14 +345,14 @@ async fn discover_resources_anthropic(
     }
 
     llm_logger::log_response_complete("discovery", &full_response);
-    window
-        .emit(
-            "discovery-done",
-            DiscoveryDoneEvent {
-                turn_id: turn_id.clone(),
-            },
-        )
-        .ok();
+    if let Err(err) = window.emit(
+        "discovery-done",
+        DiscoveryDoneEvent {
+            turn_id: turn_id.clone(),
+        },
+    ) {
+        eprintln!("Failed to emit discovery-done event: {}", err);
+    }
     Ok(())
 }
 
@@ -391,7 +391,7 @@ async fn discover_resources_openai(
                     error: e.clone(),
                 },
             )
-            .ok();
+            .unwrap_or_else(|err| eprintln!("Failed to emit discovery-error event: {}", err));
         e
     })?;
 
@@ -407,15 +407,15 @@ async fn discover_resources_openai(
             Err(e) => {
                 let error_msg = e.to_string();
                 llm_logger::log_error("discovery", &error_msg);
-                window
-                    .emit(
-                        "discovery-error",
-                        DiscoveryErrorEvent {
-                            turn_id: turn_id.clone(),
-                            error: error_msg,
-                        },
-                    )
-                    .ok();
+                if let Err(err) = window.emit(
+                    "discovery-error",
+                    DiscoveryErrorEvent {
+                        turn_id: turn_id.clone(),
+                        error: error_msg,
+                    },
+                ) {
+                    eprintln!("Failed to emit discovery-error event: {}", err);
+                }
                 break;
             }
         };
@@ -433,14 +433,14 @@ async fn discover_resources_openai(
                     match openai_parse_sse_event(data) {
                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                             llm_logger::log_response_complete("discovery", &full_response);
-                            window
-                                .emit(
-                                    "discovery-done",
-                                    DiscoveryDoneEvent {
-                                        turn_id: turn_id.clone(),
-                                    },
-                                )
-                                .ok();
+                            if let Err(err) = window.emit(
+                                "discovery-done",
+                                DiscoveryDoneEvent {
+                                    turn_id: turn_id.clone(),
+                                },
+                            ) {
+                                eprintln!("Failed to emit discovery-done event: {}", err);
+                            }
                             return Ok(());
                         }
                         OpenAIStreamEvent::TextDelta { text: delta_text } => {
@@ -450,28 +450,28 @@ async fn discover_resources_openai(
                             let items = extract_items_from_buffer(&delta_text, &mut parse_state);
 
                             for item in items {
-                                window
-                                    .emit(
-                                        "discovery-item",
-                                        DiscoveryItemEvent {
-                                            turn_id: turn_id.clone(),
-                                            item,
-                                        },
-                                    )
-                                    .ok();
+                                if let Err(err) = window.emit(
+                                    "discovery-item",
+                                    DiscoveryItemEvent {
+                                        turn_id: turn_id.clone(),
+                                        item,
+                                    },
+                                ) {
+                                    eprintln!("Failed to emit discovery-item event: {}", err);
+                                }
                             }
                         }
                         OpenAIStreamEvent::Error { message } => {
                             llm_logger::log_error("discovery", &message);
-                            window
-                                .emit(
-                                    "discovery-error",
-                                    DiscoveryErrorEvent {
-                                        turn_id: turn_id.clone(),
-                                        error: message.clone(),
-                                    },
-                                )
-                                .ok();
+                            if let Err(err) = window.emit(
+                                "discovery-error",
+                                DiscoveryErrorEvent {
+                                    turn_id: turn_id.clone(),
+                                    error: message.clone(),
+                                },
+                            ) {
+                                eprintln!("Failed to emit discovery-error event: {}", err);
+                            }
                             return Err(message);
                         }
                         _ => {}
@@ -482,14 +482,14 @@ async fn discover_resources_openai(
     }
 
     llm_logger::log_response_complete("discovery", &full_response);
-    window
-        .emit(
-            "discovery-done",
-            DiscoveryDoneEvent {
-                turn_id: turn_id.clone(),
-            },
-        )
-        .ok();
+    if let Err(err) = window.emit(
+        "discovery-done",
+        DiscoveryDoneEvent {
+            turn_id: turn_id.clone(),
+        },
+    ) {
+        eprintln!("Failed to emit discovery-done event: {}", err);
+    }
     Ok(())
 }
 
@@ -531,7 +531,7 @@ async fn discover_resources_gemini(
                         error: e.clone(),
                     },
                 )
-                .ok();
+                .unwrap_or_else(|err| eprintln!("Failed to emit discovery-error event: {}", err));
             e
         })?;
 
@@ -548,15 +548,15 @@ async fn discover_resources_gemini(
             Err(e) => {
                 let error_msg = e.to_string();
                 llm_logger::log_error("discovery", &error_msg);
-                window
-                    .emit(
-                        "discovery-error",
-                        DiscoveryErrorEvent {
-                            turn_id: turn_id.clone(),
-                            error: error_msg,
-                        },
-                    )
-                    .ok();
+                if let Err(err) = window.emit(
+                    "discovery-error",
+                    DiscoveryErrorEvent {
+                        turn_id: turn_id.clone(),
+                        error: error_msg,
+                    },
+                ) {
+                    eprintln!("Failed to emit discovery-error event: {}", err);
+                }
                 break;
             }
         };
@@ -573,14 +573,14 @@ async fn discover_resources_gemini(
                 match gemini_parse_sse_event(data) {
                     GeminiStreamEvent::ResponseComplete => {
                         llm_logger::log_response_complete("discovery", &full_response);
-                        window
-                            .emit(
-                                "discovery-done",
-                                DiscoveryDoneEvent {
-                                    turn_id: turn_id.clone(),
-                                },
-                            )
-                            .ok();
+                        if let Err(err) = window.emit(
+                            "discovery-done",
+                            DiscoveryDoneEvent {
+                                turn_id: turn_id.clone(),
+                            },
+                        ) {
+                            eprintln!("Failed to emit discovery-done event: {}", err);
+                        }
                         return Ok(());
                     }
                     GeminiStreamEvent::TextDelta { text: delta_text } => {
@@ -601,29 +601,29 @@ async fn discover_resources_gemini(
                             let items = extract_items_from_buffer(&new_text, &mut parse_state);
 
                             for item in items {
-                                window
-                                    .emit(
-                                        "discovery-item",
-                                        DiscoveryItemEvent {
-                                            turn_id: turn_id.clone(),
-                                            item,
-                                        },
-                                    )
-                                    .ok();
+                                if let Err(err) = window.emit(
+                                    "discovery-item",
+                                    DiscoveryItemEvent {
+                                        turn_id: turn_id.clone(),
+                                        item,
+                                    },
+                                ) {
+                                    eprintln!("Failed to emit discovery-item event: {}", err);
+                                }
                             }
                         }
                     }
                     GeminiStreamEvent::Error { message } => {
                         llm_logger::log_error("discovery", &message);
-                        window
-                            .emit(
-                                "discovery-error",
-                                DiscoveryErrorEvent {
-                                    turn_id: turn_id.clone(),
-                                    error: message.clone(),
-                                },
-                            )
-                            .ok();
+                        if let Err(err) = window.emit(
+                            "discovery-error",
+                            DiscoveryErrorEvent {
+                                turn_id: turn_id.clone(),
+                                error: message.clone(),
+                            },
+                        ) {
+                            eprintln!("Failed to emit discovery-error event: {}", err);
+                        }
                         return Err(message);
                     }
                     _ => {}
@@ -633,13 +633,13 @@ async fn discover_resources_gemini(
     }
 
     llm_logger::log_response_complete("discovery", &full_response);
-    window
-        .emit(
-            "discovery-done",
-            DiscoveryDoneEvent {
-                turn_id: turn_id.clone(),
-            },
-        )
-        .ok();
+    if let Err(err) = window.emit(
+        "discovery-done",
+        DiscoveryDoneEvent {
+            turn_id: turn_id.clone(),
+        },
+    ) {
+        eprintln!("Failed to emit discovery-done event: {}", err);
+    }
     Ok(())
 }

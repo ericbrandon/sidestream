@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../shared/ConfirmDialog';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useDiscoveryStore } from '../../stores/discoveryStore';
+import { logError } from '../../lib/logger';
 import type { ChatSession, ChatExportData, DiscoveryItem, Message } from '../../lib/types';
 
 export function SavedChatsSection() {
@@ -39,7 +40,7 @@ export function SavedChatsSection() {
 
       setShowDeleteConfirm(false);
     } catch (error) {
-      console.error('Failed to delete all chats:', error);
+      logError('SavedChatsSection.handleDeleteAllChats', error);
     } finally {
       setIsDeleting(false);
     }
@@ -73,7 +74,7 @@ export function SavedChatsSection() {
         setImportSuccess(`Exported ${sessions.length} chat${sessions.length !== 1 ? 's' : ''} successfully`);
       }
     } catch (error) {
-      console.error('Failed to export chats:', error);
+      logError('SavedChatsSection.handleExportChats', error);
       setImportError('Failed to export chats: ' + String(error));
     } finally {
       setIsExporting(false);
@@ -175,7 +176,7 @@ export function SavedChatsSection() {
 
       setImportSuccess(`Imported ${importedCount} chat${importedCount !== 1 ? 's' : ''} successfully`);
     } catch (error) {
-      console.error('Failed to import chats:', error);
+      logError('SavedChatsSection.handleImportChats', error);
       setImportError('Failed to import chats: ' + String(error));
     } finally {
       setIsImporting(false);

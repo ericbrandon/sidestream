@@ -79,7 +79,9 @@ pub async fn send_chat_message_openai(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                window.emit("chat-stream-cancelled", ()).ok();
+                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                    eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
+                }
                 return Ok(());
             }
             // Process next chunk from stream
@@ -99,7 +101,9 @@ pub async fn send_chat_message_openai(
                                     match openai_parse_sse_event(data) {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            window.emit("chat-stream-done", ()).ok();
+                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                                eprintln!("Failed to emit chat-stream-done event: {}", err);
+                                            }
                                             return Ok(());
                                         }
                                         OpenAIStreamEvent::TextDelta { text: t } => {
@@ -109,7 +113,9 @@ pub async fn send_chat_message_openai(
                                                 citations: None,
                                                 inline_citations: None,
                                             };
-                                            window.emit("chat-stream-delta", delta).ok();
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
                                         }
                                         OpenAIStreamEvent::TextDone { text: _, annotations } => {
                                             // Convert OpenAI citations to common format
@@ -130,7 +136,9 @@ pub async fn send_chat_message_openai(
                                                     citations: None,
                                                     inline_citations: Some(inline_citations),
                                                 };
-                                                window.emit("chat-stream-delta", delta).ok();
+                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                    eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                }
                                             }
                                         }
                                         OpenAIStreamEvent::WebSearchStarted => {
@@ -154,6 +162,8 @@ pub async fn send_chat_message_openai(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    window.emit("chat-stream-done", ()).ok();
+    if let Err(err) = window.emit("chat-stream-done", ()) {
+        eprintln!("Failed to emit chat-stream-done event: {}", err);
+    }
     Ok(())
 }

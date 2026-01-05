@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { logError } from '../lib/logger';
 import type { VoiceModel } from '../lib/types';
 
 export type VoiceInputState = 'idle' | 'recording' | 'transcribing' | 'error';
@@ -24,7 +25,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       // Call Rust backend to start recording via cpal
       await invoke('start_audio_recording');
     } catch (err) {
-      console.error('Failed to start recording:', err);
+      logError('useVoiceInput.startRecording', err);
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }
@@ -50,7 +51,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       setState('idle');
       return transcript;
     } catch (err) {
-      console.error('Transcription error:', err);
+      logError('useVoiceInput.stopRecording', err);
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
       return null;
@@ -63,7 +64,7 @@ export function useVoiceInput(): UseVoiceInputReturn {
       setState('idle');
       setError(null);
     } catch (err) {
-      console.error('Failed to cancel recording:', err);
+      logError('useVoiceInput.cancelRecording', err);
       // Still reset state even on error
       setState('idle');
     }

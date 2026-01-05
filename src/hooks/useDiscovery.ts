@@ -8,6 +8,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { getDiscoveryMode } from '../lib/discoveryModes';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
+import { logError } from '../lib/logger';
 import type { DiscoveryItem, Message } from '../lib/types';
 
 // Event payload types matching Rust structs
@@ -74,7 +75,7 @@ export function useDiscovery() {
         }
         messages = session.messages;
       } catch (error) {
-        console.error('Failed to load session for discovery:', error);
+        logError('useDiscovery.triggerDiscovery', error);
         return;
       }
     }
@@ -164,7 +165,7 @@ export function useDiscovery() {
         'discovery-error',
         (event) => {
           if (event.payload.turnId === turnId) {
-            console.error('Discovery error:', event.payload.error);
+            logError('useDiscovery.discoveryError', event.payload.error);
 
             // Complete background stream even on error
             backgroundStore.completeDiscoveryStream(turnId);
@@ -199,7 +200,7 @@ export function useDiscovery() {
         ...buildProviderThinkingParams(evaluatorLLM),
       });
     } catch (error) {
-      console.error('Discovery invoke error:', error);
+      logError('useDiscovery.invoke', error);
       backgroundStore.completeDiscoveryStream(turnId);
 
       const currentSessionId = useSessionStore.getState().activeSessionId;
