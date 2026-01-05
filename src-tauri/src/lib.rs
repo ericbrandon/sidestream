@@ -2,7 +2,11 @@ mod audio;
 mod commands;
 mod discovery;
 mod llm;
+mod llm_anthropic;
+mod llm_gemini;
 mod llm_logger;
+mod llm_openai;
+mod llm_voice;
 mod providers;
 
 use std::sync::Arc;

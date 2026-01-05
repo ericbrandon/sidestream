@@ -12,6 +12,9 @@ const PARENTHESIZED_LINK_REGEX = /\(\[([^\]]+)\]\(([^)]+)\)\)/g;
  * ChatGPT wraps citation links in parentheses: ([title](url))
  * This distinguishes them from regular markdown links.
  *
+ * Deduplicates by URL - only the first occurrence of each unique URL gets a citation marker.
+ * Subsequent occurrences are removed entirely to avoid duplicate badges.
+ *
  * Returns the modified content (with citations replaced by markers) and the extracted citations.
  */
 export function extractChatGPTCitations(
@@ -20,6 +23,7 @@ export function extractChatGPTCitations(
   existingCitationCount: number = 0
 ): { content: string; citations: InlineCitationType[] } {
   const citations: InlineCitationType[] = [];
+  const urlToIndex = new Map<string, number>();
 
   let result = content.replace(PARENTHESIZED_LINK_REGEX, (_match, title, url) => {
     if (!showCitations) {
@@ -27,8 +31,15 @@ export function extractChatGPTCitations(
       return '';
     }
 
-    // Create citation and return marker
+    // Check if we've already seen this URL
+    if (urlToIndex.has(url)) {
+      // Duplicate URL - remove this occurrence entirely (no marker)
+      return '';
+    }
+
+    // First occurrence of this URL - create citation and marker
     const index = existingCitationCount + citations.length;
+    urlToIndex.set(url, index);
     citations.push({
       url,
       title,
@@ -54,6 +65,9 @@ function snapToNextNewline(content: string, offset: number): number {
 
 /**
  * Insert citation markers into content at the specified character positions.
+ * Deduplicates globally by URL - only the first occurrence of each unique URL
+ * gets a citation marker. This prevents the same source from showing multiple badges.
+ *
  * Returns the modified content and a map of marker indices to citations.
  */
 export function insertCitationMarkers(
@@ -78,21 +92,40 @@ export function insertCitationMarkers(
     }
   }
 
-  // Sort by char_offset descending so we can insert from end to start
-  const sortedCitations = [...readyCitations].sort((a, b) => b.char_offset - a.char_offset);
+  // Sort by char_offset ascending so we process in document order
+  // This ensures "first occurrence" is determined by position in the text
+  const sortedByPosition = [...readyCitations].sort((a, b) => a.char_offset - b.char_offset);
+
+  // Deduplicate globally by URL - only keep the first occurrence of each URL
+  const seenUrls = new Set<string>();
+  const deduplicatedCitations: InlineCitationType[] = [];
+
+  for (const citation of sortedByPosition) {
+    if (!seenUrls.has(citation.url)) {
+      seenUrls.add(citation.url);
+      deduplicatedCitations.push(citation);
+    }
+  }
+
+  // Calculate snapped positions and sort descending for insertion
+  const citationsWithSnappedPos = deduplicatedCitations.map((citation) => {
+    const rawOffset = Math.min(citation.char_offset, content.length);
+    const snappedOffset = snapToNextNewline(content, rawOffset);
+    return { citation, snappedOffset };
+  });
+
+  // Sort by snapped offset descending so we can insert from end to start
+  citationsWithSnappedPos.sort((a, b) => b.snappedOffset - a.snappedOffset);
 
   const citationMap = new Map<number, InlineCitationType>();
   let result = content;
 
-  sortedCitations.forEach((citation) => {
-    const originalIndex = citations.indexOf(citation);
-    citationMap.set(originalIndex, citation);
+  citationsWithSnappedPos.forEach((item, idx) => {
+    const markerIndex = idx;
+    citationMap.set(markerIndex, item.citation);
 
-    const marker = `{{CITE:${originalIndex}}}`;
-    const rawOffset = Math.min(citation.char_offset, result.length);
-    const offset = snapToNextNewline(result, rawOffset);
-
-    result = result.slice(0, offset) + marker + result.slice(offset);
+    const marker = `{{CITE:${markerIndex}}}`;
+    result = result.slice(0, item.snappedOffset) + marker + result.slice(item.snappedOffset);
   });
 
   return { content: result, citationMap };
