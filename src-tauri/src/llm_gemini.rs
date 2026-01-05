@@ -65,6 +65,7 @@ pub async fn send_chat_message_gemini(
     let mut buffer = String::new();
     let mut full_response = String::new();
     let mut accumulated_text = String::new();
+    let mut accumulated_thinking = String::new();
 
     loop {
         tokio::select! {
@@ -109,14 +110,36 @@ pub async fn send_chat_message_gemini(
                                                 text: new_text,
                                                 citations: None,
                                                 inline_citations: None,
+                                                thinking: None,
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
                                             }
                                         }
                                     }
-                                    GeminiStreamEvent::ThinkingDelta => {
-                                        // Thinking content discarded
+                                    GeminiStreamEvent::ThinkingDelta { text: thinking_text } => {
+                                        // Gemini sends cumulative thinking text, need to diff
+                                        let new_thinking = if thinking_text.starts_with(&accumulated_thinking) {
+                                            thinking_text[accumulated_thinking.len()..].to_string()
+                                        } else {
+                                            // Reset - new thinking block
+                                            accumulated_thinking.clear();
+                                            thinking_text.clone()
+                                        };
+                                        accumulated_thinking = thinking_text;
+
+                                        // Emit thinking delta for ephemeral UI display
+                                        if !new_thinking.is_empty() {
+                                            let delta = StreamDelta {
+                                                text: String::new(),
+                                                citations: None,
+                                                inline_citations: None,
+                                                thinking: Some(new_thinking),
+                                            };
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
+                                        }
                                     }
                                     GeminiStreamEvent::GroundingMetadata { metadata } => {
                                         llm_logger::log_feature_used("chat", "Gemini Google Search");
@@ -137,6 +160,7 @@ pub async fn send_chat_message_gemini(
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
+                                                thinking: None,
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);

@@ -14,6 +14,8 @@ interface BackgroundChatStream {
   streamingContent: string;
   streamingCitations: Citation[];
   streamingInlineCitations: InlineCitation[];
+  streamingThinking: string;
+  thinkingStartTime: number | null;
   startedAt: Date;
 }
 
@@ -36,6 +38,7 @@ interface BackgroundStreamState {
   appendChatDelta: (turnId: string, text: string) => void;
   addChatCitations: (turnId: string, citations: Citation[]) => void;
   addChatInlineCitations: (turnId: string, citations: InlineCitation[]) => void;
+  appendChatThinking: (turnId: string, text: string) => void;
   completeChatStream: (turnId: string) => Promise<void>;
   cancelChatStream: (turnId: string) => void;
 
@@ -65,6 +68,8 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
         streamingContent: '',
         streamingCitations: [],
         streamingInlineCitations: [],
+        streamingThinking: '',
+        thinkingStartTime: null,
         startedAt: new Date(),
       });
       return { chatStreams: newStreams };
@@ -113,6 +118,22 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     });
   },
 
+  appendChatThinking: (turnId, text) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, {
+        ...stream,
+        streamingThinking: stream.streamingThinking + text,
+        // Record start time on first thinking delta
+        thinkingStartTime: stream.thinkingStartTime ?? Date.now(),
+      });
+      return { chatStreams: newStreams };
+    });
+  },
+
   completeChatStream: async (turnId) => {
     const stream = get().chatStreams.get(turnId);
     if (!stream) return;
@@ -133,6 +154,11 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     // Inline citations are kept as-is (position matters)
     const inlineCitations = stream.streamingInlineCitations;
 
+    // Calculate thinking duration if we had thinking content
+    const thinkingDurationMs = stream.streamingThinking && stream.thinkingStartTime
+      ? Date.now() - stream.thinkingStartTime
+      : undefined;
+
     // Create the final assistant message
     const assistantMessage: Message = {
       id: crypto.randomUUID(),
@@ -142,6 +168,8 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
       citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
       inlineCitations: inlineCitations.length > 0 ? inlineCitations : undefined,
       turnId: stream.turnId,
+      thinkingContent: stream.streamingThinking || undefined,
+      thinkingDurationMs,
     };
 
     const activeSessionId = useSessionStore.getState().activeSessionId;

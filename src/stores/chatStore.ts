@@ -11,6 +11,8 @@ interface ChatState {
   streamingContent: string;
   streamingCitations: Citation[]; // Legacy - kept for backward compatibility
   streamingInlineCitations: InlineCitation[]; // New inline citations with positions
+  streamingThinking: string; // Accumulated thinking/reasoning content
+  thinkingStartTime: number | null; // When thinking started (for duration calculation)
   sessionLoadedAt: number | null; // Timestamp to trigger scroll to bottom on session load
   pendingTurnId: string | null; // Track the turnId for the current turn
 
@@ -22,6 +24,7 @@ interface ChatState {
   updateStreamingContent: (content: string) => void;
   addStreamingCitations: (citations: Citation[]) => void;
   addStreamingInlineCitations: (citations: InlineCitation[]) => void;
+  appendStreamingThinking: (content: string) => void;
   finalizeStreaming: () => void;
   setInput: (value: string) => void;
   appendToInput: (text: string) => void;
@@ -37,7 +40,8 @@ interface ChatState {
     streamingContent: string,
     streamingCitations: Citation[],
     streamingInlineCitations: InlineCitation[],
-    pendingTurnId: string
+    pendingTurnId: string,
+    streamingThinking?: string
   ) => void;
   setPendingTurnId: (turnId: string | null) => void;
   clearStreamingContent: () => void;
@@ -53,6 +57,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streamingContent: '',
   streamingCitations: [],
   streamingInlineCitations: [],
+  streamingThinking: '',
+  thinkingStartTime: null,
   sessionLoadedAt: null,
   pendingTurnId: null,
   _focusChatInput: null,
@@ -83,6 +89,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingInlineCitations: [...state.streamingInlineCitations, ...citations],
     })),
 
+  appendStreamingThinking: (content) =>
+    set((state) => ({
+      streamingThinking: state.streamingThinking + content,
+      // Record start time on first thinking delta
+      thinkingStartTime: state.thinkingStartTime ?? Date.now(),
+    })),
+
   finalizeStreaming: () => {
     const state = useChatStore.getState();
     if (!state.streamingContent) return;
@@ -92,6 +105,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Inline citations are kept as-is (position matters, so no deduplication)
     const inlineCitations = state.streamingInlineCitations;
+
+    // Calculate thinking duration if we had thinking content
+    const thinkingDurationMs = state.streamingThinking && state.thinkingStartTime
+      ? Date.now() - state.thinkingStartTime
+      : undefined;
 
     set({
       messages: [
@@ -104,11 +122,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
           citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
           inlineCitations: inlineCitations.length > 0 ? inlineCitations : undefined,
           turnId: state.pendingTurnId ?? undefined,
+          thinkingContent: state.streamingThinking || undefined,
+          thinkingDurationMs,
         },
       ],
       streamingContent: '',
       streamingCitations: [],
       streamingInlineCitations: [],
+      streamingThinking: '',
+      thinkingStartTime: null,
       isStreaming: false,
     });
     useSessionStore.getState().markDirty();
@@ -149,6 +171,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingContent: '',
       streamingCitations: [],
       streamingInlineCitations: [],
+      streamingThinking: '',
+      thinkingStartTime: null,
       isStreaming: false,
       pendingTurnId: null,
     }),
@@ -161,12 +185,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingContent: '',
       streamingCitations: [],
       streamingInlineCitations: [],
+      streamingThinking: '',
+      thinkingStartTime: null,
       isStreaming: false,
       sessionLoadedAt: Date.now(),
       pendingTurnId: null,
     }),
 
-  loadSessionWithStreaming: (messages, streamingContent, streamingCitations, streamingInlineCitations, pendingTurnId) =>
+  loadSessionWithStreaming: (messages, streamingContent, streamingCitations, streamingInlineCitations, pendingTurnId, streamingThinking = '') =>
     set({
       messages,
       inputValue: '',
@@ -174,6 +200,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingContent,
       streamingCitations,
       streamingInlineCitations,
+      streamingThinking,
+      thinkingStartTime: streamingThinking ? Date.now() : null,
       isStreaming: true,
       sessionLoadedAt: Date.now(),
       pendingTurnId,
@@ -198,6 +226,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingContent: '',
         streamingCitations: [],
         streamingInlineCitations: [],
+        streamingThinking: '',
+        thinkingStartTime: null,
         isStreaming: false,
         pendingTurnId: null,
       });
@@ -206,6 +236,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingContent: '',
         streamingCitations: [],
         streamingInlineCitations: [],
+        streamingThinking: '',
+        thinkingStartTime: null,
         isStreaming: false,
         pendingTurnId: null,
       });

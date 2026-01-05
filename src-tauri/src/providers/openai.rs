@@ -64,6 +64,8 @@ pub enum OpenAIStreamEvent {
         text: String,
         annotations: Vec<UrlCitation>,
     },
+    /// Reasoning summary text (for ephemeral thinking UI)
+    ReasoningSummary { text: String },
     /// Web search started
     WebSearchStarted,
     /// Response completed
@@ -191,10 +193,12 @@ impl OpenAIClient {
             "stream": true
         });
 
-        // Add reasoning effort if enabled (for reasoning models like o3, o4-mini)
+        // Add reasoning effort if enabled (for reasoning models like o3, o4-mini, gpt-5)
+        // Include summary: "auto" to get reasoning summaries for ephemeral thinking UI
         if let Some(effort) = &config.reasoning_effort {
             body["reasoning"] = serde_json::json!({
-                "effort": effort.as_str()
+                "effort": effort.as_str(),
+                "summary": "auto"
             });
         }
 
@@ -311,11 +315,41 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
             OpenAIStreamEvent::TextDone { text, annotations }
         }
 
-        // Web search item added
+        // Output item added (web search or reasoning)
         "response.output_item.added" => {
             let item_type = parsed["item"]["type"].as_str().unwrap_or("");
-            if item_type == "web_search_call" {
-                OpenAIStreamEvent::WebSearchStarted
+            match item_type {
+                "web_search_call" => OpenAIStreamEvent::WebSearchStarted,
+                "reasoning" => {
+                    // Extract reasoning summary text from the summary array
+                    // Format: {"type": "reasoning", "summary": [{"type": "summary_text", "text": "..."}]}
+                    if let Some(summary_arr) = parsed["item"]["summary"].as_array() {
+                        let summary_text: String = summary_arr
+                            .iter()
+                            .filter_map(|s| {
+                                if s["type"].as_str() == Some("summary_text") {
+                                    s["text"].as_str().map(|t| t.to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if !summary_text.is_empty() {
+                            return OpenAIStreamEvent::ReasoningSummary { text: summary_text };
+                        }
+                    }
+                    OpenAIStreamEvent::Unknown
+                }
+                _ => OpenAIStreamEvent::Unknown,
+            }
+        }
+
+        // Reasoning summary delta (streaming reasoning summaries)
+        "response.reasoning_summary_text.delta" => {
+            let text = parsed["delta"].as_str().unwrap_or("").to_string();
+            if !text.is_empty() {
+                OpenAIStreamEvent::ReasoningSummary { text }
             } else {
                 OpenAIStreamEvent::Unknown
             }

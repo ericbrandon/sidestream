@@ -6,6 +6,7 @@ import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { Message as MessageType, InlineCitation as InlineCitationType } from '../../lib/types';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
 import { InlineCitation } from './InlineCitation';
+import { ThinkingBadge } from './ThinkingBadge';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
@@ -210,6 +211,14 @@ export function Message({ message, onFork }: MessageProps) {
               </span>
             </div>
           </div>
+        )}
+
+        {/* Thinking badge for assistant messages with thinking content */}
+        {!isUser && message.thinkingContent && (
+          <ThinkingBadge
+            content={message.thinkingContent}
+            durationMs={message.thinkingDurationMs}
+          />
         )}
 
         {/* Message content */}

@@ -127,6 +127,7 @@ pub async fn send_voice_message_impl(
                                                                 text: clean_start.to_string(),
                                                                 citations: None,
                                                                 inline_citations: None,
+                                                                thinking: None,
                                                             };
                                                             window.emit("chat-stream-delta", delta).ok();
                                                         }
@@ -141,12 +142,15 @@ pub async fn send_voice_message_impl(
                                                     text: new_text,
                                                     citations: None,
                                                     inline_citations: None,
+                                                    thinking: None,
                                                 };
                                                 window.emit("chat-stream-delta", delta).ok();
                                             }
                                         }
                                     }
-                                    GeminiStreamEvent::ThinkingDelta => {}
+                                    GeminiStreamEvent::ThinkingDelta { text: _ } => {
+                                        // Voice messages don't display thinking UI
+                                    }
                                     GeminiStreamEvent::GroundingMetadata { metadata } => {
                                         llm_logger::log_feature_used("voice-chat", "Gemini Google Search");
                                         let gemini_citations = extract_inline_citations_from_grounding(&metadata, &full_response);
@@ -164,6 +168,7 @@ pub async fn send_voice_message_impl(
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
+                                                thinking: None,
                                             };
                                             window.emit("chat-stream-delta", delta).ok();
                                         }

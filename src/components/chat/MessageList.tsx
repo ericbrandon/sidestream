@@ -3,9 +3,10 @@ import { useChatStore } from '../../stores/chatStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { Message } from './Message';
 import { StreamingMessage } from './StreamingMessage';
+import { ThinkingIndicator } from './ThinkingIndicator';
 
 export function MessageList() {
-  const { messages, isStreaming, streamingContent, streamingInlineCitations, sessionLoadedAt } = useChatStore();
+  const { messages, isStreaming, streamingContent, streamingThinking, streamingInlineCitations, sessionLoadedAt } = useChatStore();
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
@@ -26,7 +27,7 @@ export function MessageList() {
       const neededHeight = Math.max(0, containerHeight - lastUserMessage.offsetHeight - contentBelowMessage);
       spacer.style.height = `${neededHeight}px`;
     }
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, streamingThinking]);
 
   // Scroll to bottom when a session is loaded
   useEffect(() => {
@@ -88,11 +89,21 @@ export function MessageList() {
           />
         </div>
       ))}
-      {isStreaming && streamingContent && (
-        <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
+      {/* Show thinking indicator when model is thinking */}
+      {isStreaming && streamingThinking && !streamingContent && (
+        <ThinkingIndicator content={streamingThinking} />
       )}
-      {/* Show pulsing dots when waiting for first response (streaming but no content yet) */}
-      {isStreaming && !streamingContent && (
+      {/* Show collapsed thinking + streaming content */}
+      {isStreaming && streamingContent && (
+        <>
+          {streamingThinking && (
+            <ThinkingIndicator content={streamingThinking} isThinkingComplete />
+          )}
+          <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
+        </>
+      )}
+      {/* Show pulsing dots when waiting for first response (streaming but no content or thinking yet) */}
+      {isStreaming && !streamingContent && !streamingThinking && (
         <div className="flex justify-start mb-4">
           <div className="max-w-[85%] p-4">
             <div className="flex items-center gap-1">

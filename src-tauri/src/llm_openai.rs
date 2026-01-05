@@ -112,6 +112,19 @@ pub async fn send_chat_message_openai(
                                                 text: t,
                                                 citations: None,
                                                 inline_citations: None,
+                                                thinking: None,
+                                            };
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
+                                        }
+                                        OpenAIStreamEvent::ReasoningSummary { text: thinking_text } => {
+                                            // Emit reasoning summary as thinking delta for ephemeral UI
+                                            let delta = StreamDelta {
+                                                text: String::new(),
+                                                citations: None,
+                                                inline_citations: None,
+                                                thinking: Some(thinking_text),
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -135,6 +148,7 @@ pub async fn send_chat_message_openai(
                                                     text: String::new(),
                                                     citations: None,
                                                     inline_citations: Some(inline_citations),
+                                                    thinking: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);

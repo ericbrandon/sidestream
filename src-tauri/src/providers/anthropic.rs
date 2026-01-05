@@ -43,7 +43,6 @@ pub enum AnthropicStreamEvent {
     },
     ContentBlockDelta {
         text: Option<String>,
-        #[allow(dead_code)]
         thinking: Option<String>,
         citation: Option<Citation>, // citations_delta events
     },

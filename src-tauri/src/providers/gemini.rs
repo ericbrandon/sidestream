@@ -66,8 +66,8 @@ pub struct VoiceChatRequestConfig {
 pub enum GeminiStreamEvent {
     /// Text delta - incremental text content
     TextDelta { text: String },
-    /// Thinking content (discarded)
-    ThinkingDelta,
+    /// Thinking content delta - for ephemeral UI display
+    ThinkingDelta { text: String },
     /// Response complete
     ResponseComplete,
     /// Grounding metadata (search results)
@@ -228,15 +228,22 @@ impl GeminiClient {
 
         // Add thinking configuration if enabled
         // Both Gemini 2.5 and 3 use nested thinkingConfig structure
+        // Include includeThoughts: true to receive thinking summaries in the response
         if let Some(thinking) = &config.thinking_config {
             let thinking_config = match thinking {
                 // Gemini 2.5: uses thinkingBudget (token count)
                 ThinkingConfig::Budget(budget) => {
-                    serde_json::json!({"thinkingBudget": budget})
+                    serde_json::json!({
+                        "thinkingBudget": budget,
+                        "includeThoughts": true
+                    })
                 }
                 // Gemini 3: uses thinkingLevel ("LOW", "HIGH", etc.)
                 ThinkingConfig::Level(level) => {
-                    serde_json::json!({"thinkingLevel": level.as_str()})
+                    serde_json::json!({
+                        "thinkingLevel": level.as_str(),
+                        "includeThoughts": true
+                    })
                 }
             };
             body["generationConfig"] = serde_json::json!({
@@ -271,6 +278,7 @@ impl GeminiClient {
 
         // Add thinking configuration if enabled
         // Both Gemini 2.5 and 3 use nested thinkingConfig structure
+        // Note: We don't include thinking summaries for discovery since it's internal
         if let Some(thinking) = &config.thinking_config {
             let thinking_config = match thinking {
                 // Gemini 2.5: uses thinkingBudget (token count)
@@ -378,13 +386,20 @@ impl GeminiClient {
         });
 
         // Add thinking configuration if enabled
+        // Include thinking summaries for voice chat (user-facing)
         if let Some(thinking) = &config.thinking_config {
             let thinking_config = match thinking {
                 ThinkingConfig::Budget(budget) => {
-                    serde_json::json!({"thinkingBudget": budget})
+                    serde_json::json!({
+                        "thinkingBudget": budget,
+                        "includeThoughts": true
+                    })
                 }
                 ThinkingConfig::Level(level) => {
-                    serde_json::json!({"thinkingLevel": level.as_str()})
+                    serde_json::json!({
+                        "thinkingLevel": level.as_str(),
+                        "includeThoughts": true
+                    })
                 }
             };
             body["generationConfig"] = serde_json::json!({
@@ -596,8 +611,14 @@ pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
                 if let Some(parts) = content["parts"].as_array() {
                     // First pass: look for non-thinking text parts
                     for part in parts {
-                        // Check if this is a thinking part (skip it)
+                        // Check if this is a thinking part
                         if part.get("thought").and_then(|v| v.as_bool()) == Some(true) {
+                            // Extract thinking text for ephemeral UI display
+                            if let Some(thinking_text) = part["text"].as_str() {
+                                return GeminiStreamEvent::ThinkingDelta {
+                                    text: thinking_text.to_string(),
+                                };
+                            }
                             continue;
                         }
                         // Regular text part
@@ -606,14 +627,6 @@ pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
                                 text: text.to_string(),
                             };
                         }
-                    }
-
-                    // If we only found thinking parts, return ThinkingDelta
-                    let has_thinking = parts.iter().any(|p| {
-                        p.get("thought").and_then(|v| v.as_bool()) == Some(true)
-                    });
-                    if has_thinking {
-                        return GeminiStreamEvent::ThinkingDelta;
                     }
                 }
             }

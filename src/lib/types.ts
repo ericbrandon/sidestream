@@ -38,6 +38,8 @@ export interface Message {
     sourceUrl: string;
   };
   turnId?: string; // Associates user+assistant messages within a turn
+  thinkingContent?: string; // Persisted thinking/reasoning content for collapsed display
+  thinkingDurationMs?: number; // How long the model spent thinking
 }
 
 // Discovery item types
@@ -138,6 +140,7 @@ export interface StreamDelta {
   text: string;
   citations?: Citation[];
   inline_citations?: InlineCitation[];
+  thinking?: string;
 }
 
 // Discovery mode type - re-exported from discoveryModes for convenience

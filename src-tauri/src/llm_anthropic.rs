@@ -122,6 +122,7 @@ pub async fn send_chat_message_anthropic(
                                                                 text: "\n\n".to_string(),
                                                                 citations: None,
                                                                 inline_citations: None,
+                                                                thinking: None,
                                                             };
                                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -134,13 +135,26 @@ pub async fn send_chat_message_anthropic(
                                                 _ => {}
                                             }
                                         }
-                                        AnthropicStreamEvent::ContentBlockDelta { text, thinking: _, citation } => {
+                                        AnthropicStreamEvent::ContentBlockDelta { text, thinking, citation } => {
                                             if let Some(t) = text {
                                                 full_response.push_str(&t);
                                                 let delta = StreamDelta {
                                                     text: t,
                                                     citations: None,
                                                     inline_citations: None,
+                                                    thinking: None,
+                                                };
+                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                    eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                }
+                                            }
+                                            // Emit thinking deltas for ephemeral UI display
+                                            if let Some(thinking_text) = thinking {
+                                                let delta = StreamDelta {
+                                                    text: String::new(),
+                                                    citations: None,
+                                                    inline_citations: None,
+                                                    thinking: Some(thinking_text),
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -159,12 +173,12 @@ pub async fn send_chat_message_anthropic(
                                                     text: String::new(),
                                                     citations: None,
                                                     inline_citations: Some(vec![inline_citation]),
+                                                    thinking: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
                                                 }
                                             }
-                                            // Thinking deltas are logged but not displayed
                                         }
                                         AnthropicStreamEvent::ContentBlockStop => {
                                             previous_block_type = current_block_type.take();

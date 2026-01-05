@@ -46,6 +46,7 @@ pub struct StreamDelta {
     pub text: String,
     pub citations: Option<Vec<Citation>>,
     pub inline_citations: Option<Vec<InlineCitation>>,
+    pub thinking: Option<String>,
 }
 
 /// Determine which provider to use based on model name

@@ -20,10 +20,12 @@ export function useChat() {
     updateStreamingContent,
     addStreamingCitations,
     addStreamingInlineCitations,
+    appendStreamingThinking,
     clearInput,
     clearAttachments,
     setStreaming,
     streamingContent,
+    streamingThinking,
     isStreaming,
     setPendingTurnId,
     clearStreamingContent,
@@ -57,6 +59,9 @@ export function useChat() {
           if (delta.inline_citations && delta.inline_citations.length > 0) {
             addStreamingInlineCitations(delta.inline_citations);
           }
+          if (delta.thinking) {
+            appendStreamingThinking(delta.thinking);
+          }
           return;
         }
 
@@ -69,6 +74,9 @@ export function useChat() {
         }
         if (delta.inline_citations && delta.inline_citations.length > 0) {
           backgroundStore.addChatInlineCitations(turnId!, delta.inline_citations);
+        }
+        if (delta.thinking) {
+          backgroundStore.appendChatThinking(turnId!, delta.thinking);
         }
 
         // Only update live UI if user is still viewing this session
@@ -83,6 +91,9 @@ export function useChat() {
           }
           if (delta.inline_citations && delta.inline_citations.length > 0) {
             addStreamingInlineCitations(delta.inline_citations);
+          }
+          if (delta.thinking) {
+            appendStreamingThinking(delta.thinking);
           }
         }
       });
@@ -145,7 +156,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, triggerDiscovery, clearStreamingContent]);
+  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, triggerDiscovery, clearStreamingContent]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -282,6 +293,7 @@ export function useChat() {
     cancelStream,
     isStreaming,
     streamingContent,
+    streamingThinking,
   };
 }
 
