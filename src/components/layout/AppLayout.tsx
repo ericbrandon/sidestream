@@ -1,7 +1,5 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { LeftPane } from './LeftPane';
 import { RightPane } from './RightPane';
 import { PrintMenu } from './PrintMenu';
@@ -14,18 +12,9 @@ import { useChatStore } from '../../stores/chatStore';
 import { useDiscoveryStore } from '../../stores/discoveryStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { Tooltip } from '../shared/Tooltip';
-import { extractUsedCSS, getBaseExportStyles } from '../../lib/cssUtils';
-import type { ChatSession, ChatExportData, ApiKeysConfig } from '../../lib/types';
-import { buildSessionSettings } from '../../lib/sessionHelpers';
-
-const MIN_RIGHT_PANE_WIDTH = 200;
-const MIN_LEFT_PANE_WIDTH = 300;
-const DEFAULT_RIGHT_PANE_RATIO = 0.3; // 30% of container width
-const DIVIDER_WIDTH = 4;
-
-// Left sidebar (saved chats) constants
-const MIN_SIDEBAR_WIDTH = 150;
-const DEFAULT_SIDEBAR_RATIO = 0.15; // 15% of container width
+import { useResizablePanes } from '../../hooks/useResizablePanes';
+import { printChat, exportToHtml, exportToJson } from '../../lib/exportUtils';
+import type { ApiKeysConfig } from '../../lib/types';
 
 export function AppLayout() {
   const { isSettingsOpen, closeSettings, openSettings, setConfiguredProviders } =
@@ -44,21 +33,16 @@ export function AppLayout() {
     return allDiscoveryItems.filter(item => item.sessionId === activeSessionId);
   }, [allDiscoveryItems, activeSessionId]);
 
-  // Left sidebar (saved chats) resizable state - stored as a ratio (0-1) of container width
-  const [sidebarRatio, setSidebarRatio] = useState(() => {
-    const saved = localStorage.getItem('sidebarRatio');
-    return saved ? parseFloat(saved) : DEFAULT_SIDEBAR_RATIO;
-  });
-  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(MIN_SIDEBAR_WIDTH);
-
-  // Resizable pane state - stored as a ratio (0-1) of container width
-  const [rightPaneRatio, setRightPaneRatio] = useState(() => {
-    const saved = localStorage.getItem('rightPaneRatio');
-    return saved ? parseFloat(saved) : DEFAULT_RIGHT_PANE_RATIO;
-  });
-  const [isResizing, setIsResizing] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Use the extracted resize hook
+  const {
+    containerRef,
+    sidebarWidth,
+    rightPaneWidth,
+    isResizing,
+    isResizingSidebar,
+    startResizing,
+    startResizingSidebar,
+  } = useResizablePanes({ isSidebarOpen });
 
   // Check for API keys on startup
   useEffect(() => {
@@ -89,222 +73,20 @@ export function AppLayout() {
     openSettings(true); // true = highlightApiKeys
   }, [openSettings]);
 
-  // Calculate actual pixel widths from ratios, respecting min constraints and each other
-  const getWidths = useCallback(() => {
-    if (!containerRef.current) return { sidebar: MIN_SIDEBAR_WIDTH, rightPane: MIN_RIGHT_PANE_WIDTH };
-
-    const containerWidth = containerRef.current.getBoundingClientRect().width;
-
-    // Calculate target widths from stored ratios
-    const targetSidebar = containerWidth * sidebarRatio;
-    const targetRightPane = containerWidth * rightPaneRatio;
-
-    if (!isSidebarOpen) {
-      // Sidebar hidden: right pane and middle pane share the freed space proportionally
-      // Calculate what the middle pane width would be if sidebar were open
-      const middleIfOpen = containerWidth - targetSidebar - targetRightPane - (2 * DIVIDER_WIDTH);
-      const nonSidebarTotal = middleIfOpen + targetRightPane;
-
-      // Now distribute all available space (container - 1 divider) between middle and right
-      // proportionally to their sizes when sidebar is open
-      const availableSpace = containerWidth - DIVIDER_WIDTH;
-      const rightProportion = nonSidebarTotal > 0 ? targetRightPane / nonSidebarTotal : 0.5;
-      const expandedRightPane = availableSpace * rightProportion;
-
-      // Clamp to constraints
-      const maxRightPane = containerWidth - MIN_LEFT_PANE_WIDTH - DIVIDER_WIDTH;
-      const finalRightPane = Math.max(MIN_RIGHT_PANE_WIDTH, Math.min(maxRightPane, expandedRightPane));
-
-      return {
-        sidebar: MIN_SIDEBAR_WIDTH,
-        rightPane: finalRightPane
-      };
-    }
-
-    // Sidebar is open: all three panes visible
-    // Available space for sidebar + right pane (middle pane gets the rest)
-    const totalSideSpace = containerWidth - MIN_LEFT_PANE_WIDTH - (2 * DIVIDER_WIDTH);
-
-    let finalSidebar = Math.max(MIN_SIDEBAR_WIDTH, targetSidebar);
-    let finalRightPane = Math.max(MIN_RIGHT_PANE_WIDTH, targetRightPane);
-
-    // Check if we exceed available space and need to scale down
-    const actualTotal = finalSidebar + finalRightPane;
-    if (actualTotal > totalSideSpace) {
-      // Scale down proportionally from what's above minimum
-      const excess = actualTotal - totalSideSpace;
-      const sidebarAboveMin = finalSidebar - MIN_SIDEBAR_WIDTH;
-      const rightAboveMin = finalRightPane - MIN_RIGHT_PANE_WIDTH;
-      const totalAboveMin = sidebarAboveMin + rightAboveMin;
-
-      if (totalAboveMin > 0) {
-        finalSidebar -= excess * (sidebarAboveMin / totalAboveMin);
-        finalRightPane -= excess * (rightAboveMin / totalAboveMin);
-      } else {
-        // Both at minimum, just clamp
-        finalSidebar = MIN_SIDEBAR_WIDTH;
-        finalRightPane = Math.max(MIN_RIGHT_PANE_WIDTH, totalSideSpace - MIN_SIDEBAR_WIDTH);
-      }
-    }
-
-    return { sidebar: finalSidebar, rightPane: finalRightPane };
-  }, [sidebarRatio, rightPaneRatio, isSidebarOpen]);
-
-  const [rightPaneWidth, setRightPaneWidth] = useState(MIN_RIGHT_PANE_WIDTH);
-
-  // Update pixel widths on mount and when ratio or container changes
-  useEffect(() => {
-    const updateWidths = () => {
-      const widths = getWidths();
-      setSidebarWidth(widths.sidebar);
-      setRightPaneWidth(widths.rightPane);
-    };
-    updateWidths();
-    window.addEventListener('resize', updateWidths);
-    return () => window.removeEventListener('resize', updateWidths);
-  }, [getWidths]);
-
-  // Handle resize - convert pixel drag to ratio
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing || !containerRef.current) return;
-
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const newWidth = containerRect.right - e.clientX;
-
-    // Account for sidebar width when calculating max right pane width
-    const currentSidebarSpace = isSidebarOpen ? sidebarWidth + DIVIDER_WIDTH : 0;
-    const maxRightPaneWidth = containerRect.width - currentSidebarSpace - MIN_LEFT_PANE_WIDTH - DIVIDER_WIDTH;
-    const clampedWidth = Math.max(MIN_RIGHT_PANE_WIDTH, Math.min(maxRightPaneWidth, newWidth));
-
-    // Convert to ratio and update both ratio and pixel width
-    const newRatio = clampedWidth / containerRect.width;
-    setRightPaneRatio(newRatio);
-    setRightPaneWidth(clampedWidth);
-  }, [isResizing, isSidebarOpen, sidebarWidth]);
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false);
-    localStorage.setItem('rightPaneRatio', rightPaneRatio.toString());
-  }, [rightPaneRatio]);
-
-  // Sidebar resize handlers
-  const handleSidebarMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizingSidebar || !containerRef.current) return;
-
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const newWidth = e.clientX - containerRect.left;
-
-    // Account for right pane width when calculating max sidebar width
-    const maxSidebarWidth = containerRect.width - rightPaneWidth - MIN_LEFT_PANE_WIDTH - (2 * DIVIDER_WIDTH);
-    const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxSidebarWidth, newWidth));
-
-    // Convert to ratio and update both ratio and pixel width
-    const newRatio = clampedWidth / containerRect.width;
-    setSidebarRatio(newRatio);
-    setSidebarWidth(clampedWidth);
-  }, [isResizingSidebar, rightPaneWidth]);
-
-  const handleSidebarMouseUp = useCallback(() => {
-    setIsResizingSidebar(false);
-    localStorage.setItem('sidebarRatio', sidebarRatio.toString());
-  }, [sidebarRatio]);
-
-  useEffect(() => {
-    if (isResizingSidebar) {
-      document.addEventListener('mousemove', handleSidebarMouseMove);
-      document.addEventListener('mouseup', handleSidebarMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleSidebarMouseMove);
-      document.removeEventListener('mouseup', handleSidebarMouseUp);
-      if (!isResizing) {
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      }
-    };
-  }, [isResizingSidebar, handleSidebarMouseMove, handleSidebarMouseUp, isResizing]);
-
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing, handleMouseMove, handleMouseUp]);
-
-  // Generate HTML content for export/print
-  // When expandAll is true, all collapsible chips will be expanded in the output
-  const generateExportHtml = (expandAll: boolean = false) => {
-    const selector = expandAll ? '.printable-chat-wrapper' : '.printable-chat-collapsed';
-    const printableContent = document.querySelector(selector);
-    if (!printableContent) return null;
-
-    const usedStyles = extractUsedCSS(printableContent);
-    const baseStyles = getBaseExportStyles();
-
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Chat Export</title>
-          <style>${usedStyles}</style>
-          <style>${baseStyles}</style>
-        </head>
-        <body>
-          ${printableContent.innerHTML}
-        </body>
-      </html>
-    `;
-  };
-
+  // Export handlers using extracted utilities
   const handlePrint = async () => {
     if (messages.length === 0) return;
-
-    // Set document title to suggested PDF filename (print dialog uses this)
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    document.title = `SidestreamChat_${timestamp}`;
-
     try {
-      await invoke('print_webview');
+      await printChat();
     } catch (error) {
-      console.error('Print failed:', error);
       alert(`Print failed: ${error}`);
     }
   };
 
   const handleHtmlExport = async () => {
     if (messages.length === 0) return;
-
-    const htmlContent = generateExportHtml();
-    if (!htmlContent) {
-      alert('No printable content found.');
-      return;
-    }
-
     try {
-      // Show save dialog
-      const filePath = await save({
-        defaultPath: `sidestream-chat-${new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '')}.html`,
-        filters: [{ name: 'HTML', extensions: ['html'] }],
-      });
-
-      if (filePath) {
-        // Write the file
-        await writeTextFile(filePath, htmlContent);
-      }
+      await exportToHtml();
     } catch (error) {
       alert(`Export failed: ${error}`);
     }
@@ -312,49 +94,14 @@ export function AppLayout() {
 
   const handleJsonExport = async () => {
     if (messages.length === 0 || !activeSessionId) return;
-
     try {
-      // Find the session metadata
-      const sessionMeta = sessionMetas.find((m) => m.id === activeSessionId);
-
-      // Build the session object
-      const firstUserMessage = messages.find((m) => m.role === 'user');
-      const title = sessionMeta?.title || (firstUserMessage ? firstUserMessage.content.replace(/\n/g, ' ').trim() : 'Chat Export');
-
-      const session: ChatSession = {
-        id: activeSessionId,
-        title,
-        createdAt: sessionMeta?.updatedAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        messages: messages.map((msg) => ({
-          ...msg,
-          timestamp: msg.timestamp instanceof Date ? msg.timestamp : new Date(msg.timestamp),
-        })),
-        discoveryItems: discoveryItems.map((item) => ({
-          ...item,
-          timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
-        })),
-        settings: buildSessionSettings(settingsStore),
-      };
-
-      const exportData: ChatExportData = {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        sessions: [session],
-      };
-
-      const jsonContent = JSON.stringify(exportData, null, 2);
-
-      // Generate filename with timestamp
-      const timestamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(':', '');
-      const filePath = await save({
-        defaultPath: `sidestream-chat-${timestamp}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
+      await exportToJson({
+        messages,
+        discoveryItems,
+        activeSessionId,
+        sessionMetas,
+        settingsStore,
       });
-
-      if (filePath) {
-        await writeTextFile(filePath, jsonContent);
-      }
     } catch (error) {
       alert(`Export failed: ${error}`);
     }
@@ -528,7 +275,7 @@ export function AppLayout() {
               className={`w-1 cursor-col-resize hover:bg-blue-400 transition-colors flex-shrink-0 ${
                 isResizingSidebar ? 'bg-blue-500' : 'bg-stone-200 dark:bg-gray-700'
               }`}
-              onMouseDown={() => setIsResizingSidebar(true)}
+              onMouseDown={startResizingSidebar}
             />
           )}
 
@@ -542,7 +289,7 @@ export function AppLayout() {
             className={`w-1 cursor-col-resize hover:bg-blue-400 transition-colors flex-shrink-0 ${
               isResizing ? 'bg-blue-500' : 'bg-stone-200 dark:bg-gray-700'
             }`}
-            onMouseDown={() => setIsResizing(true)}
+            onMouseDown={startResizing}
           />
 
           {/* Right Pane - Discovery */}
