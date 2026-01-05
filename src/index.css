@@ -137,8 +137,9 @@
     text-rendering: auto;
   }
 
-  /* Linux: use antialiased for better Noto Sans rendering */
+  /* Linux: prioritize bundled Noto Sans (which has all weights) over system fonts */
   html.platform-linux body {
+    font-family: 'Noto Sans', 'DejaVu Sans', Roboto, Oxygen, Ubuntu, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
