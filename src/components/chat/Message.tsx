@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import type { Message as MessageType, InlineCitation as InlineCitationType } from '../../lib/types';
@@ -223,7 +225,11 @@ export function Message({ message, onFork }: MessageProps) {
 
         {/* Message content */}
         <div className="prose prose-sm prose-tight max-w-none prose-gray dark:prose-invert font-scalable">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={markdownComponents}
+          >
             {processedContent}
           </ReactMarkdown>
         </div>

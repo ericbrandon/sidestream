@@ -1,5 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import type { Message, DiscoveryItem } from '../../lib/types';
 import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
@@ -48,7 +50,10 @@ export function PrintableChat({ messages, discoveryItems, expandAll = false }: P
           {/* User message */}
           <div className="user-message bg-amber-50 rounded-lg p-4 mb-4">
             <div className="prose prose-base max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+              >
                 {turn.userMessage.content}
               </ReactMarkdown>
             </div>
@@ -58,7 +63,10 @@ export function PrintableChat({ messages, discoveryItems, expandAll = false }: P
           {turn.assistantMessage && (
             <div className="assistant-message bg-gray-50 rounded-lg p-4 mb-4">
               <div className="prose prose-base max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
                   {turn.assistantMessage.content}
                 </ReactMarkdown>
               </div>

@@ -1,6 +1,8 @@
 import { useMemo, useRef } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
@@ -148,7 +150,11 @@ export function StreamingMessage({ content, inlineCitations = [] }: StreamingMes
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] p-4">
         <div className="prose prose-sm prose-tight max-w-none prose-gray dark:prose-invert font-scalable">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+            components={markdownComponents}
+          >
             {processedContent}
           </ReactMarkdown>
         </div>

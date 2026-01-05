@@ -10,7 +10,7 @@ import { buildProviderThinkingParams } from '../lib/llmParameters';
 import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
 import type { Message, ContentBlock, StreamDelta } from '../lib/types';
 
-const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand.`;
+const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
 export function useChat() {
   const {
