@@ -47,6 +47,9 @@ fn get_machine_id() -> String {
     // Windows: Use MachineGuid from registry
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
         if let Ok(output) = std::process::Command::new("reg")
             .args([
                 "query",
@@ -54,6 +57,7 @@ fn get_machine_id() -> String {
                 "/v",
                 "MachineGuid",
             ])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
         {
             let output_str = String::from_utf8_lossy(&output.stdout);
