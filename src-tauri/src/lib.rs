@@ -8,6 +8,7 @@ mod llm_logger;
 mod llm_openai;
 mod llm_voice;
 mod providers;
+mod secure_storage;
 
 use std::sync::Arc;
 

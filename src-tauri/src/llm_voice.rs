@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
-use crate::commands::get_api_key;
+use crate::commands::get_api_key_async;
 use crate::llm::{ChatMessage, StreamDelta};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
@@ -33,7 +33,7 @@ pub async fn send_voice_message_impl(
     web_search_enabled: bool,
     gemini_thinking_level: Option<String>,
 ) -> Result<(), String> {
-    let api_key = get_api_key(app, "google")?;
+    let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
 
     // Build messages for Gemini (previous conversation)
@@ -220,7 +220,7 @@ pub async fn transcribe_audio_gemini_impl(
     app: &tauri::AppHandle,
     audio_base64: String,
 ) -> Result<String, String> {
-    let api_key = get_api_key(app, "google")?;
+    let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
 
     // Use a fast model for transcription

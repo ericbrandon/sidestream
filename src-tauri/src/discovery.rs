@@ -2,7 +2,7 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
-use crate::commands::get_api_key;
+use crate::commands::get_api_key_async;
 use crate::llm_logger;
 use crate::providers::anthropic::{
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
@@ -239,7 +239,7 @@ async fn discover_resources_anthropic(
     extended_thinking_enabled: Option<bool>,
     thinking_budget: Option<u32>,
 ) -> Result<(), String> {
-    let api_key = get_api_key(app, "anthropic")?;
+    let api_key = get_api_key_async(app, "anthropic").await?;
     let client = AnthropicClient::new(api_key);
 
     // Build request using provider
@@ -366,7 +366,7 @@ async fn discover_resources_openai(
     system_prompt: String,
     reasoning_level: Option<String>,
 ) -> Result<(), String> {
-    let api_key = get_api_key(app, "openai")?;
+    let api_key = get_api_key_async(app, "openai").await?;
     let client = OpenAIClient::new(api_key);
 
     // Build request using provider
@@ -503,7 +503,7 @@ async fn discover_resources_gemini(
     system_prompt: String,
     gemini_thinking_level: Option<String>,
 ) -> Result<(), String> {
-    let api_key = get_api_key(app, "google")?;
+    let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
 
     // Build request using provider - use provided thinking level or default to "low"

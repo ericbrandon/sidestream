@@ -2,7 +2,7 @@ use futures::StreamExt;
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
-use crate::commands::get_api_key;
+use crate::commands::get_api_key_async;
 use crate::llm::{ChatMessage, StreamDelta};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
@@ -24,7 +24,7 @@ pub async fn send_chat_message_openai(
     reasoning_level: Option<String>,
     session_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = get_api_key(app, "openai")?;
+    let api_key = get_api_key_async(app, "openai").await?;
     let client = OpenAIClient::new(api_key);
 
     // Build messages for OpenAI

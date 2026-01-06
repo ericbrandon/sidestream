@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
-const STORE_PATH: &str = "settings.json";
+use crate::secure_storage;
 
 /// Log frontend errors to stderr (visible in terminal where app runs)
 #[tauri::command]
@@ -44,11 +44,9 @@ pub struct ApiKeysConfig {
     pub google: bool,
 }
 
-fn get_key_name(provider: &str) -> Result<&'static str, String> {
+fn validate_provider(provider: &str) -> Result<(), String> {
     match provider {
-        "anthropic" => Ok("anthropic_api_key"),
-        "openai" => Ok("openai_api_key"),
-        "google" => Ok("google_api_key"),
+        "anthropic" | "openai" | "google" => Ok(()),
         _ => Err(format!("Invalid provider: {}", provider)),
     }
 }
@@ -59,13 +57,8 @@ pub async fn save_api_key(
     provider: String,
     key: String,
 ) -> Result<(), String> {
-    let key_name = get_key_name(&provider)?;
-    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-
-    store.set(key_name, serde_json::json!(key));
-    store.save().map_err(|e| e.to_string())?;
-
-    Ok(())
+    validate_provider(&provider)?;
+    secure_storage::save_api_key_secure(&app, &provider, &key).await
 }
 
 #[tauri::command]
@@ -76,34 +69,22 @@ pub async fn has_api_key(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn delete_api_key(app: tauri::AppHandle, provider: String) -> Result<(), String> {
-    let key_name = get_key_name(&provider)?;
-    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-
-    let _ = store.delete(key_name);
-    store.save().map_err(|e| e.to_string())?;
-
-    Ok(())
+    validate_provider(&provider)?;
+    secure_storage::delete_api_key_secure(&app, &provider).await
 }
 
 #[tauri::command]
 pub async fn get_configured_providers(app: tauri::AppHandle) -> Result<ApiKeysConfig, String> {
-    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-
     Ok(ApiKeysConfig {
-        anthropic: store.get("anthropic_api_key").is_some(),
-        openai: store.get("openai_api_key").is_some(),
-        google: store.get("google_api_key").is_some(),
+        anthropic: secure_storage::has_api_key_secure(&app, "anthropic").await,
+        openai: secure_storage::has_api_key_secure(&app, "openai").await,
+        google: secure_storage::has_api_key_secure(&app, "google").await,
     })
 }
 
-pub fn get_api_key(app: &tauri::AppHandle, provider: &str) -> Result<String, String> {
-    let key_name = get_key_name(provider)?;
-    let store = app.store(STORE_PATH).map_err(|e| e.to_string())?;
-
-    store
-        .get(key_name)
-        .and_then(|v| v.as_str().map(String::from))
-        .ok_or_else(|| format!("{} API key not found", provider))
+/// Get an API key from secure storage (used internally by LLM modules)
+pub async fn get_api_key_async(app: &tauri::AppHandle, provider: &str) -> Result<String, String> {
+    secure_storage::get_api_key_secure(app, provider).await
 }
 
 // Chat session persistence commands
@@ -229,7 +210,7 @@ pub async fn transcribe_audio_bytes(
     filename: &str,
     mime_type: &str,
 ) -> Result<String, String> {
-    let api_key = get_api_key(app, "openai")?;
+    let api_key = secure_storage::get_api_key_secure(app, "openai").await?;
 
     // Create multipart form with audio file
     let audio_part = reqwest::multipart::Part::bytes(audio_bytes)
