@@ -7,9 +7,16 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 use tauri::Manager;
 
 const NONCE_SIZE: usize = 12;
+
+/// Cached encryption key - computed once on first use
+static DERIVED_KEY: OnceLock<[u8; 32]> = OnceLock::new();
+
+/// Cached decrypted API keys - loaded once on first use, updated when keys change
+static KEYS_CACHE: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 
 /// Get a stable machine identifier that persists across app restarts.
 fn get_machine_id() -> String {
@@ -85,11 +92,14 @@ fn get_machine_id() -> String {
 }
 
 /// Derive a 32-byte encryption key from the machine ID using SHA-256.
+/// Cached after first computation.
 fn derive_key() -> [u8; 32] {
-    let machine_id = get_machine_id();
-    let mut hasher = Sha256::new();
-    hasher.update(machine_id.as_bytes());
-    hasher.finalize().into()
+    *DERIVED_KEY.get_or_init(|| {
+        let machine_id = get_machine_id();
+        let mut hasher = Sha256::new();
+        hasher.update(machine_id.as_bytes());
+        hasher.finalize().into()
+    })
 }
 
 /// Get the path to the encrypted keys file
@@ -137,10 +147,10 @@ fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Decryption failed: {}", e))
 }
 
-/// Load all API keys from the encrypted file.
+/// Load all API keys from the encrypted file (internal, bypasses cache).
 /// If decryption fails (e.g., keys from a different machine), returns empty map
 /// and deletes the corrupted file so the user can re-enter their keys.
-fn load_keys(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> {
+fn load_keys_from_disk(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> {
     let path = get_keys_path(app)?;
 
     if !path.exists() {
@@ -190,14 +200,41 @@ fn load_keys(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> 
     }
 }
 
-/// Save all API keys to the encrypted file
+/// Get cached keys, loading from disk on first access
+fn get_cached_keys(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> {
+    // Try to read from cache first
+    {
+        let cache = KEYS_CACHE.read().map_err(|e| format!("Cache lock error: {}", e))?;
+        if let Some(keys) = cache.as_ref() {
+            return Ok(keys.clone());
+        }
+    }
+
+    // Cache miss - load from disk and populate cache
+    let keys = load_keys_from_disk(app)?;
+    {
+        let mut cache = KEYS_CACHE.write().map_err(|e| format!("Cache lock error: {}", e))?;
+        *cache = Some(keys.clone());
+    }
+    Ok(keys)
+}
+
+/// Save all API keys to the encrypted file and update cache
 fn save_keys(app: &tauri::AppHandle, keys: &HashMap<String, String>) -> Result<(), String> {
     let path = get_keys_path(app)?;
     let json_str = serde_json::to_string(keys).map_err(|e| format!("Failed to serialize: {}", e))?;
     let key = derive_key();
     let encrypted = encrypt(&key, json_str.as_bytes())?;
 
-    fs::write(&path, encrypted).map_err(|e| format!("Failed to write keys file: {}", e))
+    fs::write(&path, encrypted).map_err(|e| format!("Failed to write keys file: {}", e))?;
+
+    // Update the cache
+    {
+        let mut cache = KEYS_CACHE.write().map_err(|e| format!("Cache lock error: {}", e))?;
+        *cache = Some(keys.clone());
+    }
+
+    Ok(())
 }
 
 /// Save an API key to the secure store
@@ -206,7 +243,7 @@ pub async fn save_api_key_secure(
     provider: &str,
     api_key: &str,
 ) -> Result<(), String> {
-    let mut keys = load_keys(app)?;
+    let mut keys = get_cached_keys(app)?;
     let key_name = format!("{}_api_key", provider);
     keys.insert(key_name, api_key.to_string());
     save_keys(app, &keys)
@@ -217,7 +254,7 @@ pub async fn get_api_key_secure(
     app: &tauri::AppHandle,
     provider: &str,
 ) -> Result<String, String> {
-    let keys = load_keys(app)?;
+    let keys = get_cached_keys(app)?;
     let key_name = format!("{}_api_key", provider);
     keys.get(&key_name)
         .cloned()
@@ -229,7 +266,7 @@ pub async fn delete_api_key_secure(
     app: &tauri::AppHandle,
     provider: &str,
 ) -> Result<(), String> {
-    let mut keys = load_keys(app)?;
+    let mut keys = get_cached_keys(app)?;
     let key_name = format!("{}_api_key", provider);
     keys.remove(&key_name);
     save_keys(app, &keys)
