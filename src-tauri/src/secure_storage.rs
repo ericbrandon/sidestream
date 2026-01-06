@@ -133,7 +133,9 @@ fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Decryption failed: {}", e))
 }
 
-/// Load all API keys from the encrypted file
+/// Load all API keys from the encrypted file.
+/// If decryption fails (e.g., keys from a different machine), returns empty map
+/// and deletes the corrupted file so the user can re-enter their keys.
 fn load_keys(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> {
     let path = get_keys_path(app)?;
 
@@ -141,14 +143,47 @@ fn load_keys(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> 
         return Ok(HashMap::new());
     }
 
-    let encrypted = fs::read(&path).map_err(|e| format!("Failed to read keys file: {}", e))?;
+    let encrypted = match fs::read(&path) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("[SecureStorage] Failed to read keys file: {}", e);
+            return Ok(HashMap::new());
+        }
+    };
+
     let key = derive_key();
-    let decrypted = decrypt(&key, &encrypted)?;
 
-    let json_str =
-        String::from_utf8(decrypted).map_err(|e| format!("Invalid UTF-8 in keys: {}", e))?;
+    // If decryption fails (wrong machine, corrupted file), delete and start fresh
+    let decrypted = match decrypt(&key, &encrypted) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!(
+                "[SecureStorage] Decryption failed (keys may be from another machine): {}",
+                e
+            );
+            // Delete the unreadable file so user can re-enter keys
+            let _ = fs::remove_file(&path);
+            return Ok(HashMap::new());
+        }
+    };
 
-    serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse keys: {}", e))
+    let json_str = match String::from_utf8(decrypted) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[SecureStorage] Invalid UTF-8 in keys: {}", e);
+            let _ = fs::remove_file(&path);
+            return Ok(HashMap::new());
+        }
+    };
+
+    match serde_json::from_str(&json_str) {
+        Ok(keys) => Ok(keys),
+        Err(e) => {
+            eprintln!("[SecureStorage] Failed to parse keys: {}", e);
+            let _ = fs::remove_file(&path);
+            Ok(HashMap::new())
+        }
+    }
 }
 
 /// Save all API keys to the encrypted file

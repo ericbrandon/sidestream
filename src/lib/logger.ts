@@ -65,10 +65,6 @@ export function getUserFriendlyErrorMessage(error: unknown): string {
     return 'The conversation is too long. Please start a new chat or remove some messages.';
   }
 
-  // Default fallback - show a shortened version of the actual error
-  const originalError = String(error);
-  if (originalError.length > 100) {
-    return `Error: ${originalError.substring(0, 100)}...`;
-  }
-  return `Error: ${originalError}`;
+  // Default fallback - show the full error
+  return `Error: ${String(error)}`;
 }
