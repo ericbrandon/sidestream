@@ -10,6 +10,7 @@ import type {
   VoiceModel,
   VoiceMode,
 } from '../lib/types';
+import type { UpdateInfo } from '../lib/updateChecker';
 
 export type SettingsTab = 'api-keys' | 'preferences' | 'personalize' | 'saved-chats' | 'about';
 import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode } from '../lib/discoveryModes';
@@ -231,6 +232,8 @@ interface SettingsState {
   customSystemPrompt: string; // User's personalized system prompt
   allowChatGPTExtraHighThinking: boolean; // Allow extra-high thinking for OpenAI models
   allowChatGPT5Pro: boolean; // Allow GPT-5 Pro model
+  updateInfo: UpdateInfo | null; // Available update info
+  showUpdateModal: boolean; // Whether to show the update modal
 
   // Actions
   openSettings: (highlightApiKeys?: boolean) => void;
@@ -252,6 +255,8 @@ interface SettingsState {
   setCustomSystemPrompt: (prompt: string) => void;
   setAllowChatGPTExtraHighThinking: (enabled: boolean) => void;
   setAllowChatGPT5Pro: (enabled: boolean) => void;
+  setUpdateInfo: (info: UpdateInfo | null) => void;
+  dismissUpdate: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -295,6 +300,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   customSystemPrompt: getSavedCustomSystemPrompt(),
   allowChatGPTExtraHighThinking: getSavedAllowChatGPTExtraHighThinking(),
   allowChatGPT5Pro: getSavedAllowChatGPT5Pro(),
+  updateInfo: null,
+  showUpdateModal: false,
   openSettings: (highlightApiKeys = false) =>
     set({ isSettingsOpen: true, highlightApiKeys }),
   closeSettings: () => set({ isSettingsOpen: false, highlightApiKeys: false }),
@@ -522,5 +529,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
 
     set({ allowChatGPT5Pro: enabled });
+  },
+
+  setUpdateInfo: (info) => {
+    set({ updateInfo: info, showUpdateModal: info !== null });
+  },
+
+  dismissUpdate: () => {
+    set({ showUpdateModal: false });
   },
 }));

@@ -3,6 +3,7 @@ import { Modal } from '../shared/Modal';
 import { ApiKeyForm } from './ApiKeyForm';
 import { SavedChatsSection } from './SavedChatsSection';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
+import { APP_VERSION, checkForUpdate } from '../../lib/updateChecker';
 import type { ThemeMode, VoiceMode } from '../../lib/types';
 
 interface SettingsModalProps {
@@ -10,7 +11,8 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt, allowChatGPTExtraHighThinking, setAllowChatGPTExtraHighThinking, allowChatGPT5Pro, setAllowChatGPT5Pro } = useSettingsStore();
+  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt, allowChatGPTExtraHighThinking, setAllowChatGPTExtraHighThinking, allowChatGPT5Pro, setAllowChatGPT5Pro, setUpdateInfo } = useSettingsStore();
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   // highlightApiKeys takes precedence, otherwise use the last remembered tab
   const activeTab = highlightApiKeys ? 'api-keys' : lastSettingsTab;
@@ -287,9 +289,26 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           {/* About Tab */}
           {activeTab === 'about' && (
             <div className="text-center text-sm text-gray-500 dark:text-gray-400 pt-8">
-              <p className="font-medium text-gray-700 dark:text-gray-300">Sidestream v1.0.6</p>
+              <p className="font-medium text-gray-700 dark:text-gray-300">Sidestream v{APP_VERSION}</p>
               <p className="mt-2">Chat with a side serving of insight</p>
               <p className="mt-4">© 2026 Eric Brandon</p>
+              <button
+                onClick={async () => {
+                  setIsCheckingUpdate(true);
+                  const updateInfo = await checkForUpdate();
+                  setIsCheckingUpdate(false);
+                  if (updateInfo) {
+                    onClose();
+                    setUpdateInfo(updateInfo);
+                  } else {
+                    alert('You are running the latest version.');
+                  }
+                }}
+                disabled={isCheckingUpdate}
+                className="mt-6 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg transition-colors"
+              >
+                {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+              </button>
             </div>
           )}
         </div>

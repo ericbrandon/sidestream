@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { LeftPane } from './LeftPane';
 import { RightPane } from './RightPane';
 import { PrintMenu } from './PrintMenu';
-import { SettingsModal } from '../settings/SettingsModal';
+import { SettingsModal, UpdateModal } from '../settings';
 import { ApiKeyRequiredModal } from '../settings/ApiKeyRequiredModal';
 import { ChatSidebar } from '../sidebar/ChatSidebar';
 import { PrintableChat } from '../print/PrintableChat';
@@ -315,6 +315,9 @@ export function AppLayout() {
 
         {/* Settings Modal */}
         {isSettingsOpen && <SettingsModal onClose={closeSettings} />}
+
+        {/* Update Modal */}
+        <UpdateModal />
       </div>
     </>
   );

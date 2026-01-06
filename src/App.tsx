@@ -4,11 +4,21 @@ import { useSessionStore } from './stores/sessionStore';
 import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useChatStore } from './stores/chatStore';
+import { checkForUpdate } from './lib/updateChecker';
 import './index.css';
 
 function App() {
   const { loadSessionList, setActiveSessionId } = useSessionStore();
-  const { fontScale, increaseFontScale, decreaseFontScale, resetFontScale, theme } = useSettingsStore();
+  const { fontScale, increaseFontScale, decreaseFontScale, resetFontScale, theme, setUpdateInfo } = useSettingsStore();
+
+  // Check for updates on app launch
+  useEffect(() => {
+    checkForUpdate().then((updateInfo) => {
+      if (updateInfo) {
+        setUpdateInfo(updateInfo);
+      }
+    });
+  }, [setUpdateInfo]);
 
   useEffect(() => {
     // Load session list on app start
