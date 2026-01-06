@@ -42,7 +42,7 @@ pub fn run() {
             // Set up the application menu with About metadata
             // Only set short_version to avoid duplicate "(version)" display on macOS
             let about_metadata = AboutMetadata {
-                short_version: Some("1.0.6".to_string()),
+                short_version: Some("1.0.7".to_string()),
                 version: Some(String::new()), // Empty to suppress the (x.x.x) suffix
                 copyright: Some("© 2026 Eric Brandon".to_string()),
                 ..Default::default()

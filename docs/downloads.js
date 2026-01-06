@@ -54,10 +54,11 @@
       }
     });
 
-    // Update version display if element exists
-    const versionEl = document.querySelector('[data-version]');
-    if (versionEl && release.tag_name) {
-      versionEl.textContent = release.tag_name;
+    // Update all version displays
+    if (release.tag_name) {
+      document.querySelectorAll('[data-version]').forEach(el => {
+        el.textContent = release.tag_name;
+      });
     }
   }
 

@@ -579,6 +579,20 @@ footer p {
   margin: 0;
 }
 
+.download-card .download-version {
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  background: rgba(74, 222, 128, 0.1);
+  border-radius: var(--radius);
+  margin-top: 0.25rem;
+}
+
+.download-card .download-version:empty {
+  display: none;
+}
+
 .download-card .download-action {
   background: var(--color-primary);
   color: var(--color-bg-dark);
@@ -587,6 +601,23 @@ footer p {
   font-weight: 600;
   font-size: 0.9rem;
   margin-top: 0.5rem;
+}
+
+.download-version-label {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.download-version-label .download-version {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.download-version-label .download-version:empty::after {
+  content: "Loading...";
+  color: var(--color-text-muted);
+  font-weight: 400;
 }
 
 .download-notes {
