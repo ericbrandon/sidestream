@@ -7,16 +7,17 @@ import type { LLMProvider, ModelDefinition } from '../../lib/types';
 interface InlineModelPickerProps {
   value: string;
   onChange: (model: string) => void;
+  excludeModels?: string[];
 }
 
-export function InlineModelPicker({ value, onChange }: InlineModelPickerProps) {
+export function InlineModelPicker({ value, onChange, excludeModels = [] }: InlineModelPickerProps) {
   const { configuredProviders } = useSettingsStore();
   const markDirty = useSessionStore((state) => state.markDirty);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Filter models to only show those with configured API keys
-  const availableModels = ALL_MODELS.filter((m) => configuredProviders[m.provider]);
+  // Filter models to only show those with configured API keys, and exclude specified models
+  const availableModels = ALL_MODELS.filter((m) => configuredProviders[m.provider] && !excludeModels.includes(m.id));
 
   // Group by provider
   const groupedModels = availableModels.reduce(

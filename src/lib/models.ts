@@ -10,6 +10,7 @@ export const ALL_MODELS: ModelDefinition[] = [
   { id: 'gpt-5.2', name: 'GPT-5.2', provider: 'openai' },
   { id: 'gpt-5.1', name: 'GPT-5.1', provider: 'openai' },
   { id: 'gpt-5-mini', name: 'GPT-5 Mini', provider: 'openai' },
+  { id: 'gpt-5-pro', name: 'GPT-5 Pro', provider: 'openai' },
 
   // Google Gemini Models
   { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', provider: 'google' },

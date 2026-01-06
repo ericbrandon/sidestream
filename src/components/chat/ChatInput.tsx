@@ -10,15 +10,16 @@ import { ContextMenu } from '../shared/ContextMenu';
 import { InlineModelPicker } from '../shared/InlineModelPicker';
 import { getProviderFromModelId } from '../../lib/models';
 import {
-  REASONING_OPTIONS,
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
   getGeminiThinkingLetter,
+  getOpenAIReasoningOptions,
+  getValidOpenAIReasoningLevel,
 } from '../../lib/thinkingOptions';
 
 export function ChatInput() {
   const { inputValue, setInput, isStreaming, attachments, registerChatInputFocus } = useChatStore();
-  const { frontierLLM, setFrontierLLM, voiceMode } = useSettingsStore();
+  const { frontierLLM, setFrontierLLM, voiceMode, allowChatGPTExtraHighThinking, allowChatGPT5Pro } = useSettingsStore();
   const { sendMessage, sendTranscribedMessage, cancelStream } = useChat();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showThinkingMenu, setShowThinkingMenu] = useState(false);
@@ -44,6 +45,21 @@ export function ChatInput() {
   const effectiveGeminiThinkingLevel = provider === 'google'
     ? getValidGeminiThinkingLevel(frontierLLM.geminiThinkingLevel, frontierLLM.model)
     : frontierLLM.geminiThinkingLevel;
+
+  // Get OpenAI reasoning options based on model, settings, and web search state
+  const openAIReasoningOptions = provider === 'openai'
+    ? getOpenAIReasoningOptions(frontierLLM.model, {
+        allowExtraHigh: allowChatGPTExtraHighThinking,
+        webSearchEnabled: frontierLLM.webSearchEnabled,
+      })
+    : [];
+  // Normalize reasoning level to a valid value for the current model and web search state
+  const effectiveReasoningLevel = provider === 'openai'
+    ? getValidOpenAIReasoningLevel(frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled)
+    : frontierLLM.reasoningLevel;
+
+  // Build list of models to exclude based on settings
+  const excludedModels = allowChatGPT5Pro ? [] : ['gpt-5-pro'];
 
   const handleSubmit = () => {
     if (inputValue.trim() && !isStreaming) {
@@ -84,13 +100,13 @@ export function ChatInput() {
         {provider === 'openai' ? (
           /* OpenAI: Reasoning Level Dropdown */
           <div className="relative">
-            <Tooltip content={`Reasoning: ${frontierLLM.reasoningLevel}`}>
+            <Tooltip content={`Reasoning: ${effectiveReasoningLevel}`}>
               <button
                 onClick={() => setShowThinkingMenu(!showThinkingMenu)}
                 className={`
                   p-2 rounded transition-colors flex items-center gap-1
                   ${
-                    frontierLLM.reasoningLevel !== 'off'
+                    effectiveReasoningLevel !== 'off'
                       ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
                       : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
                   }
@@ -111,7 +127,7 @@ export function ChatInput() {
                   />
                 </svg>
                 <span className="text-xs font-medium uppercase">
-                  {REASONING_OPTIONS.find(o => o.value === frontierLLM.reasoningLevel)?.letter || ''}
+                  {openAIReasoningOptions.find(o => o.value === effectiveReasoningLevel)?.letter || ''}
                 </span>
               </button>
             </Tooltip>
@@ -122,7 +138,7 @@ export function ChatInput() {
                   onClick={() => setShowThinkingMenu(false)}
                 />
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-stone-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
-                  {REASONING_OPTIONS.map((option) => (
+                  {openAIReasoningOptions.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => {
@@ -131,7 +147,7 @@ export function ChatInput() {
                       }}
                       className={`
                         w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors
-                        ${frontierLLM.reasoningLevel === option.value ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-stone-700 dark:text-gray-200'}
+                        ${effectiveReasoningLevel === option.value ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-stone-700 dark:text-gray-200'}
                       `}
                     >
                       {option.label}
@@ -361,6 +377,7 @@ export function ChatInput() {
         <InlineModelPicker
           value={frontierLLM.model}
           onChange={(model) => setFrontierLLM({ model })}
+          excludeModels={excludedModels}
         />
       </div>
 

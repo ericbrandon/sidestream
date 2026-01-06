@@ -11,10 +11,11 @@ import { useDiscovery } from '../../hooks/useDiscovery';
 import { getAllDiscoveryModes, getDiscoveryMode, getBestModelForMode } from '../../lib/discoveryModes';
 import { getProviderFromModelId } from '../../lib/models';
 import {
-  REASONING_OPTIONS,
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
   getGeminiThinkingLetter,
+  getOpenAIReasoningOptions,
+  getValidOpenAIReasoningLevel,
 } from '../../lib/thinkingOptions';
 import type { DiscoveryModeId } from '../../lib/types';
 
@@ -46,6 +47,20 @@ export function DiscoveryContainer() {
   const effectiveGeminiThinkingLevel = provider === 'google'
     ? getValidGeminiThinkingLevel(evaluatorLLM.geminiThinkingLevel, evaluatorLLM.model)
     : evaluatorLLM.geminiThinkingLevel;
+
+  // Discovery pane never shows xhigh thinking or GPT-5 Pro (regardless of user settings)
+  // Also respect web search constraints (off/minimal not available when web search is on)
+  const discoveryReasoningOptions = provider === 'openai'
+    ? getOpenAIReasoningOptions(evaluatorLLM.model, {
+        allowExtraHigh: false, // Never allow xhigh in discovery pane
+        webSearchEnabled: evaluatorLLM.webSearchEnabled,
+      })
+    : [];
+  // Normalize reasoning level for discovery pane
+  const effectiveDiscoveryReasoningLevel = provider === 'openai'
+    ? getValidOpenAIReasoningLevel(evaluatorLLM.reasoningLevel, evaluatorLLM.model, evaluatorLLM.webSearchEnabled)
+    : evaluatorLLM.reasoningLevel;
+  const discoveryExcludedModels = ['gpt-5-pro'];
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -158,19 +173,20 @@ export function DiscoveryContainer() {
         <InlineModelPicker
           value={evaluatorLLM.model}
           onChange={(model) => setEvaluatorLLM({ model })}
+          excludeModels={discoveryExcludedModels}
         />
 
         {/* Thinking/Reasoning Control - Provider-specific */}
         {provider === 'openai' ? (
           /* OpenAI: Reasoning Level Dropdown */
           <div className="relative">
-            <Tooltip content={`Reasoning: ${evaluatorLLM.reasoningLevel}`}>
+            <Tooltip content={`Reasoning: ${effectiveDiscoveryReasoningLevel}`}>
               <button
                 onClick={() => setShowThinkingMenu(!showThinkingMenu)}
                 className={`
                   p-1.5 rounded transition-colors flex items-center gap-0.5
                   ${
-                    evaluatorLLM.reasoningLevel !== 'off'
+                    effectiveDiscoveryReasoningLevel !== 'off'
                       ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
                       : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
                   }
@@ -191,7 +207,7 @@ export function DiscoveryContainer() {
                   />
                 </svg>
                 <span className="text-xs font-medium uppercase">
-                  {REASONING_OPTIONS.find(o => o.value === evaluatorLLM.reasoningLevel)?.letter || ''}
+                  {discoveryReasoningOptions.find(o => o.value === effectiveDiscoveryReasoningLevel)?.letter || ''}
                 </span>
               </button>
             </Tooltip>
@@ -202,7 +218,7 @@ export function DiscoveryContainer() {
                   onClick={() => setShowThinkingMenu(false)}
                 />
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-stone-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
-                  {REASONING_OPTIONS.map((option) => (
+                  {discoveryReasoningOptions.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => {
@@ -211,7 +227,7 @@ export function DiscoveryContainer() {
                       }}
                       className={`
                         w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors
-                        ${evaluatorLLM.reasoningLevel === option.value ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-stone-700 dark:text-gray-200'}
+                        ${effectiveDiscoveryReasoningLevel === option.value ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-stone-700 dark:text-gray-200'}
                       `}
                     >
                       {option.label}

@@ -170,6 +170,24 @@ function getSavedCustomSystemPrompt(): string {
   return localStorage.getItem('customSystemPrompt') || '';
 }
 
+// Load saved allowChatGPTExtraHighThinking setting (default false)
+function getSavedAllowChatGPTExtraHighThinking(): boolean {
+  const saved = localStorage.getItem('allowChatGPTExtraHighThinking');
+  if (saved !== null) {
+    return saved === 'true';
+  }
+  return false;
+}
+
+// Load saved allowChatGPT5Pro setting (default false)
+function getSavedAllowChatGPT5Pro(): boolean {
+  const saved = localStorage.getItem('allowChatGPT5Pro');
+  if (saved !== null) {
+    return saved === 'true';
+  }
+  return false;
+}
+
 // Compute voice model from configured providers
 // Priority: openai (Whisper) > gemini > none
 function computeVoiceModel(providers: ApiKeysConfig): VoiceModel {
@@ -211,6 +229,8 @@ interface SettingsState {
   voiceModel: VoiceModel; // Auto-determined from API keys
   voiceMode: VoiceMode; // User-configurable
   customSystemPrompt: string; // User's personalized system prompt
+  allowChatGPTExtraHighThinking: boolean; // Allow extra-high thinking for OpenAI models
+  allowChatGPT5Pro: boolean; // Allow GPT-5 Pro model
 
   // Actions
   openSettings: (highlightApiKeys?: boolean) => void;
@@ -230,6 +250,8 @@ interface SettingsState {
   setTheme: (mode: ThemeMode) => void;
   setVoiceMode: (mode: VoiceMode) => void;
   setCustomSystemPrompt: (prompt: string) => void;
+  setAllowChatGPTExtraHighThinking: (enabled: boolean) => void;
+  setAllowChatGPT5Pro: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -271,6 +293,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   voiceModel: getSavedVoiceModel(),
   voiceMode: getSavedVoiceMode(),
   customSystemPrompt: getSavedCustomSystemPrompt(),
+  allowChatGPTExtraHighThinking: getSavedAllowChatGPTExtraHighThinking(),
+  allowChatGPT5Pro: getSavedAllowChatGPT5Pro(),
   openSettings: (highlightApiKeys = false) =>
     set({ isSettingsOpen: true, highlightApiKeys }),
   closeSettings: () => set({ isSettingsOpen: false, highlightApiKeys: false }),
@@ -473,5 +497,30 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCustomSystemPrompt: (prompt) => {
     localStorage.setItem('customSystemPrompt', prompt);
     set({ customSystemPrompt: prompt });
+  },
+
+  setAllowChatGPTExtraHighThinking: (enabled) => {
+    localStorage.setItem('allowChatGPTExtraHighThinking', String(enabled));
+    set({ allowChatGPTExtraHighThinking: enabled });
+  },
+
+  setAllowChatGPT5Pro: (enabled) => {
+    localStorage.setItem('allowChatGPT5Pro', String(enabled));
+
+    // If disabling GPT-5 Pro and it's currently selected, switch to GPT-5.2
+    if (!enabled) {
+      const state = useSettingsStore.getState();
+      if (state.frontierLLM.model === 'gpt-5-pro') {
+        const newModel = 'gpt-5.2';
+        localStorage.setItem('frontierModel', newModel);
+        set({
+          allowChatGPT5Pro: enabled,
+          frontierLLM: { ...state.frontierLLM, model: newModel },
+        });
+        return;
+      }
+    }
+
+    set({ allowChatGPT5Pro: enabled });
   },
 }));
