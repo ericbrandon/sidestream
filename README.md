@@ -17,7 +17,7 @@ Human conversation is more rewarding than talking with an AI because people aren
 - *They're reminded of something interesting or amusing, and steer the conversation in a more exciting direction.*
 - *They realize that one of you misspoke, misremembered, made an incorrect assumption, or that you've been talking past each other - and they course correct the conversation.*
 
-Sidestream does ALL of that and makes your conversations with AI way more useful and interesting than you've ever experienced before.
+Sidestream does ALL of that and makes your conversations with AI way more useful and interesting than you've experienced before.
 
 ## What are "Discoveries"?
 
@@ -85,7 +85,7 @@ Once you have an account with these companies you can set up an API key at:
 
 ## About
 
-Sidestream is a non-commercial, single-developer passion project motivated by a desire to bring a little more of the value, excitement, and pleasure of human conversation to our chats with AI.
+Sidestream is a non-commercial, single-developer passion project motivated by a desire to bring a little more of the value, discovery, and pleasure of human conversation to our chats with AI.
 
 ## Privacy
 
