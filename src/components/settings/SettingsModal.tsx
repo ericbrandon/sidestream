@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Modal } from '../shared/Modal';
+import { AlertModal } from '../shared/AlertModal';
 import { ApiKeyForm } from './ApiKeyForm';
 import { SavedChatsSection } from './SavedChatsSection';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
@@ -13,6 +14,7 @@ interface SettingsModalProps {
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt, allowChatGPTExtraHighThinking, setAllowChatGPTExtraHighThinking, allowChatGPT5Pro, setAllowChatGPT5Pro, setUpdateInfo } = useSettingsStore();
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [showLatestVersionAlert, setShowLatestVersionAlert] = useState(false);
 
   // highlightApiKeys takes precedence, otherwise use the last remembered tab
   const activeTab = highlightApiKeys ? 'api-keys' : lastSettingsTab;
@@ -301,7 +303,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     onClose();
                     setUpdateInfo(updateInfo);
                   } else {
-                    alert('You are running the latest version.');
+                    setShowLatestVersionAlert(true);
                   }
                 }}
                 disabled={isCheckingUpdate}
@@ -313,6 +315,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           )}
         </div>
       </div>
+
+      <AlertModal
+        isOpen={showLatestVersionAlert}
+        onClose={() => setShowLatestVersionAlert(false)}
+        title="Sidestream"
+        message="You are running the latest version."
+      />
     </Modal>
   );
 }
