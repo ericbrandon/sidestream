@@ -4125,7 +4125,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "sidestream"
-version = "1.0.7"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
