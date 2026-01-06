@@ -744,6 +744,12 @@ footer p {
   color: var(--color-accent);
 }
 
+.api-note {
+  margin-left: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+}
+
 .api-back {
   margin-top: 3rem;
   padding-top: 2rem;
