@@ -31,7 +31,7 @@ export function useChat() {
     clearStreamingContent,
   } = useChatStore();
 
-  const { frontierLLM } = useSettingsStore();
+  const { frontierLLM, customSystemPrompt } = useSettingsStore();
   const { triggerDiscovery } = useDiscovery();
 
   // Track turnId for passing to discovery after stream completes
@@ -234,10 +234,15 @@ export function useChat() {
           content: formatMessageContent(m).content,
         }));
 
+        // Build system prompt, appending user's custom instructions if present
+        const systemPrompt = customSystemPrompt
+          ? `${SYSTEM_PROMPT}\n\n${customSystemPrompt}`
+          : SYSTEM_PROMPT;
+
         await invoke('send_chat_message', {
           model: frontierLLM.model,
           messages: apiMessages,
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt,
           webSearchEnabled: frontierLLM.webSearchEnabled,
           sessionId: useSessionStore.getState().activeSessionId,
           ...buildProviderThinkingParams(frontierLLM),
@@ -261,6 +266,7 @@ export function useChat() {
       messages,
       attachments,
       frontierLLM,
+      customSystemPrompt,
       addMessage,
       clearInput,
       clearAttachments,

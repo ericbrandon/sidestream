@@ -10,7 +10,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode } = useSettingsStore();
+  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt } = useSettingsStore();
 
   // highlightApiKeys takes precedence, otherwise use the last remembered tab
   const activeTab = highlightApiKeys ? 'api-keys' : lastSettingsTab;
@@ -20,10 +20,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   };
   const [showAutoSelectInfo, setShowAutoSelectInfo] = useState(false);
   const [showCitationsInfo, setShowCitationsInfo] = useState(false);
+  const [localPrompt, setLocalPrompt] = useState(customSystemPrompt);
+  const [showSaved, setShowSaved] = useState(false);
 
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'api-keys', label: 'API Keys' },
     { id: 'preferences', label: 'Preferences' },
+    { id: 'personalize', label: 'Personalize' },
     { id: 'saved-chats', label: 'Saved Chats' },
     { id: 'about', label: 'About' },
   ];
@@ -179,6 +182,51 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 )}
               </section>
 
+            </div>
+          )}
+
+          {/* Personalize Tab */}
+          {activeTab === 'personalize' && (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                You can enter custom instructions that will apply to all your chats. You can tell the model how you would like it to respond. You can share information about yourself so the responses are better tailored to you.
+              </p>
+              <textarea
+                value={localPrompt}
+                onChange={(e) => {
+                  setLocalPrompt(e.target.value);
+                  setShowSaved(false);
+                }}
+                placeholder="Enter your custom instructions here..."
+                className="w-full h-48 px-3 py-2 bg-stone-100 dark:bg-gray-700 rounded-lg border border-stone-300 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:border-stone-400 dark:focus:border-gray-500 focus:outline-none resize-none"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setCustomSystemPrompt(localPrompt);
+                    setShowSaved(true);
+                    setTimeout(() => setShowSaved(false), 2000);
+                  }}
+                  disabled={localPrompt === customSystemPrompt}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setLocalPrompt('');
+                    setCustomSystemPrompt('');
+                    setShowSaved(false);
+                  }}
+                  disabled={!localPrompt && !customSystemPrompt}
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Delete
+                </button>
+                {showSaved && (
+                  <span className="text-sm text-green-600 dark:text-green-400">Saved!</span>
+                )}
+              </div>
             </div>
           )}
 

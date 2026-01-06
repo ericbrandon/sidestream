@@ -11,7 +11,7 @@ import type {
   VoiceMode,
 } from '../lib/types';
 
-export type SettingsTab = 'api-keys' | 'preferences' | 'saved-chats' | 'about';
+export type SettingsTab = 'api-keys' | 'preferences' | 'personalize' | 'saved-chats' | 'about';
 import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode } from '../lib/discoveryModes';
 import { getProviderFromModelId, getDefaultModelForProvider, getDefaultEvaluatorModelForProvider } from '../lib/models';
 import { useSessionStore } from './sessionStore';
@@ -165,6 +165,11 @@ function getSavedVoiceModel(): VoiceModel {
   return 'none';
 }
 
+// Load saved custom system prompt from localStorage
+function getSavedCustomSystemPrompt(): string {
+  return localStorage.getItem('customSystemPrompt') || '';
+}
+
 // Compute voice model from configured providers
 // Priority: openai (Whisper) > gemini > none
 function computeVoiceModel(providers: ApiKeysConfig): VoiceModel {
@@ -205,6 +210,7 @@ interface SettingsState {
   theme: ThemeMode;
   voiceModel: VoiceModel; // Auto-determined from API keys
   voiceMode: VoiceMode; // User-configurable
+  customSystemPrompt: string; // User's personalized system prompt
 
   // Actions
   openSettings: (highlightApiKeys?: boolean) => void;
@@ -223,6 +229,7 @@ interface SettingsState {
   setShowCitations: (enabled: boolean) => void;
   setTheme: (mode: ThemeMode) => void;
   setVoiceMode: (mode: VoiceMode) => void;
+  setCustomSystemPrompt: (prompt: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -263,6 +270,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   theme: getSavedTheme(),
   voiceModel: getSavedVoiceModel(),
   voiceMode: getSavedVoiceMode(),
+  customSystemPrompt: getSavedCustomSystemPrompt(),
   openSettings: (highlightApiKeys = false) =>
     set({ isSettingsOpen: true, highlightApiKeys }),
   closeSettings: () => set({ isSettingsOpen: false, highlightApiKeys: false }),
@@ -460,5 +468,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setVoiceMode: (mode) => {
     localStorage.setItem('voiceMode', mode);
     set({ voiceMode: mode });
+  },
+
+  setCustomSystemPrompt: (prompt) => {
+    localStorage.setItem('customSystemPrompt', prompt);
+    set({ customSystemPrompt: prompt });
   },
 }));
