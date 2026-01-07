@@ -3,7 +3,7 @@ const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const DOWNLOAD_URL = 'https://sidestream-app.com/download.html';
 
 // Current app version - should match package.json
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.1';
 
 export interface UpdateInfo {
   updateAvailable: boolean;
