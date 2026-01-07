@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useChatStore } from '../stores/chatStore';
@@ -8,7 +8,7 @@ import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
 import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
-import type { Message, ContentBlock, StreamDelta } from '../lib/types';
+import type { Message, ContentBlock, StreamDelta, StreamEvent } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
@@ -34,49 +34,51 @@ export function useChat() {
   const { frontierLLM, customSystemPrompt } = useSettingsStore();
   const { triggerDiscovery } = useDiscovery();
 
-  // Track turnId for passing to discovery after stream completes
-  const pendingTurnIdRef = useRef<string | null>(null);
-
   // Set up streaming listeners
+  // Events now include turn_id in payload, so we use that for routing instead of a shared ref
   useEffect(() => {
     const setupListeners = async () => {
       const unlistenDelta = await listen<StreamDelta>('chat-stream-delta', (event) => {
         const delta = event.payload;
-        const turnId = pendingTurnIdRef.current;
+        const turnId = delta.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
-        const stream = turnId ? backgroundStore.getStreamByTurnId(turnId) : null;
+        const stream = backgroundStore.getStreamByTurnId(turnId);
 
         if (!stream) {
           // No background stream found - this can happen briefly at startup
-          // Fall back to updating current UI directly
-          if (delta.text) {
-            const currentContent = useChatStore.getState().streamingContent;
-            updateStreamingContent(currentContent + delta.text);
-          }
-          if (delta.citations && delta.citations.length > 0) {
-            addStreamingCitations(delta.citations);
-          }
-          if (delta.inline_citations && delta.inline_citations.length > 0) {
-            addStreamingInlineCitations(delta.inline_citations);
-          }
-          if (delta.thinking) {
-            appendStreamingThinking(delta.thinking);
+          // or if events arrive for a stream that was already completed/cancelled
+          // Fall back to updating current UI directly if this matches the active session's pending turn
+          const pendingTurnId = useChatStore.getState().pendingTurnId;
+          if (turnId === pendingTurnId) {
+            if (delta.text) {
+              const currentContent = useChatStore.getState().streamingContent;
+              updateStreamingContent(currentContent + delta.text);
+            }
+            if (delta.citations && delta.citations.length > 0) {
+              addStreamingCitations(delta.citations);
+            }
+            if (delta.inline_citations && delta.inline_citations.length > 0) {
+              addStreamingInlineCitations(delta.inline_citations);
+            }
+            if (delta.thinking) {
+              appendStreamingThinking(delta.thinking);
+            }
           }
           return;
         }
 
         // Always update background store (source of truth)
         if (delta.text) {
-          backgroundStore.appendChatDelta(turnId!, delta.text);
+          backgroundStore.appendChatDelta(turnId, delta.text);
         }
         if (delta.citations && delta.citations.length > 0) {
-          backgroundStore.addChatCitations(turnId!, delta.citations);
+          backgroundStore.addChatCitations(turnId, delta.citations);
         }
         if (delta.inline_citations && delta.inline_citations.length > 0) {
-          backgroundStore.addChatInlineCitations(turnId!, delta.inline_citations);
+          backgroundStore.addChatInlineCitations(turnId, delta.inline_citations);
         }
         if (delta.thinking) {
-          backgroundStore.appendChatThinking(turnId!, delta.thinking);
+          backgroundStore.appendChatThinking(turnId, delta.thinking);
         }
 
         // Only update live UI if user is still viewing this session
@@ -98,51 +100,53 @@ export function useChat() {
         }
       });
 
-      const unlistenDone = await listen('chat-stream-done', () => {
-        const turnId = pendingTurnIdRef.current;
+      const unlistenDone = await listen<StreamEvent>('chat-stream-done', (event) => {
+        const turnId = event.payload.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
+        const stream = backgroundStore.getStreamByTurnId(turnId);
 
-        if (turnId) {
-          const stream = backgroundStore.getStreamByTurnId(turnId);
+        // Complete the background stream (handles saving to correct session)
+        backgroundStore.completeChatStream(turnId);
 
-          // Complete the background stream (handles saving to correct session)
-          backgroundStore.completeChatStream(turnId);
-
-          // Trigger discovery with the turnId and original sessionId (skip if mode is 'none')
-          const discoveryMode = useSettingsStore.getState().discoveryMode;
-          if (discoveryMode !== 'none') {
-            if (stream) {
-              triggerDiscovery(turnId, stream.sessionId);
-            } else {
-              // Fallback to current session if no stream found
-              triggerDiscovery(turnId);
-            }
+        // Trigger discovery with the turnId and original sessionId (skip if mode is 'none')
+        const discoveryMode = useSettingsStore.getState().discoveryMode;
+        if (discoveryMode !== 'none') {
+          if (stream) {
+            triggerDiscovery(turnId, stream.sessionId);
+          } else {
+            // Fallback to current session if no stream found
+            triggerDiscovery(turnId);
           }
         }
 
-        pendingTurnIdRef.current = null;
+        // Clear pendingTurnId if this was the active session's stream
+        const chatStore = useChatStore.getState();
+        if (chatStore.pendingTurnId === turnId) {
+          setPendingTurnId(null);
+        }
       });
 
-      const unlistenCancelled = await listen('chat-stream-cancelled', () => {
-        const turnId = pendingTurnIdRef.current;
+      const unlistenCancelled = await listen<StreamEvent>('chat-stream-cancelled', (event) => {
+        const turnId = event.payload.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
+        const stream = backgroundStore.getStreamByTurnId(turnId);
 
-        if (turnId) {
-          const stream = backgroundStore.getStreamByTurnId(turnId);
+        // Remove from background store
+        backgroundStore.cancelChatStream(turnId);
 
-          // Remove from background store
-          backgroundStore.cancelChatStream(turnId);
-
-          // Only update UI if still on this session
-          if (stream) {
-            const activeSessionId = useSessionStore.getState().activeSessionId;
-            if (stream.sessionId === activeSessionId) {
-              clearStreamingContent();
-            }
+        // Only update UI if still on this session
+        if (stream) {
+          const activeSessionId = useSessionStore.getState().activeSessionId;
+          if (stream.sessionId === activeSessionId) {
+            clearStreamingContent();
           }
         }
 
-        pendingTurnIdRef.current = null;
+        // Clear pendingTurnId if this was the active session's stream
+        const chatStore = useChatStore.getState();
+        if (chatStore.pendingTurnId === turnId) {
+          setPendingTurnId(null);
+        }
       });
 
       return () => {
@@ -156,7 +160,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, triggerDiscovery, clearStreamingContent]);
+  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -173,8 +177,7 @@ export function useChat() {
       // Register with background stream store BEFORE anything else
       useBackgroundStreamStore.getState().startChatStream(sessionId, turnId);
 
-      // Store turnId for passing to discovery and for the assistant message
-      pendingTurnIdRef.current = turnId;
+      // Store turnId for the assistant message (used by UI to show streaming state)
       setPendingTurnId(turnId);
 
       // Check attachments for unsupported files before building the message
@@ -222,7 +225,6 @@ export function useChat() {
         });
         setStreaming(false);
         setPendingTurnId(null);
-        pendingTurnIdRef.current = null;
         return;
       }
 
@@ -245,6 +247,7 @@ export function useChat() {
           systemPrompt,
           webSearchEnabled: frontierLLM.webSearchEnabled,
           sessionId: useSessionStore.getState().activeSessionId,
+          turnId, // Pass turnId to backend so events can be routed correctly
           ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {
@@ -259,7 +262,6 @@ export function useChat() {
         setStreaming(false);
         // Clear pendingTurnId since we're not calling finalizeStreaming
         setPendingTurnId(null);
-        pendingTurnIdRef.current = null;
       }
     },
     [

@@ -137,10 +137,16 @@ export interface InlineCitation {
 
 // Stream delta from backend
 export interface StreamDelta {
+  turn_id: string;
   text: string;
   citations?: Citation[];
   inline_citations?: InlineCitation[];
   thinking?: string;
+}
+
+// Event payload for stream completion/cancellation events
+export interface StreamEvent {
+  turn_id: string;
 }
 
 // Discovery mode type - re-exported from discoveryModes for convenience

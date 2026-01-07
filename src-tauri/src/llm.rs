@@ -43,10 +43,17 @@ pub struct ChatMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StreamDelta {
+    pub turn_id: String,
     pub text: String,
     pub citations: Option<Vec<Citation>>,
     pub inline_citations: Option<Vec<InlineCitation>>,
     pub thinking: Option<String>,
+}
+
+/// Event payload for stream completion/cancellation events
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StreamEvent {
+    pub turn_id: String,
 }
 
 /// Determine which provider to use based on model name
@@ -74,6 +81,7 @@ pub async fn send_chat_message(
     reasoning_level: Option<String>,        // For OpenAI: "off", "low", "medium", "high"
     gemini_thinking_level: Option<String>,  // For Gemini: "off", "on", "low", "medium", "high"
     session_id: Option<String>,             // For OpenAI prompt caching
+    turn_id: String,                        // Unique ID for this conversation turn
 ) -> Result<(), String> {
     // Create a cancellation token for this stream
     let cancel_token = CancellationToken::new();
@@ -97,6 +105,7 @@ pub async fn send_chat_message(
                 web_search_enabled,
                 reasoning_level,
                 session_id,
+                turn_id,
             )
             .await
         }
@@ -110,6 +119,7 @@ pub async fn send_chat_message(
                 system_prompt,
                 web_search_enabled,
                 gemini_thinking_level,
+                turn_id,
             )
             .await
         }
@@ -124,6 +134,7 @@ pub async fn send_chat_message(
                 extended_thinking_enabled,
                 thinking_budget,
                 web_search_enabled,
+                turn_id,
             )
             .await
         }
@@ -144,6 +155,7 @@ pub async fn send_voice_message(
     system_prompt: Option<String>,
     web_search_enabled: bool,
     gemini_thinking_level: Option<String>,
+    turn_id: String,
 ) -> Result<(), String> {
     // Create a cancellation token for this stream
     let cancel_token = CancellationToken::new();
@@ -162,6 +174,7 @@ pub async fn send_voice_message(
         system_prompt,
         web_search_enabled,
         gemini_thinking_level,
+        turn_id,
     )
     .await
 }

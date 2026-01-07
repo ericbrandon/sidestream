@@ -3,7 +3,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta};
+use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::gemini::{
@@ -22,6 +22,7 @@ pub async fn send_chat_message_gemini(
     system_prompt: Option<String>,
     web_search_enabled: bool,
     thinking_level: Option<String>,
+    turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
@@ -71,7 +72,7 @@ pub async fn send_chat_message_gemini(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                if let Err(err) = window.emit("chat-stream-cancelled", StreamEvent { turn_id: turn_id.clone() }) {
                     eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
                 }
                 return Ok(());
@@ -107,6 +108,7 @@ pub async fn send_chat_message_gemini(
                                         if !new_text.is_empty() {
                                             full_response.push_str(&new_text);
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: new_text,
                                                 citations: None,
                                                 inline_citations: None,
@@ -131,6 +133,7 @@ pub async fn send_chat_message_gemini(
                                         // Emit thinking delta for ephemeral UI display
                                         if !new_thinking.is_empty() {
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: None,
@@ -157,6 +160,7 @@ pub async fn send_chat_message_gemini(
                                                 })
                                                 .collect();
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
@@ -169,7 +173,7 @@ pub async fn send_chat_message_gemini(
                                     }
                                     GeminiStreamEvent::ResponseComplete => {
                                         llm_logger::log_response_complete("chat", &full_response);
-                                        if let Err(err) = window.emit("chat-stream-done", ()) {
+                                        if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                             eprintln!("Failed to emit chat-stream-done event: {}", err);
                                         }
                                         return Ok(());
@@ -191,7 +195,7 @@ pub async fn send_chat_message_gemini(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    if let Err(err) = window.emit("chat-stream-done", ()) {
+    if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())

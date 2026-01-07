@@ -3,7 +3,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta};
+use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::openai::{
@@ -23,6 +23,7 @@ pub async fn send_chat_message_openai(
     web_search_enabled: bool,
     reasoning_level: Option<String>,
     session_id: Option<String>,
+    turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "openai").await?;
     let client = OpenAIClient::new(api_key);
@@ -79,7 +80,7 @@ pub async fn send_chat_message_openai(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                if let Err(err) = window.emit("chat-stream-cancelled", StreamEvent { turn_id: turn_id.clone() }) {
                     eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
                 }
                 return Ok(());
@@ -101,7 +102,7 @@ pub async fn send_chat_message_openai(
                                     match openai_parse_sse_event(data) {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                            if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
                                             return Ok(());
@@ -109,6 +110,7 @@ pub async fn send_chat_message_openai(
                                         OpenAIStreamEvent::TextDelta { text: t } => {
                                             full_response.push_str(&t);
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: t,
                                                 citations: None,
                                                 inline_citations: None,
@@ -121,6 +123,7 @@ pub async fn send_chat_message_openai(
                                         OpenAIStreamEvent::ReasoningSummary { text: thinking_text } => {
                                             // Emit reasoning summary as thinking delta for ephemeral UI
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: None,
@@ -145,6 +148,7 @@ pub async fn send_chat_message_openai(
                                                     })
                                                     .collect();
                                                 let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
                                                     text: String::new(),
                                                     citations: None,
                                                     inline_citations: Some(inline_citations),
@@ -176,7 +180,7 @@ pub async fn send_chat_message_openai(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    if let Err(err) = window.emit("chat-stream-done", ()) {
+    if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())

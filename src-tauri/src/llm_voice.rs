@@ -4,7 +4,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta};
+use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::gemini::{
@@ -32,6 +32,7 @@ pub async fn send_voice_message_impl(
     system_prompt: Option<String>,
     web_search_enabled: bool,
     gemini_thinking_level: Option<String>,
+    turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
@@ -81,7 +82,7 @@ pub async fn send_voice_message_impl(
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
-                window.emit("chat-stream-cancelled", ()).ok();
+                window.emit("chat-stream-cancelled", StreamEvent { turn_id: turn_id.clone() }).ok();
                 return Ok(());
             }
             chunk = stream.next() => {
@@ -124,6 +125,7 @@ pub async fn send_voice_message_impl(
                                                         let clean_start = after_transcription.trim_start();
                                                         if !clean_start.is_empty() {
                                                             let delta = StreamDelta {
+                                                                turn_id: turn_id.clone(),
                                                                 text: clean_start.to_string(),
                                                                 citations: None,
                                                                 inline_citations: None,
@@ -139,6 +141,7 @@ pub async fn send_voice_message_impl(
                                             // Only emit deltas for content after transcription
                                             if transcription_emitted {
                                                 let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
                                                     text: new_text,
                                                     citations: None,
                                                     inline_citations: None,
@@ -165,6 +168,7 @@ pub async fn send_voice_message_impl(
                                                 })
                                                 .collect();
                                             let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
                                                 text: String::new(),
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
@@ -175,7 +179,7 @@ pub async fn send_voice_message_impl(
                                     }
                                     GeminiStreamEvent::ResponseComplete => {
                                         llm_logger::log_response_complete("voice-chat", &full_response);
-                                        window.emit("chat-stream-done", ()).ok();
+                                        window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }).ok();
                                         return Ok(());
                                     }
                                     GeminiStreamEvent::Error { message } => {
@@ -195,7 +199,7 @@ pub async fn send_voice_message_impl(
     }
 
     llm_logger::log_response_complete("voice-chat", &full_response);
-    window.emit("chat-stream-done", ()).ok();
+    window.emit("chat-stream-done", StreamEvent { turn_id }).ok();
     Ok(())
 }
 

@@ -3,7 +3,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta};
+use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
@@ -22,6 +22,7 @@ pub async fn send_chat_message_anthropic(
     extended_thinking_enabled: bool,
     thinking_budget: Option<u32>,
     web_search_enabled: bool,
+    turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "anthropic").await?;
     let client = AnthropicClient::new(api_key);
@@ -72,7 +73,7 @@ pub async fn send_chat_message_anthropic(
         tokio::select! {
             // Check for cancellation
             _ = cancel_token.cancelled() => {
-                if let Err(err) = window.emit("chat-stream-cancelled", ()) {
+                if let Err(err) = window.emit("chat-stream-cancelled", StreamEvent { turn_id: turn_id.clone() }) {
                     eprintln!("Failed to emit chat-stream-cancelled event: {}", err);
                 }
                 return Ok(());
@@ -94,7 +95,7 @@ pub async fn send_chat_message_anthropic(
                                     match anthropic_parse_sse_event(data) {
                                         AnthropicStreamEvent::Done => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                            if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
                                             return Ok(());
@@ -119,6 +120,7 @@ pub async fn send_chat_message_anthropic(
                                                         if matches!(prev.as_str(), "thinking" | "server_tool_use" | "web_search_tool_result") {
                                                             full_response.push_str("\n\n");
                                                             let delta = StreamDelta {
+                                                                turn_id: turn_id.clone(),
                                                                 text: "\n\n".to_string(),
                                                                 citations: None,
                                                                 inline_citations: None,
@@ -139,6 +141,7 @@ pub async fn send_chat_message_anthropic(
                                             if let Some(t) = text {
                                                 full_response.push_str(&t);
                                                 let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
                                                     text: t,
                                                     citations: None,
                                                     inline_citations: None,
@@ -151,6 +154,7 @@ pub async fn send_chat_message_anthropic(
                                             // Emit thinking deltas for ephemeral UI display
                                             if let Some(thinking_text) = thinking {
                                                 let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
                                                     text: String::new(),
                                                     citations: None,
                                                     inline_citations: None,
@@ -170,6 +174,7 @@ pub async fn send_chat_message_anthropic(
                                                     char_offset: full_response.len(),
                                                 };
                                                 let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
                                                     text: String::new(),
                                                     citations: None,
                                                     inline_citations: Some(vec![inline_citation]),
@@ -185,7 +190,7 @@ pub async fn send_chat_message_anthropic(
                                         }
                                         AnthropicStreamEvent::MessageStop => {
                                             llm_logger::log_response_complete("chat", &full_response);
-                                            if let Err(err) = window.emit("chat-stream-done", ()) {
+                                            if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
                                             return Ok(());
@@ -204,7 +209,7 @@ pub async fn send_chat_message_anthropic(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
-    if let Err(err) = window.emit("chat-stream-done", ()) {
+    if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())
