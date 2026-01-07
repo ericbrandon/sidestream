@@ -38,6 +38,7 @@ interface SessionState {
   setSearchQuery: (query: string) => void;
   getFilteredMetas: () => ChatSessionMeta[];
   markDirty: () => void;
+  saveDraftInput: (sessionId: string, input: string) => void;
 }
 
 export const useSessionStore = create<SessionState>((set, get) => ({
@@ -388,7 +389,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeSessionId: currentState.activeSessionId,
         sessionMetas: currentState.sessionMetas,
         isDirty: currentState.isDirty,
+        draftInputs: currentState.draftInputs,
         saveCurrentSession: get().saveCurrentSession,
+        saveDraftInput: get().saveDraftInput,
       },
     };
 
@@ -422,7 +425,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         activeSessionId: currentState.activeSessionId,
         sessionMetas: currentState.sessionMetas,
         isDirty: currentState.isDirty,
+        draftInputs: currentState.draftInputs,
         saveCurrentSession: get().saveCurrentSession,
+        saveDraftInput: get().saveDraftInput,
       },
     };
 
@@ -469,5 +474,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   markDirty: () => {
     set({ isDirty: true });
+  },
+
+  saveDraftInput: (sessionId: string, input: string) => {
+    set((state) => {
+      const newDrafts = new Map(state.draftInputs);
+      if (input) {
+        newDrafts.set(sessionId, input);
+      } else {
+        newDrafts.delete(sessionId);
+      }
+      return { draftInputs: newDrafts };
+    });
   },
 }));

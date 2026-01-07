@@ -31,7 +31,9 @@ interface SessionStoreState {
   activeSessionId: string | null;
   sessionMetas: ChatSessionMeta[];
   isDirty: boolean;
+  draftInputs: Map<string, string>;
   saveCurrentSession: () => Promise<void>;
+  saveDraftInput: (sessionId: string, input: string) => void;
 }
 
 export interface ForkStores {
@@ -155,6 +157,12 @@ export async function forkCurrentSession(
   if (chatStore.isStreaming) {
     await invoke('cancel_chat_stream');
     chatStore.clearStreamingContent();
+  }
+
+  // Save current input to draftInputs before forking
+  // This preserves any typed content when user clicks +fork without submitting
+  if (sessionStore.activeSessionId && chatStore.inputValue) {
+    sessionStore.saveDraftInput(sessionStore.activeSessionId, chatStore.inputValue);
   }
 
   // Save current session first if dirty
