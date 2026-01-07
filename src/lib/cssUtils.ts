@@ -282,5 +282,17 @@ export function getBaseExportStyles(): string {
       background-color: #d1d5db;
       color: #4b5563;
     }
+    /* Prevent browsers from expanding links to show URLs when printing */
+    @media print {
+      a.inline-citation-lozenge::after {
+        content: none !important;
+      }
+      a.inline-citation-lozenge {
+        color: #6b7280 !important;
+        background-color: #e5e7eb !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
   `;
 }

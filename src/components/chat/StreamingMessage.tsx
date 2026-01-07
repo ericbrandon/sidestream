@@ -84,6 +84,9 @@ function createMarkdownComponents(
     li: ({ children }) => <li>{processChildren(children)}</li>,
     strong: ({ children }) => <strong>{processChildren(children)}</strong>,
     em: ({ children }) => <em>{processChildren(children)}</em>,
+    // Table cells need citation processing too
+    td: ({ children }) => <td>{processChildren(children)}</td>,
+    th: ({ children }) => <th>{processChildren(children)}</th>,
     hr: () => <hr className="my-4 border-gray-300 dark:border-gray-600" />,
     a: ({ href, children }) => (
       <a

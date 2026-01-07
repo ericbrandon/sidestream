@@ -308,6 +308,18 @@
     text-decoration: none !important;
   }
 
+  /* Citation lozenges should NOT show URL - they're compact badges */
+  .printable-chat a.inline-citation-lozenge::after {
+    content: none !important;
+  }
+
+  .printable-chat a.inline-citation-lozenge {
+    color: #6b7280 !important;
+    background-color: #e5e7eb !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* Hide scrollbars and other UI elements */
   ::-webkit-scrollbar {
     display: none !important;
