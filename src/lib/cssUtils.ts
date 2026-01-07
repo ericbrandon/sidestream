@@ -264,5 +264,23 @@ export function getBaseExportStyles(): string {
     .printable-chat { display: block !important; }
     * { box-sizing: border-box; }
     img, video { max-width: 100%; height: auto; }
+    /* Citation lozenge styles for export */
+    .inline-citation-lozenge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      margin: 0 2px;
+      font-size: 11px;
+      font-weight: normal;
+      border-radius: 9999px;
+      background-color: #e5e7eb;
+      color: #6b7280;
+      text-decoration: none;
+      transition: background-color 0.15s, color 0.15s;
+    }
+    .inline-citation-lozenge:hover {
+      background-color: #d1d5db;
+      color: #4b5563;
+    }
   `;
 }

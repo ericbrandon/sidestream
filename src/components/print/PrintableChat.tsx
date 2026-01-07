@@ -1,11 +1,15 @@
-import ReactMarkdown from 'react-markdown';
+import { useMemo } from 'react';
+import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import type { Message, DiscoveryItem } from '../../lib/types';
+import type { Message, DiscoveryItem, InlineCitation as InlineCitationType } from '../../lib/types';
 import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from '../chat/citationUtils';
+import { PrintableInlineCitation } from './PrintableInlineCitation';
 
 interface PrintableChatProps {
   messages: Message[];
@@ -29,7 +33,149 @@ function groupItemsByMode(items: DiscoveryItem[]): Map<DiscoveryModeId, Discover
   return groups;
 }
 
+/**
+ * Render text with inline citations for printable output.
+ * Parses citation markers and replaces them with PrintableInlineCitation components.
+ */
+function renderTextWithCitations(
+  text: string,
+  citationMap: Map<number, InlineCitationType>
+): React.ReactNode {
+  if (citationMap.size === 0 || !CITATION_MARKER_REGEX.test(text)) {
+    return text;
+  }
+
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  // Reset regex lastIndex
+  CITATION_MARKER_REGEX.lastIndex = 0;
+
+  while ((match = CITATION_MARKER_REGEX.exec(text)) !== null) {
+    // Add text before the marker
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+
+    // Add the citation component
+    const citationIndex = parseInt(match[1], 10);
+    const citation = citationMap.get(citationIndex);
+    if (citation) {
+      parts.push(<PrintableInlineCitation key={`cite-${citationIndex}`} citation={citation} />);
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
+}
+
+/**
+ * Create markdown components that handle inline citations for printable output
+ */
+function createMarkdownComponents(
+  citationMap: Map<number, InlineCitationType>
+): Components {
+  // Helper to process children and render citations
+  const processChildren = (children: React.ReactNode): React.ReactNode => {
+    if (typeof children === 'string') {
+      return renderTextWithCitations(children, citationMap);
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, i) =>
+        typeof child === 'string' ? (
+          <span key={i}>{renderTextWithCitations(child, citationMap)}</span>
+        ) : (
+          child
+        )
+      );
+    }
+    return children;
+  };
+
+  return {
+    h1: ({ children }) => <h2>{processChildren(children)}</h2>,
+    h2: ({ children }) => <h3>{processChildren(children)}</h3>,
+    h3: ({ children }) => <h4>{processChildren(children)}</h4>,
+    h4: ({ children }) => <h5>{processChildren(children)}</h5>,
+    h5: ({ children }) => <h6>{processChildren(children)}</h6>,
+    h6: ({ children }) => <h6>{processChildren(children)}</h6>,
+    p: ({ children }) => <p>{processChildren(children)}</p>,
+    li: ({ children }) => <li>{processChildren(children)}</li>,
+    strong: ({ children }) => <strong>{processChildren(children)}</strong>,
+    em: ({ children }) => <em>{processChildren(children)}</em>,
+    hr: () => <hr className="my-4 border-gray-300" />,
+    a: ({ href, children }) => (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 hover:text-blue-800 underline"
+      >
+        {processChildren(children)}
+      </a>
+    ),
+  };
+}
+
+/**
+ * Process message content with citations.
+ * Returns the processed content and markdown components for rendering.
+ */
+function processMessageWithCitations(
+  message: Message,
+  showCitations: boolean
+): { processedContent: string; markdownComponents: Components } {
+  // First, extract ChatGPT-style parenthesized citations from content
+  const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
+    extractChatGPTCitations(message.content, showCitations);
+
+  // Get existing inline citations (from Claude/Gemini)
+  const existingCitations = showCitations ? (message.inlineCitations || []) : [];
+
+  // Insert citation markers for position-based citations
+  const { content: processedContent, citationMap } = insertCitationMarkers(
+    contentWithoutChatGPTCitations,
+    existingCitations
+  );
+
+  // Add ChatGPT citations to the map (they already have markers from extractChatGPTCitations)
+  chatGPTCitations.forEach((citation, idx) => {
+    citationMap.set(existingCitations.length + idx, citation);
+  });
+
+  const markdownComponents = createMarkdownComponents(citationMap);
+  return { processedContent, markdownComponents };
+}
+
+/**
+ * Component to render a single message with citation support
+ */
+function PrintableMessage({ message, showCitations }: { message: Message; showCitations: boolean }) {
+  const { processedContent, markdownComponents } = useMemo(
+    () => processMessageWithCitations(message, showCitations),
+    [message, showCitations]
+  );
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={markdownComponents}
+    >
+      {processedContent}
+    </ReactMarkdown>
+  );
+}
+
 export function PrintableChat({ messages, discoveryItems, expandAll = false }: PrintableChatProps) {
+  const showCitations = useSettingsStore((state) => state.showCitations);
   const turns = groupMessagesIntoTurns(messages, discoveryItems);
 
   if (turns.length === 0) {
@@ -50,12 +196,7 @@ export function PrintableChat({ messages, discoveryItems, expandAll = false }: P
           {/* User message */}
           <div className="user-message bg-amber-50 rounded-lg p-4 mb-4">
             <div className="prose prose-base max-w-none">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex]}
-              >
-                {turn.userMessage.content}
-              </ReactMarkdown>
+              <PrintableMessage message={turn.userMessage} showCitations={showCitations} />
             </div>
           </div>
 
@@ -63,12 +204,7 @@ export function PrintableChat({ messages, discoveryItems, expandAll = false }: P
           {turn.assistantMessage && (
             <div className="assistant-message bg-gray-50 rounded-lg p-4 mb-4">
               <div className="prose prose-base max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                >
-                  {turn.assistantMessage.content}
-                </ReactMarkdown>
+                <PrintableMessage message={turn.assistantMessage} showCitations={showCitations} />
               </div>
             </div>
           )}
