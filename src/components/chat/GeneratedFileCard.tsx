@@ -6,6 +6,27 @@ interface GeneratedFileCardProps {
   onDownload: (file: GeneratedFile) => void;
 }
 
+// Map mime type to file extension
+function getExtensionFromMimeType(mimeType: string | undefined): string | null {
+  if (!mimeType) return null;
+  const mt = mimeType.split(';')[0].trim();
+  const mimeMap: Record<string, string> = {
+    'text/csv': 'csv',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.ms-excel': 'xls',
+    'application/pdf': 'pdf',
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'application/json': 'json',
+    'text/plain': 'txt',
+    'text/html': 'html',
+    'application/zip': 'zip',
+    'application/xml': 'xml',
+    'text/xml': 'xml',
+  };
+  return mimeMap[mt] || null;
+}
+
 /**
  * A distinct file card component for generated files.
  * Displays as a file-like UI element with download button.
@@ -13,8 +34,13 @@ interface GeneratedFileCardProps {
 function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps) {
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Get file extension and determine icon/color
-  const ext = file.filename.split('.').pop()?.toLowerCase() || '';
+  // Get file extension from filename or mime_type
+  const filenameExt = file.filename.includes('.') ? file.filename.split('.').pop()?.toLowerCase() : null;
+  const mimeExt = getExtensionFromMimeType(file.mime_type);
+  const ext = filenameExt || mimeExt || '';
+
+  // Build display filename with extension if missing
+  const displayFilename = filenameExt ? file.filename : (mimeExt ? `${file.filename}.${mimeExt}` : file.filename);
 
   const getFileStyle = () => {
     // Spreadsheet files - green theme
@@ -75,7 +101,7 @@ function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps
 
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-lg border-2 ${style.bgColor} ${style.borderColor} max-w-xs shadow-sm`}
+      className={`flex items-center gap-3 p-3 rounded-lg border-2 ${style.bgColor} ${style.borderColor} max-w-md shadow-sm`}
     >
       {/* File icon */}
       <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${style.iconBg}`}>
@@ -94,13 +120,10 @@ function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps
         </svg>
       </div>
 
-      {/* File info */}
+      {/* File info - just show filename.ext */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-stone-800 dark:text-stone-100 truncate">
-          {file.filename}
-        </div>
-        <div className="text-xs text-stone-600 dark:text-stone-400">
-          Generated file
+        <div className="text-sm font-medium text-stone-800 dark:text-stone-100 truncate" title={displayFilename}>
+          {displayFilename}
         </div>
       </div>
 

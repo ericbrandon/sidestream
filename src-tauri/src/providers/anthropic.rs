@@ -85,6 +85,7 @@ pub struct CodeExecutionResult {
 pub struct GeneratedFileInfo {
     pub file_id: String,
     pub filename: String,
+    pub mime_type: Option<String>,
 }
 
 /// Citation from web search results (used for source list)
@@ -402,18 +403,20 @@ pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json:
                     // Output blocks have file_id for generated files
                     let file_id = item["file_id"].as_str()?.to_string();
 
+                    // Get mime_type from the API response
+                    let mime_type = item["mime_type"].as_str()
+                        .or_else(|| item["media_type"].as_str())
+                        .map(|s| s.to_string());
+
                     // Try to get filename from various possible fields
                     let mut filename = item["filename"]
                         .as_str()
                         .or_else(|| item["name"].as_str())
                         .map(|s| s.to_string());
 
-                    // If no filename, try to construct one from mime_type
+                    // If no filename or no extension, construct from mime_type
                     if filename.is_none() || filename.as_ref().map(|f| !f.contains('.')).unwrap_or(false) {
-                        let mime_type = item["mime_type"].as_str()
-                            .or_else(|| item["media_type"].as_str());
-
-                        let extension = mime_type.and_then(|mt| {
+                        let extension = mime_type.as_deref().and_then(|mt| {
                             match mt {
                                 "text/csv" => Some("csv"),
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
@@ -447,6 +450,7 @@ pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json:
                     Some(GeneratedFileInfo {
                         file_id,
                         filename: filename.unwrap_or_else(|| "file".to_string()),
+                        mime_type,
                     })
                 })
                 .collect()
@@ -495,4 +499,40 @@ pub fn calculate_max_tokens(extended_thinking_enabled: bool, thinking_budget: Op
     } else {
         8192
     }
+}
+
+/// File metadata from Anthropic Files API
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub id: String,
+    pub filename: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+}
+
+/// Fetch file metadata from Anthropic Files API to get mime_type
+pub async fn fetch_file_metadata(api_key: &str, file_id: &str) -> Result<FileMetadata, String> {
+    let client = reqwest::Client::new();
+    let url = format!("https://api.anthropic.com/v1/files/{}", file_id);
+
+    let response = client
+        .get(&url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", ANTHROPIC_VERSION)
+        .header("anthropic-beta", "files-api-2025-04-14")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch file metadata: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("File metadata API error: {}", error_text));
+    }
+
+    let metadata: FileMetadata = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse file metadata: {}", e))?;
+
+    Ok(metadata)
 }

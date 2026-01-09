@@ -7,7 +7,7 @@ use crate::llm::{ChatMessage, ExecutionDelta, ExecutionStatus, GeneratedFile, St
 use crate::llm_logger;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
-    is_code_execution_block, is_code_execution_result, parse_code_execution_result,
+    fetch_file_metadata, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
     ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation, ThinkingConfig,
 };
@@ -27,7 +27,7 @@ pub async fn send_chat_message_anthropic(
     turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "anthropic").await?;
-    let client = AnthropicClient::new(api_key);
+    let client = AnthropicClient::new(api_key.clone());
 
     // Build messages with cache breakpoint on the last message
     // Transform 'file' blocks to 'document' blocks for Anthropic API compatibility
@@ -147,14 +147,46 @@ pub async fn send_chat_message_anthropic(
                                                         ExecutionStatus::Completed
                                                     };
 
-                                                    // Convert files to GeneratedFile
-                                                    let files: Vec<GeneratedFile> = result.files.into_iter().map(|f| {
-                                                        GeneratedFile {
+                                                    // Convert files to GeneratedFile, fetching metadata to get mime_type
+                                                    let mut files: Vec<GeneratedFile> = Vec::new();
+                                                    for f in result.files {
+                                                        // Try to fetch metadata to get the correct mime_type and filename
+                                                        let (final_filename, final_mime_type) = match fetch_file_metadata(&api_key, &f.file_id).await {
+                                                            Ok(metadata) => {
+                                                                // Use filename from metadata if it has an extension, otherwise construct it
+                                                                let filename = if metadata.filename.contains('.') {
+                                                                    metadata.filename
+                                                                } else {
+                                                                    // Add extension based on mime_type
+                                                                    let ext = match metadata.mime_type.as_str() {
+                                                                        "text/csv" => "csv",
+                                                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+                                                                        "application/vnd.ms-excel" => "xls",
+                                                                        "application/pdf" => "pdf",
+                                                                        "image/png" => "png",
+                                                                        "image/jpeg" => "jpg",
+                                                                        "application/json" => "json",
+                                                                        "text/plain" => "txt",
+                                                                        "text/html" => "html",
+                                                                        "application/zip" => "zip",
+                                                                        _ => metadata.mime_type.split('/').last().unwrap_or("bin"),
+                                                                    };
+                                                                    format!("{}.{}", metadata.filename, ext)
+                                                                };
+                                                                (filename, Some(metadata.mime_type))
+                                                            }
+                                                            Err(e) => {
+                                                                eprintln!("Failed to fetch file metadata for {}: {}", f.file_id, e);
+                                                                // Fall back to original values
+                                                                (f.filename, f.mime_type)
+                                                            }
+                                                        };
+                                                        files.push(GeneratedFile {
                                                             file_id: f.file_id,
-                                                            filename: f.filename,
-                                                            mime_type: None, // Will be determined on download
-                                                        }
-                                                    }).collect();
+                                                            filename: final_filename,
+                                                            mime_type: final_mime_type,
+                                                        });
+                                                    }
 
                                                     // Emit execution completed delta
                                                     let delta = StreamDelta {
