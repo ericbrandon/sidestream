@@ -266,33 +266,34 @@ export function Message({ message, onFork }: MessageProps) {
             }
           };
 
-          const executionSection = hasExecution && (
-            <>
-              <div className="mt-3">
-                <ExecutionBadge
-                  code={message.executionCode}
-                  output={message.executionOutput}
-                  durationMs={message.executionDurationMs}
-                  status={message.executionStatus}
-                  error={message.executionError}
+          // Execution badge (inline at split point)
+          const executionBadge = hasExecution && (
+            <div className="mt-3">
+              <ExecutionBadge
+                code={message.executionCode}
+                output={message.executionOutput}
+                durationMs={message.executionDurationMs}
+                status={message.executionStatus}
+                error={message.executionError}
+              />
+            </div>
+          );
+
+          // Generated files (always at bottom)
+          const generatedFilesSection = message.generatedFiles && message.generatedFiles.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {message.generatedFiles.map((file) => (
+                <GeneratedFileCard
+                  key={file.file_id}
+                  file={file}
+                  onDownload={downloadFile}
                 />
-              </div>
-              {message.generatedFiles && message.generatedFiles.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {message.generatedFiles.map((file) => (
-                    <GeneratedFileCard
-                      key={file.file_id}
-                      file={file}
-                      onDownload={downloadFile}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
+              ))}
+            </div>
           );
 
           if (splitPoint !== null) {
-            // Split content and insert execution info in the middle
+            // Split content and insert execution badge in the middle, files at bottom
             const beforeExec = processedContent.slice(0, splitPoint);
             const afterExec = processedContent.slice(splitPoint).trim();
 
@@ -307,7 +308,7 @@ export function Message({ message, onFork }: MessageProps) {
                     {beforeExec}
                   </ReactMarkdown>
                 </div>
-                {executionSection}
+                {executionBadge}
                 {afterExec && (
                   <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable mt-4">
                     <ReactMarkdown
@@ -319,6 +320,7 @@ export function Message({ message, onFork }: MessageProps) {
                     </ReactMarkdown>
                   </div>
                 )}
+                {generatedFilesSection}
               </>
             );
           }
@@ -335,7 +337,8 @@ export function Message({ message, onFork }: MessageProps) {
                   {processedContent}
                 </ReactMarkdown>
               </div>
-              {executionSection}
+              {executionBadge}
+              {generatedFilesSection}
             </>
           );
         })()}

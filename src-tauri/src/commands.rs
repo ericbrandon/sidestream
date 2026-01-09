@@ -286,6 +286,9 @@ pub async fn download_anthropic_file(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
+    // Fix filename extension based on mime type if missing
+    let final_filename = fix_filename_extension(&filename, mime_type.as_deref());
+
     let data = response
         .bytes()
         .await
@@ -294,8 +297,51 @@ pub async fn download_anthropic_file(
 
     Ok(DownloadedFile {
         data,
-        filename,
+        filename: final_filename,
         mime_type,
     })
+}
+
+/// Add or fix file extension based on mime type
+fn fix_filename_extension(filename: &str, mime_type: Option<&str>) -> String {
+    // If filename already has a recognized extension, keep it
+    if let Some(ext) = filename.rsplit('.').next() {
+        let known_extensions = ["csv", "xlsx", "xls", "pdf", "png", "jpg", "jpeg", "json", "txt", "html", "zip", "xml"];
+        if known_extensions.contains(&ext.to_lowercase().as_str()) {
+            return filename.to_string();
+        }
+    }
+
+    // Map mime type to extension
+    let extension = mime_type.and_then(|mt| {
+        // Handle mime types with parameters (e.g., "text/csv; charset=utf-8")
+        let mt = mt.split(';').next().unwrap_or(mt).trim();
+        match mt {
+            "text/csv" => Some("csv"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+            "application/vnd.ms-excel" => Some("xls"),
+            "application/pdf" => Some("pdf"),
+            "image/png" => Some("png"),
+            "image/jpeg" => Some("jpg"),
+            "application/json" => Some("json"),
+            "text/plain" => Some("txt"),
+            "text/html" => Some("html"),
+            "application/zip" => Some("zip"),
+            "application/xml" | "text/xml" => Some("xml"),
+            _ => None
+        }
+    });
+
+    if let Some(ext) = extension {
+        // Remove any existing extension-like suffix and add the correct one
+        let base = if filename.contains('.') {
+            filename.rsplit_once('.').map(|(base, _)| base).unwrap_or(filename)
+        } else {
+            filename
+        };
+        format!("{}.{}", base, ext)
+    } else {
+        filename.to_string()
+    }
 }
 

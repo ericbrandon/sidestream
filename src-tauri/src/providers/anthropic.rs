@@ -401,12 +401,53 @@ pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json:
                 .filter_map(|item| {
                     // Output blocks have file_id for generated files
                     let file_id = item["file_id"].as_str()?.to_string();
-                    // Filename may not be present - we'll need to get it from the file or use a default
-                    let filename = item["filename"]
+
+                    // Try to get filename from various possible fields
+                    let mut filename = item["filename"]
                         .as_str()
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| format!("file_{}", &file_id[..8.min(file_id.len())]));
-                    Some(GeneratedFileInfo { file_id, filename })
+                        .or_else(|| item["name"].as_str())
+                        .map(|s| s.to_string());
+
+                    // If no filename, try to construct one from mime_type
+                    if filename.is_none() || filename.as_ref().map(|f| !f.contains('.')).unwrap_or(false) {
+                        let mime_type = item["mime_type"].as_str()
+                            .or_else(|| item["media_type"].as_str());
+
+                        let extension = mime_type.and_then(|mt| {
+                            match mt {
+                                "text/csv" => Some("csv"),
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+                                "application/vnd.ms-excel" => Some("xls"),
+                                "application/pdf" => Some("pdf"),
+                                "image/png" => Some("png"),
+                                "image/jpeg" => Some("jpg"),
+                                "application/json" => Some("json"),
+                                "text/plain" => Some("txt"),
+                                "text/html" => Some("html"),
+                                "application/zip" => Some("zip"),
+                                _ => mt.split('/').last()
+                            }
+                        });
+
+                        let base_name = filename.unwrap_or_else(|| {
+                            format!("file_{}", &file_id[..8.min(file_id.len())])
+                        });
+
+                        filename = Some(if let Some(ext) = extension {
+                            if base_name.contains('.') {
+                                base_name
+                            } else {
+                                format!("{}.{}", base_name, ext)
+                            }
+                        } else {
+                            base_name
+                        });
+                    }
+
+                    Some(GeneratedFileInfo {
+                        file_id,
+                        filename: filename.unwrap_or_else(|| "file".to_string()),
+                    })
                 })
                 .collect()
         })
