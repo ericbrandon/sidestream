@@ -115,6 +115,7 @@ pub async fn send_chat_message_openai(
                                                 citations: None,
                                                 inline_citations: None,
                                                 thinking: None,
+                                                execution: None,
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -128,6 +129,7 @@ pub async fn send_chat_message_openai(
                                                 citations: None,
                                                 inline_citations: None,
                                                 thinking: Some(thinking_text),
+                                                execution: None,
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -153,6 +155,7 @@ pub async fn send_chat_message_openai(
                                                     citations: None,
                                                     inline_citations: Some(inline_citations),
                                                     thinking: None,
+                                                    execution: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);

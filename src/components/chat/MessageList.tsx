@@ -4,9 +4,20 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { Message } from './Message';
 import { StreamingMessage } from './StreamingMessage';
 import { ThinkingIndicator } from './ThinkingIndicator';
+import { ExecutionIndicator } from './ExecutionIndicator';
 
 export function MessageList() {
-  const { messages, isStreaming, streamingContent, streamingThinking, streamingInlineCitations, sessionLoadedAt } = useChatStore();
+  const {
+    messages,
+    isStreaming,
+    streamingContent,
+    streamingThinking,
+    streamingInlineCitations,
+    sessionLoadedAt,
+    streamingExecutionCode,
+    streamingExecutionOutput,
+    executionStatus,
+  } = useChatStore();
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
@@ -27,7 +38,7 @@ export function MessageList() {
       const neededHeight = Math.max(0, containerHeight - lastUserMessage.offsetHeight - contentBelowMessage);
       spacer.style.height = `${neededHeight}px`;
     }
-  }, [messages, streamingContent, streamingThinking]);
+  }, [messages, streamingContent, streamingThinking, streamingExecutionCode, streamingExecutionOutput]);
 
   // Scroll to bottom when a session is loaded
   useEffect(() => {
@@ -89,21 +100,35 @@ export function MessageList() {
           />
         </div>
       ))}
-      {/* Show thinking indicator when model is thinking */}
-      {isStreaming && streamingThinking && !streamingContent && (
+      {/* Show thinking indicator when model is thinking (before response content) */}
+      {isStreaming && streamingThinking && !streamingContent && executionStatus === 'idle' && (
         <ThinkingIndicator content={streamingThinking} />
       )}
-      {/* Show collapsed thinking + streaming content */}
+      {/* Show execution indicator when code is executing (before response content) */}
+      {isStreaming && executionStatus === 'running' && !streamingContent && (
+        <ExecutionIndicator
+          code={streamingExecutionCode}
+          output={streamingExecutionOutput}
+        />
+      )}
+      {/* Show collapsed thinking/execution + streaming content */}
       {isStreaming && streamingContent && (
         <>
           {streamingThinking && (
             <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
+          {(executionStatus === 'completed' || executionStatus === 'failed') && streamingExecutionCode && (
+            <ExecutionIndicator
+              code={streamingExecutionCode}
+              output={streamingExecutionOutput}
+              isComplete
+            />
+          )}
           <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
         </>
       )}
-      {/* Show pulsing dots when waiting for first response (streaming but no content or thinking yet) */}
-      {isStreaming && !streamingContent && !streamingThinking && (
+      {/* Show pulsing dots when waiting for first response (streaming but no content, thinking, or execution yet) */}
+      {isStreaming && !streamingContent && !streamingThinking && executionStatus === 'idle' && (
         <div className="flex justify-start mb-4">
           <div className="max-w-[85%] p-4">
             <div className="flex items-center gap-1">

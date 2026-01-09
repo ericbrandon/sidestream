@@ -245,3 +245,57 @@ pub async fn transcribe_audio_bytes(
     Ok(transcript.trim().to_string())
 }
 
+/// Response from downloading a file from Anthropic's Files API
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DownloadedFile {
+    pub data: Vec<u8>,
+    pub filename: String,
+    pub mime_type: Option<String>,
+}
+
+/// Download a file from Anthropic's Files API
+#[tauri::command]
+pub async fn download_anthropic_file(
+    app: tauri::AppHandle,
+    file_id: String,
+    filename: String,
+) -> Result<DownloadedFile, String> {
+    let api_key = get_api_key_async(&app, "anthropic").await?;
+
+    let client = reqwest::Client::new();
+    let url = format!("https://api.anthropic.com/v1/files/{}/content", file_id);
+
+    let response = client
+        .get(&url)
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("anthropic-beta", "files-api-2025-04-14")
+        .send()
+        .await
+        .map_err(|e| format!("File download request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("File download API error: {}", error_text));
+    }
+
+    // Get content-type header for mime type
+    let mime_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read file content: {}", e))?
+        .to_vec();
+
+    Ok(DownloadedFile {
+        data,
+        filename,
+        mime_type,
+    })
+}
+

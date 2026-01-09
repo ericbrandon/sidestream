@@ -21,6 +21,10 @@ export function useChat() {
     addStreamingCitations,
     addStreamingInlineCitations,
     appendStreamingThinking,
+    setExecutionStarted,
+    appendExecutionOutput,
+    setExecutionCompleted,
+    setExecutionFailed,
     clearInput,
     clearAttachments,
     setStreaming,
@@ -63,6 +67,25 @@ export function useChat() {
             if (delta.thinking) {
               appendStreamingThinking(delta.thinking);
             }
+            // Handle execution deltas
+            if (delta.execution) {
+              const exec = delta.execution;
+              if (exec.status === 'started' && exec.code) {
+                setExecutionStarted(exec.code);
+              }
+              if (exec.stdout) {
+                appendExecutionOutput(exec.stdout);
+              }
+              if (exec.stderr) {
+                appendExecutionOutput(exec.stderr);
+              }
+              if (exec.status === 'completed') {
+                setExecutionCompleted(exec.files ?? undefined);
+              }
+              if (typeof exec.status === 'object' && 'failed' in exec.status) {
+                setExecutionFailed(exec.status.failed.error);
+              }
+            }
           }
           return;
         }
@@ -96,6 +119,25 @@ export function useChat() {
           }
           if (delta.thinking) {
             appendStreamingThinking(delta.thinking);
+          }
+          // Handle execution deltas
+          if (delta.execution) {
+            const exec = delta.execution;
+            if (exec.status === 'started' && exec.code) {
+              setExecutionStarted(exec.code);
+            }
+            if (exec.stdout) {
+              appendExecutionOutput(exec.stdout);
+            }
+            if (exec.stderr) {
+              appendExecutionOutput(exec.stderr);
+            }
+            if (exec.status === 'completed') {
+              setExecutionCompleted(exec.files ?? undefined);
+            }
+            if (typeof exec.status === 'object' && 'failed' in exec.status) {
+              setExecutionFailed(exec.status.failed.error);
+            }
           }
         }
       });
@@ -160,7 +202,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
+  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -246,6 +288,7 @@ export function useChat() {
           messages: apiMessages,
           systemPrompt,
           webSearchEnabled: frontierLLM.webSearchEnabled,
+          codeExecutionEnabled: true, // Enable code execution for file generation
           sessionId: useSessionStore.getState().activeSessionId,
           turnId, // Pass turnId to backend so events can be routed correctly
           ...buildProviderThinkingParams(frontierLLM),

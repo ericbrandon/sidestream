@@ -130,6 +130,7 @@ pub async fn send_voice_message_impl(
                                                                 citations: None,
                                                                 inline_citations: None,
                                                                 thinking: None,
+                                                                execution: None,
                                                             };
                                                             window.emit("chat-stream-delta", delta).ok();
                                                         }
@@ -146,6 +147,7 @@ pub async fn send_voice_message_impl(
                                                     citations: None,
                                                     inline_citations: None,
                                                     thinking: None,
+                                                    execution: None,
                                                 };
                                                 window.emit("chat-stream-delta", delta).ok();
                                             }
@@ -173,6 +175,7 @@ pub async fn send_voice_message_impl(
                                                 citations: None,
                                                 inline_citations: Some(inline_citations),
                                                 thinking: None,
+                                                execution: None,
                                             };
                                             window.emit("chat-stream-delta", delta).ok();
                                         }

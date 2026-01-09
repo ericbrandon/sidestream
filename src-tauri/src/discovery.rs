@@ -316,7 +316,7 @@ async fn discover_resources_anthropic(
                             }
                             return Ok(());
                         }
-                        AnthropicStreamEvent::ContentBlockDelta { text, thinking: _, citation: _ } => {
+                        AnthropicStreamEvent::ContentBlockDelta { text, thinking: _, citation: _, input_json: _ } => {
                             if let Some(delta_text) = text {
                                 full_response.push_str(&delta_text);
 

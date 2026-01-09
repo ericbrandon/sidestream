@@ -3,10 +3,11 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
+use crate::llm::{ChatMessage, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
+    is_code_execution_block, is_code_execution_result, parse_code_execution_result,
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
     ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation, ThinkingConfig,
 };
@@ -22,6 +23,7 @@ pub async fn send_chat_message_anthropic(
     extended_thinking_enabled: bool,
     thinking_budget: Option<u32>,
     web_search_enabled: bool,
+    code_execution_enabled: bool,
     turn_id: String,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "anthropic").await?;
@@ -52,15 +54,25 @@ pub async fn send_chat_message_anthropic(
             None
         },
         web_search_enabled,
+        code_execution_enabled,
     };
     let body = client.build_chat_request(&config);
 
     llm_logger::log_request("chat", &model, &body);
 
-    let response = client.send_streaming_request(&body).await.map_err(|e| {
-        llm_logger::log_error("chat", &e);
-        e
-    })?;
+    // Use beta header if code execution is enabled
+    let beta_header = if code_execution_enabled {
+        Some("code-execution-2025-08-25")
+    } else {
+        None
+    };
+    let response = client
+        .send_streaming_request_with_beta(&body, beta_header)
+        .await
+        .map_err(|e| {
+            llm_logger::log_error("chat", &e);
+            e
+        })?;
 
     // Stream the response
     let mut stream = response.bytes_stream();
@@ -68,6 +80,11 @@ pub async fn send_chat_message_anthropic(
     let mut full_response = String::new();
     let mut current_block_type: Option<String> = None;
     let mut previous_block_type: Option<String> = None;
+    // Track current code execution tool for matching results
+    let mut _current_execution_tool_id: Option<String> = None;
+    let mut current_execution_tool_name: Option<String> = None;
+    // Accumulate input JSON for tool use blocks (code comes via input_json_delta)
+    let mut pending_tool_input_json: String = String::new();
 
     loop {
         tokio::select! {
@@ -100,44 +117,109 @@ pub async fn send_chat_message_anthropic(
                                             }
                                             return Ok(());
                                         }
-                                        AnthropicStreamEvent::ContentBlockStart { block_type, content_block: _ } => {
+                                        AnthropicStreamEvent::ContentBlockStart { block_type, content_block } => {
                                             current_block_type = Some(block_type.clone());
 
-                                            match block_type.as_str() {
-                                                "thinking" => {
-                                                    llm_logger::log_feature_used("chat", "Extended Thinking block started");
+                                            // Check for code execution tool use
+                                            if is_code_execution_block(&block_type, &content_block) {
+                                                // Just note the tool name - actual input comes via input_json_delta
+                                                let id = content_block["id"].as_str().unwrap_or("").to_string();
+                                                let name = content_block["name"].as_str().unwrap_or("").to_string();
+                                                llm_logger::log_feature_used("chat", &format!("Code execution started: {}", name));
+                                                _current_execution_tool_id = Some(id);
+                                                current_execution_tool_name = Some(name);
+                                                // Reset input JSON accumulator for this tool use
+                                                pending_tool_input_json.clear();
+                                            }
+                                            // Check for code execution result
+                                            else if is_code_execution_result(&block_type) {
+                                                if let Some(result) = parse_code_execution_result(&block_type, &content_block) {
+                                                    llm_logger::log_feature_used("chat", &format!("Code execution completed: {} files generated", result.files.len()));
+
+                                                    // Determine status
+                                                    let status = if let Some(ref error) = result.error {
+                                                        ExecutionStatus::Failed { error: error.clone() }
+                                                    } else if result.return_code.map(|c| c != 0).unwrap_or(false) {
+                                                        ExecutionStatus::Failed {
+                                                            error: format!("Exit code: {}", result.return_code.unwrap_or(-1))
+                                                        }
+                                                    } else {
+                                                        ExecutionStatus::Completed
+                                                    };
+
+                                                    // Convert files to GeneratedFile
+                                                    let files: Vec<GeneratedFile> = result.files.into_iter().map(|f| {
+                                                        GeneratedFile {
+                                                            file_id: f.file_id,
+                                                            filename: f.filename,
+                                                            mime_type: None, // Will be determined on download
+                                                        }
+                                                    }).collect();
+
+                                                    // Emit execution completed delta
+                                                    let delta = StreamDelta {
+                                                        turn_id: turn_id.clone(),
+                                                        text: String::new(),
+                                                        citations: None,
+                                                        inline_citations: None,
+                                                        thinking: None,
+                                                        execution: Some(ExecutionDelta {
+                                                            tool_name: current_execution_tool_name.clone().unwrap_or_else(|| result.tool_name),
+                                                            stdout: result.stdout,
+                                                            stderr: result.stderr,
+                                                            status,
+                                                            code: None,
+                                                            files: if files.is_empty() { None } else { Some(files) },
+                                                        }),
+                                                    };
+                                                    if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                        eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                    }
+
+                                                    // Clear current execution tracking
+                                                    _current_execution_tool_id = None;
+                                                    current_execution_tool_name = None;
                                                 }
-                                                "server_tool_use" => {
-                                                    llm_logger::log_feature_used("chat", "Web Search initiated (server_tool_use)");
-                                                }
-                                                "web_search_tool_result" => {
-                                                    llm_logger::log_feature_used("chat", "Web Search results received");
-                                                    // We no longer emit these as source citations - we only use inline citations
-                                                }
-                                                "text" => {
-                                                    // Insert paragraph break if previous block was non-text
-                                                    if let Some(prev) = &previous_block_type {
-                                                        if matches!(prev.as_str(), "thinking" | "server_tool_use" | "web_search_tool_result") {
-                                                            full_response.push_str("\n\n");
-                                                            let delta = StreamDelta {
-                                                                turn_id: turn_id.clone(),
-                                                                text: "\n\n".to_string(),
-                                                                citations: None,
-                                                                inline_citations: None,
-                                                                thinking: None,
-                                                            };
-                                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
-                                                                eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                            }
+                                            else {
+                                                match block_type.as_str() {
+                                                    "thinking" => {
+                                                        llm_logger::log_feature_used("chat", "Extended Thinking block started");
+                                                    }
+                                                    "server_tool_use" => {
+                                                        llm_logger::log_feature_used("chat", "Web Search initiated (server_tool_use)");
+                                                    }
+                                                    "web_search_tool_result" => {
+                                                        llm_logger::log_feature_used("chat", "Web Search results received");
+                                                        // We no longer emit these as source citations - we only use inline citations
+                                                    }
+                                                    "text" => {
+                                                        // Insert paragraph break if previous block was non-text
+                                                        if let Some(prev) = &previous_block_type {
+                                                            if matches!(prev.as_str(), "thinking" | "server_tool_use" | "web_search_tool_result"
+                                                                | "bash_code_execution_tool_result" | "text_editor_code_execution_tool_result") {
+                                                                full_response.push_str("\n\n");
+                                                                let delta = StreamDelta {
+                                                                    turn_id: turn_id.clone(),
+                                                                    text: "\n\n".to_string(),
+                                                                    citations: None,
+                                                                    inline_citations: None,
+                                                                    thinking: None,
+                                                                    execution: None,
+                                                                };
+                                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                                    eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                                }
                                                             }
                                                         }
+                                                        // Citations will arrive via citations_delta events during streaming
+                                                        // and will be collected in pending_block_citations
                                                     }
-                                                    // Citations will arrive via citations_delta events during streaming
-                                                    // and will be collected in pending_block_citations
+                                                    _ => {}
                                                 }
-                                                _ => {}
                                             }
                                         }
-                                        AnthropicStreamEvent::ContentBlockDelta { text, thinking, citation } => {
+                                        AnthropicStreamEvent::ContentBlockDelta { text, thinking, citation, input_json } => {
                                             if let Some(t) = text {
                                                 full_response.push_str(&t);
                                                 let delta = StreamDelta {
@@ -146,6 +228,7 @@ pub async fn send_chat_message_anthropic(
                                                     citations: None,
                                                     inline_citations: None,
                                                     thinking: None,
+                                                    execution: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -159,6 +242,7 @@ pub async fn send_chat_message_anthropic(
                                                     citations: None,
                                                     inline_citations: None,
                                                     thinking: Some(thinking_text),
+                                                    execution: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
@@ -179,13 +263,65 @@ pub async fn send_chat_message_anthropic(
                                                     citations: None,
                                                     inline_citations: Some(vec![inline_citation]),
                                                     thinking: None,
+                                                    execution: None,
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
                                                 }
                                             }
+                                            // Accumulate input_json for tool use blocks
+                                            if let Some(json_chunk) = input_json {
+                                                pending_tool_input_json.push_str(&json_chunk);
+                                            }
                                         }
                                         AnthropicStreamEvent::ContentBlockStop => {
+                                            // If we just finished a code execution tool use block, emit the execution started event
+                                            if let Some(ref block_type) = current_block_type {
+                                                if block_type == "server_tool_use" && current_execution_tool_name.is_some() && !pending_tool_input_json.is_empty() {
+                                                    // Parse the accumulated input JSON
+                                                    if let Ok(input_obj) = serde_json::from_str::<serde_json::Value>(&pending_tool_input_json) {
+                                                        let tool_name = current_execution_tool_name.as_ref().unwrap();
+                                                        let code = match tool_name.as_str() {
+                                                            "bash_code_execution" => {
+                                                                input_obj["command"].as_str().map(|s| s.to_string())
+                                                            }
+                                                            "text_editor_code_execution" => {
+                                                                let command = input_obj["command"].as_str().unwrap_or("");
+                                                                let path = input_obj["path"].as_str().unwrap_or("");
+                                                                let file_text = input_obj["file_text"].as_str();
+                                                                if let Some(content) = file_text {
+                                                                    Some(format!("# {} {}\n{}", command, path, content))
+                                                                } else {
+                                                                    Some(format!("# {} {}", command, path))
+                                                                }
+                                                            }
+                                                            _ => None,
+                                                        };
+
+                                                        // Emit execution started delta with actual code
+                                                        let delta = StreamDelta {
+                                                            turn_id: turn_id.clone(),
+                                                            text: String::new(),
+                                                            citations: None,
+                                                            inline_citations: None,
+                                                            thinking: None,
+                                                            execution: Some(ExecutionDelta {
+                                                                tool_name: tool_name.clone(),
+                                                                stdout: None,
+                                                                stderr: None,
+                                                                status: ExecutionStatus::Started,
+                                                                code,
+                                                                files: None,
+                                                            }),
+                                                        };
+                                                        if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                            eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                        }
+                                                    }
+                                                    // Clear the accumulated JSON
+                                                    pending_tool_input_json.clear();
+                                                }
+                                            }
                                             previous_block_type = current_block_type.take();
                                         }
                                         AnthropicStreamEvent::MessageStop => {

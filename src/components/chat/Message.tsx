@@ -5,10 +5,15 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-import type { Message as MessageType, InlineCitation as InlineCitationType } from '../../lib/types';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
+import type { Message as MessageType, InlineCitation as InlineCitationType, GeneratedFile } from '../../lib/types';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
 import { InlineCitation } from './InlineCitation';
 import { ThinkingBadge } from './ThinkingBadge';
+import { ExecutionBadge } from './ExecutionBadge';
+import { GeneratedFileCard } from './GeneratedFileCard';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
@@ -226,16 +231,114 @@ export function Message({ message, onFork }: MessageProps) {
           />
         )}
 
-        {/* Message content */}
-        <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={markdownComponents}
-          >
-            {processedContent}
-          </ReactMarkdown>
-        </div>
+        {/* Message content - split at execution position if present */}
+        {(() => {
+          // If we have execution info with a position, split the content
+          const hasExecution = !isUser && message.executionCode;
+          const execPos = message.executionTextPosition;
+
+          // Find the split point: next newline after exec position (paragraph break)
+          let splitPoint: number | null = null;
+          if (hasExecution && execPos != null && execPos < processedContent.length) {
+            // Look for next double newline (paragraph break) after the position
+            const searchFrom = execPos;
+            const nextBreak = processedContent.indexOf('\n\n', searchFrom);
+            if (nextBreak !== -1) {
+              splitPoint = nextBreak;
+            }
+          }
+
+          const downloadFile = async (f: GeneratedFile) => {
+            try {
+              const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                'download_anthropic_file',
+                { fileId: f.file_id, filename: f.filename }
+              );
+              const savePath = await save({
+                defaultPath: result.filename,
+                title: 'Save Generated File',
+              });
+              if (savePath) {
+                await writeFile(savePath, new Uint8Array(result.data));
+              }
+            } catch (err) {
+              console.error('Failed to download file:', err);
+            }
+          };
+
+          const executionSection = hasExecution && (
+            <>
+              <div className="mt-3">
+                <ExecutionBadge
+                  code={message.executionCode}
+                  output={message.executionOutput}
+                  durationMs={message.executionDurationMs}
+                  status={message.executionStatus}
+                  error={message.executionError}
+                />
+              </div>
+              {message.generatedFiles && message.generatedFiles.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {message.generatedFiles.map((file) => (
+                    <GeneratedFileCard
+                      key={file.file_id}
+                      file={file}
+                      onDownload={downloadFile}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          );
+
+          if (splitPoint !== null) {
+            // Split content and insert execution info in the middle
+            const beforeExec = processedContent.slice(0, splitPoint);
+            const afterExec = processedContent.slice(splitPoint).trim();
+
+            return (
+              <>
+                <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
+                    components={markdownComponents}
+                  >
+                    {beforeExec}
+                  </ReactMarkdown>
+                </div>
+                {executionSection}
+                {afterExec && (
+                  <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable mt-4">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      components={markdownComponents}
+                    >
+                      {afterExec}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </>
+            );
+          }
+
+          // No split - render normally with execution at end
+          return (
+            <>
+              <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={markdownComponents}
+                >
+                  {processedContent}
+                </ReactMarkdown>
+              </div>
+              {executionSection}
+            </>
+          );
+        })()}
       </div>
 
       {/* Context menu for copy/search/fork actions */}
