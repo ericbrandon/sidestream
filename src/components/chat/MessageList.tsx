@@ -100,29 +100,29 @@ export function MessageList() {
           />
         </div>
       ))}
-      {/* Show thinking indicator when model is thinking (before response content) */}
+      {/* Show thinking indicator when model is thinking (before response content starts) */}
+      {/* Keep it expanded only when there's no execution running */}
       {isStreaming && streamingThinking && !streamingContent && executionStatus === 'idle' && (
         <ThinkingIndicator content={streamingThinking} />
       )}
-      {/* Show execution indicator when code is executing (before response content) */}
+      {/* When execution starts, collapse thinking and show execution indicator */}
       {isStreaming && executionStatus === 'running' && !streamingContent && (
-        <ExecutionIndicator
-          code={streamingExecutionCode}
-          output={streamingExecutionOutput}
-        />
-      )}
-      {/* Show collapsed thinking/execution + streaming content */}
-      {isStreaming && streamingContent && (
         <>
           {streamingThinking && (
             <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
-          {(executionStatus === 'completed' || executionStatus === 'failed') && streamingExecutionCode && (
-            <ExecutionIndicator
-              code={streamingExecutionCode}
-              output={streamingExecutionOutput}
-              isComplete
-            />
+          <ExecutionIndicator
+            code={streamingExecutionCode}
+            output={streamingExecutionOutput}
+          />
+        </>
+      )}
+      {/* Show collapsed thinking + streaming content */}
+      {/* Don't show execution indicator here - it would jump when message finalizes */}
+      {isStreaming && streamingContent && (
+        <>
+          {streamingThinking && (
+            <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
           <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
         </>
