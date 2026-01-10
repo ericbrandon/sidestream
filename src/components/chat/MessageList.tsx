@@ -16,7 +16,6 @@ export function MessageList() {
     sessionLoadedAt,
     streamingExecutionCode,
     streamingExecutionOutput,
-    executionStatus,
   } = useChatStore();
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -106,9 +105,9 @@ export function MessageList() {
 
   // Determine what streaming state we're in
   const hasThinking = isStreaming && !!streamingThinking;
-  const hasExecution = isStreaming && (executionStatus === 'running' || executionStatus === 'completed' || executionStatus === 'failed');
+  const hasExecutionData = isStreaming && !!streamingExecutionCode;
   const hasContent = isStreaming && !!streamingContent;
-  const isWaitingForResponse = isStreaming && !streamingContent && !streamingThinking && executionStatus === 'idle';
+  const isWaitingForResponse = isStreaming && !streamingContent && !streamingThinking && !streamingExecutionCode;
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
@@ -127,26 +126,19 @@ export function MessageList() {
       {/* Streaming response area - render all active indicators together */}
       {isStreaming && (
         <div ref={streamingAreaRef} className="streaming-response">
-          {/* Thinking indicator - expanded when no content yet, collapsed otherwise */}
-          {hasThinking && !hasContent && !hasExecution && (
+          {/* Thinking indicator - expanded when alone, collapsed when other content present */}
+          {hasThinking && !hasContent && !hasExecutionData && (
             <ThinkingIndicator content={streamingThinking} />
           )}
-          {hasThinking && (hasContent || hasExecution) && (
+          {hasThinking && (hasContent || hasExecutionData) && (
             <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
 
-          {/* Execution indicator - show expanded while running, collapsed after content starts */}
-          {executionStatus === 'running' && (
+          {/* Execution indicator - always show expanded during streaming if we have execution data */}
+          {hasExecutionData && (
             <ExecutionIndicator
               code={streamingExecutionCode}
               output={streamingExecutionOutput}
-            />
-          )}
-          {hasExecution && executionStatus !== 'running' && (
-            <ExecutionIndicator
-              code={streamingExecutionCode}
-              output={streamingExecutionOutput}
-              isComplete
             />
           )}
 
