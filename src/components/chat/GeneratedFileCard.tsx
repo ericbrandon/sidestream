@@ -42,53 +42,12 @@ function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps
   // Build display filename with extension if missing
   const displayFilename = filenameExt ? file.filename : (mimeExt ? `${file.filename}.${mimeExt}` : file.filename);
 
-  const getFileStyle = () => {
-    // Spreadsheet files - green theme
-    if (['xlsx', 'xls', 'csv'].includes(ext)) {
-      return {
-        bgColor: 'bg-emerald-100 dark:bg-emerald-900/40',
-        borderColor: 'border-emerald-300 dark:border-emerald-700',
-        iconBg: 'bg-emerald-200 dark:bg-emerald-800',
-        iconColor: 'text-emerald-700 dark:text-emerald-300',
-      };
-    }
-    // PDF files - red theme
-    if (ext === 'pdf') {
-      return {
-        bgColor: 'bg-red-100 dark:bg-red-900/40',
-        borderColor: 'border-red-300 dark:border-red-700',
-        iconBg: 'bg-red-200 dark:bg-red-800',
-        iconColor: 'text-red-700 dark:text-red-300',
-      };
-    }
-    // Image files - purple theme
-    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) {
-      return {
-        bgColor: 'bg-purple-100 dark:bg-purple-900/40',
-        borderColor: 'border-purple-300 dark:border-purple-700',
-        iconBg: 'bg-purple-200 dark:bg-purple-800',
-        iconColor: 'text-purple-700 dark:text-purple-300',
-      };
-    }
-    // Code/text files - blue theme
-    if (['py', 'js', 'ts', 'json', 'txt', 'md', 'html', 'css'].includes(ext)) {
-      return {
-        bgColor: 'bg-blue-100 dark:bg-blue-900/40',
-        borderColor: 'border-blue-300 dark:border-blue-700',
-        iconBg: 'bg-blue-200 dark:bg-blue-800',
-        iconColor: 'text-blue-700 dark:text-blue-300',
-      };
-    }
-    // Default - amber/orange theme for visibility
-    return {
-      bgColor: 'bg-amber-100 dark:bg-amber-900/40',
-      borderColor: 'border-amber-300 dark:border-amber-700',
-      iconBg: 'bg-amber-200 dark:bg-amber-800',
-      iconColor: 'text-amber-700 dark:text-amber-300',
-    };
+  const style = {
+    bgColor: 'bg-blue-100 dark:bg-blue-900/40',
+    borderColor: 'border-blue-300 dark:border-blue-700',
+    iconBg: 'bg-blue-200 dark:bg-blue-800',
+    iconColor: 'text-blue-700 dark:text-blue-300',
   };
-
-  const style = getFileStyle();
 
   const handleDownload = async () => {
     setIsDownloading(true);
