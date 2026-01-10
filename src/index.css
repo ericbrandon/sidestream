@@ -122,13 +122,9 @@
 
 @layer base {
   html, body, #root {
-    @apply h-full;
-    overflow: hidden !important;
+    @apply h-full overflow-hidden;
     margin: 0;
     padding: 0;
-    /* Prevent any scrolling at the document level */
-    position: fixed;
-    width: 100%;
   }
 
   body {

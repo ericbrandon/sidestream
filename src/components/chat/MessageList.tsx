@@ -20,72 +20,73 @@ export function MessageList() {
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
-  const spacerRef = useRef<HTMLDivElement>(null);
   const streamingAreaRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
 
-  // Update spacer height based on content below the last user message
+  // Track whether we should scroll on next user message
+  const prevMessageCountRef = useRef<number>(0);
+  // Track session to distinguish load vs new message
+  const lastSessionLoadRef = useRef<number | null>(null);
+
+  // Scroll to bottom of content when a session is loaded from history
   useEffect(() => {
-    const container = containerRef.current;
-    const lastUserMessage = lastUserMessageRef.current;
-    const spacer = spacerRef.current;
+    if (sessionLoadedAt && sessionLoadedAt !== lastSessionLoadRef.current) {
+      lastSessionLoadRef.current = sessionLoadedAt;
+      // Reset message count so we don't trigger user message scroll
+      prevMessageCountRef.current = messages.length;
 
-    if (container && lastUserMessage && spacer) {
-      const containerHeight = container.clientHeight;
-      const messageBottom = lastUserMessage.offsetTop + lastUserMessage.offsetHeight;
-      const contentBelowMessage = container.scrollHeight - spacer.offsetHeight - messageBottom;
-
-      // Spacer should fill remaining space after user message and any content below it
-      const neededHeight = Math.max(0, containerHeight - lastUserMessage.offsetHeight - contentBelowMessage);
-      spacer.style.height = `${neededHeight}px`;
-    }
-  }, [messages, streamingContent, streamingThinking, streamingExecutionCode, streamingExecutionOutput]);
-
-  // Scroll to bottom when a session is loaded
-  useEffect(() => {
-    if (sessionLoadedAt && containerRef.current) {
-      // Use setTimeout to ensure DOM has updated
-      setTimeout(() => {
-        if (containerRef.current) {
-          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      // Scroll to show last message at bottom (not into the spacer)
+      requestAnimationFrame(() => {
+        const container = containerRef.current;
+        const spacer = spacerRef.current;
+        if (container && spacer) {
+          // Content height is total scroll height minus the spacer
+          const contentHeight = container.scrollHeight - spacer.offsetHeight;
+          // Scroll so content bottom aligns with viewport bottom
+          const targetScroll = Math.max(0, contentHeight - container.clientHeight);
+          container.scrollTop = targetScroll;
         }
-      }, 50);
+      });
     }
-  }, [sessionLoadedAt]);
+  }, [sessionLoadedAt, messages.length]);
 
-  // Scroll to user message when a new one is added
+  // Scroll user message to top when a NEW message is added (not on session load)
   useEffect(() => {
+    const prevCount = prevMessageCountRef.current;
+    const currentCount = messages.length;
+    prevMessageCountRef.current = currentCount;
+
+    // Only scroll if exactly one message was added and it's a user message
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === 'user') {
-      setTimeout(() => {
-        if (lastUserMessageRef.current && containerRef.current) {
-          // Use manual scroll calculation instead of scrollIntoView to prevent
-          // scrollIntoView from affecting parent scroll containers
-          const container = containerRef.current;
-          const message = lastUserMessageRef.current;
-          const messageTop = message.offsetTop;
-          container.scrollTo({ top: messageTop, behavior: 'smooth' });
+    if (currentCount === prevCount + 1 && lastMessage?.role === 'user') {
+      requestAnimationFrame(() => {
+        if (lastUserMessageRef.current) {
+          // Use scrollIntoView to position the message at the start of the viewport
+          lastUserMessageRef.current.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
         }
-      }, 50);
+      });
     }
   }, [messages]);
 
-  // Keep streaming area scrolled into view as execution output grows
+  // Keep streaming area visible as content grows
   useEffect(() => {
-    if (streamingExecutionOutput && streamingAreaRef.current && containerRef.current) {
-      // Scroll to keep the bottom of the streaming area visible
+    if (isStreaming && streamingAreaRef.current && containerRef.current) {
       const container = containerRef.current;
       const streamingArea = streamingAreaRef.current;
       const streamingBottom = streamingArea.offsetTop + streamingArea.offsetHeight;
       const containerBottom = container.scrollTop + container.clientHeight;
 
-      // If the streaming area extends below the visible area, scroll down
+      // If streaming content extends below visible area, scroll to keep it visible
       if (streamingBottom > containerBottom) {
-        container.scrollTop = streamingBottom - container.clientHeight + 20; // 20px padding
+        container.scrollTop = streamingBottom - container.clientHeight + 20;
       }
     }
-  }, [streamingExecutionOutput]);
+  }, [isStreaming, streamingContent, streamingThinking, streamingExecutionCode, streamingExecutionOutput]);
 
-  // Find the last user message index
+  // Find the last user message index for ref assignment
   let lastUserMessageIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].role === 'user') {
@@ -173,8 +174,11 @@ export function MessageList() {
         </div>
       )}
 
-      {/* Spacer to allow scrolling user message to top - height is set dynamically */}
-      <div ref={spacerRef} />
+      {/*
+        Spacer to allow scrolling user message to top of viewport.
+        Height equals viewport height so the last user message can scroll to the top.
+      */}
+      <div ref={spacerRef} className="h-[calc(100vh-12rem)]" aria-hidden="true" />
     </div>
   );
 }
