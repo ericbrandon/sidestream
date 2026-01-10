@@ -367,27 +367,28 @@ interface FormatResult {
 }
 
 function formatMessageContent(message: Message): FormatResult {
+  // EXPERIMENT: Commenting out execution code embedding to test container ID persistence
   // For assistant messages with execution data, append it to the content
   // so the LLM can see what code was run in previous turns
-  if (message.role === 'assistant' && message.executionCode) {
-    let formattedContent = message.content;
-
-    // Append executed code
-    formattedContent += `\n\n<executed_code>\n${message.executionCode}\n</executed_code>`;
-
-    // Append output if present
-    if (message.executionOutput) {
-      formattedContent += `\n\n<execution_output>\n${message.executionOutput}\n</execution_output>`;
-    }
-
-    // Append error if present
-    if (message.executionError) {
-      formattedContent += `\n\n<execution_error>\n${message.executionError}\n</execution_error>`;
-    }
-
-    // Note: generatedFiles intentionally NOT included - those are download references
-    return { content: formattedContent, unsupportedFiles: [] };
-  }
+  // if (message.role === 'assistant' && message.executionCode) {
+  //   let formattedContent = message.content;
+  //
+  //   // Append executed code
+  //   formattedContent += `\n\n<executed_code>\n${message.executionCode}\n</executed_code>`;
+  //
+  //   // Append output if present
+  //   if (message.executionOutput) {
+  //     formattedContent += `\n\n<execution_output>\n${message.executionOutput}\n</execution_output>`;
+  //   }
+  //
+  //   // Append error if present
+  //   if (message.executionError) {
+  //     formattedContent += `\n\n<execution_error>\n${message.executionError}\n</execution_error>`;
+  //   }
+  //
+  //   // Note: generatedFiles intentionally NOT included - those are download references
+  //   return { content: formattedContent, unsupportedFiles: [] };
+  // }
 
   if (!message.attachments?.length) {
     return { content: message.content, unsupportedFiles: [] };
