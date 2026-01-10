@@ -23,6 +23,8 @@ interface ChatState {
   executionTextPosition: number | null; // Character position in streamingContent where execution started
   sessionLoadedAt: number | null; // Timestamp to trigger scroll to bottom on session load
   pendingTurnId: string | null; // Track the turnId for the current turn
+  // Claude code execution container ID (persists sandbox state across requests)
+  anthropicContainerId: string | null;
 
   // Focus management
   _focusChatInput: (() => void) | null;
@@ -47,7 +49,7 @@ interface ChatState {
   clearAttachments: () => void;
   setStreaming: (streaming: boolean) => void;
   clearChat: () => void;
-  loadSession: (messages: Message[]) => void;
+  loadSession: (messages: Message[], anthropicContainerId?: string | null) => void;
   loadSessionWithStreaming: (
     messages: Message[],
     streamingContent: string,
@@ -57,6 +59,7 @@ interface ChatState {
     streamingThinking?: string
   ) => void;
   setPendingTurnId: (turnId: string | null) => void;
+  setAnthropicContainerId: (containerId: string) => void;
   clearStreamingContent: () => void;
   registerChatInputFocus: (focusFn: () => void) => void;
   focusChatInput: () => void;
@@ -82,6 +85,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   executionTextPosition: null,
   sessionLoadedAt: null,
   pendingTurnId: null,
+  anthropicContainerId: null,
   _focusChatInput: null,
 
   addMessage: (message) => {
@@ -264,9 +268,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       executionTextPosition: null,
       isStreaming: false,
       pendingTurnId: null,
+      anthropicContainerId: null, // New session = new container
     }),
 
-  loadSession: (messages) =>
+  loadSession: (messages, anthropicContainerId = null) =>
     set({
       messages,
       inputValue: '',
@@ -286,6 +291,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: false,
       sessionLoadedAt: Date.now(),
       pendingTurnId: null,
+      anthropicContainerId: anthropicContainerId ?? null,
     }),
 
   loadSessionWithStreaming: (messages, streamingContent, streamingCitations, streamingInlineCitations, pendingTurnId, streamingThinking = '') =>
@@ -304,6 +310,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
 
   setPendingTurnId: (turnId) => set({ pendingTurnId: turnId }),
+
+  setAnthropicContainerId: (containerId) => {
+    set({ anthropicContainerId: containerId });
+    // Mark session dirty so the container ID gets persisted
+    useSessionStore.getState().markDirty();
+  },
 
   clearStreamingContent: () => {
     const state = useChatStore.getState();

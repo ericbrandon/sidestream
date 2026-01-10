@@ -99,6 +99,13 @@ pub struct StreamEvent {
     pub turn_id: String,
 }
 
+/// Event payload for container ID updates (Claude code execution)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ContainerIdEvent {
+    pub turn_id: String,
+    pub container_id: String,
+}
+
 /// Determine which provider to use based on model name
 fn get_provider_for_model(model: &str) -> &'static str {
     if model.starts_with("gpt") || model.starts_with("o3") || model.starts_with("o4") {
@@ -126,6 +133,7 @@ pub async fn send_chat_message(
     gemini_thinking_level: Option<String>,  // For Gemini: "off", "on", "low", "medium", "high"
     session_id: Option<String>,             // For OpenAI prompt caching
     turn_id: String,                        // Unique ID for this conversation turn
+    anthropic_container_id: Option<String>, // Claude code execution container ID for sandbox persistence
 ) -> Result<(), String> {
     // Create a cancellation token for this stream
     let cancel_token = CancellationToken::new();
@@ -180,6 +188,7 @@ pub async fn send_chat_message(
                 web_search_enabled,
                 code_execution_enabled,
                 turn_id,
+                anthropic_container_id,
             )
             .await
         }

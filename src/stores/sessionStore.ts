@@ -180,7 +180,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         } else {
           // Normal load (no active stream)
           useChatStore.getState().loadSession(
-            session.messages.map(serializeMessage)
+            session.messages.map(serializeMessage),
+            session.settings?.anthropicContainerId
           );
         }
 
@@ -269,7 +270,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             ...item,
             timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp),
           })),
-        settings: buildSessionSettings(settingsStore),
+        settings: buildSessionSettings(settingsStore, chatStore),
       };
 
       try {

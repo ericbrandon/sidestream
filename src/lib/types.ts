@@ -185,6 +185,12 @@ export interface StreamEvent {
   turn_id: string;
 }
 
+// Event payload for container ID updates (Claude code execution)
+export interface ContainerIdEvent {
+  turn_id: string;
+  container_id: string;
+}
+
 // Discovery mode type - re-exported from discoveryModes for convenience
 export type { DiscoveryModeId } from './discoveryModes';
 
@@ -203,6 +209,8 @@ export interface ChatSessionSettings {
   evaluatorExtendedThinkingEnabled?: boolean;
   evaluatorReasoningLevel?: OpenAIReasoningLevel;
   evaluatorGeminiThinkingLevel?: GeminiThinkingLevel;
+  // Claude code execution container ID (persists sandbox state across requests)
+  anthropicContainerId?: string;
 }
 
 export interface ChatSession {

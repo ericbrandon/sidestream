@@ -3,7 +3,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
+use crate::llm::{ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
@@ -25,6 +25,7 @@ pub async fn send_chat_message_anthropic(
     web_search_enabled: bool,
     code_execution_enabled: bool,
     turn_id: String,
+    container_id: Option<String>,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "anthropic").await?;
     let client = AnthropicClient::new(api_key.clone());
@@ -55,6 +56,7 @@ pub async fn send_chat_message_anthropic(
         },
         web_search_enabled,
         code_execution_enabled,
+        container_id,
     };
     let body = client.build_chat_request(&config);
 
@@ -116,6 +118,18 @@ pub async fn send_chat_message_anthropic(
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
                                             return Ok(());
+                                        }
+                                        AnthropicStreamEvent::MessageStart { container_id } => {
+                                            // Emit container ID to frontend for sandbox persistence
+                                            if let Some(id) = container_id {
+                                                llm_logger::log_feature_used("chat", &format!("Container ID received: {}", id));
+                                                if let Err(err) = window.emit("chat-container-id", ContainerIdEvent {
+                                                    turn_id: turn_id.clone(),
+                                                    container_id: id,
+                                                }) {
+                                                    eprintln!("Failed to emit chat-container-id event: {}", err);
+                                                }
+                                            }
                                         }
                                         AnthropicStreamEvent::ContentBlockStart { block_type, content_block } => {
                                             current_block_type = Some(block_type.clone());

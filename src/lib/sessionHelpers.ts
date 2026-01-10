@@ -6,11 +6,15 @@ interface SettingsStoreState {
   discoveryMode: DiscoveryModeId;
 }
 
+interface ChatStoreState {
+  anthropicContainerId: string | null;
+}
+
 /**
  * Build session settings object from the current settings store state.
  * Centralizes the settings object construction used for session persistence.
  */
-export function buildSessionSettings(settingsStore: SettingsStoreState): ChatSessionSettings {
+export function buildSessionSettings(settingsStore: SettingsStoreState, chatStore?: ChatStoreState): ChatSessionSettings {
   return {
     frontierModel: settingsStore.frontierLLM.model,
     evaluatorModel: settingsStore.evaluatorLLM.model,
@@ -23,6 +27,7 @@ export function buildSessionSettings(settingsStore: SettingsStoreState): ChatSes
     evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
     evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
     evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
+    anthropicContainerId: chatStore?.anthropicContainerId ?? undefined,
   };
 }
 

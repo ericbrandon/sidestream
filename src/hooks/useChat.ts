@@ -8,7 +8,7 @@ import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
 import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
-import type { Message, ContentBlock, StreamDelta, StreamEvent } from '../lib/types';
+import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
@@ -33,6 +33,7 @@ export function useChat() {
     isStreaming,
     setPendingTurnId,
     clearStreamingContent,
+    setAnthropicContainerId,
   } = useChatStore();
 
   const { frontierLLM, customSystemPrompt } = useSettingsStore();
@@ -191,10 +192,18 @@ export function useChat() {
         }
       });
 
+      // Listen for container ID updates (Claude code execution)
+      const unlistenContainerId = await listen<ContainerIdEvent>('chat-container-id', (event) => {
+        const { container_id } = event.payload;
+        // Store the container ID for subsequent API calls in this session
+        setAnthropicContainerId(container_id);
+      });
+
       return () => {
         unlistenDelta();
         unlistenDone();
         unlistenCancelled();
+        unlistenContainerId();
       };
     };
 
@@ -202,7 +211,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
+  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId, setAnthropicContainerId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -283,6 +292,9 @@ export function useChat() {
           ? `${SYSTEM_PROMPT}\n\n${customSystemPrompt}`
           : SYSTEM_PROMPT;
 
+        // Get current container ID for Claude code execution sandbox persistence
+        const currentContainerId = useChatStore.getState().anthropicContainerId;
+
         await invoke('send_chat_message', {
           model: frontierLLM.model,
           messages: apiMessages,
@@ -291,6 +303,7 @@ export function useChat() {
           codeExecutionEnabled: true, // Enable code execution for file generation
           sessionId: useSessionStore.getState().activeSessionId,
           turnId, // Pass turnId to backend so events can be routed correctly
+          anthropicContainerId: currentContainerId, // Pass container ID for sandbox persistence
           ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {

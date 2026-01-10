@@ -18,6 +18,7 @@ pub struct ChatRequestConfig {
     pub extended_thinking: Option<ThinkingConfig>,
     pub web_search_enabled: bool,
     pub code_execution_enabled: bool,
+    pub container_id: Option<String>,
 }
 
 /// Configuration for extended thinking
@@ -37,6 +38,9 @@ pub struct DiscoveryRequestConfig {
 /// Parsed SSE events from Anthropic's streaming API
 #[derive(Debug, Clone)]
 pub enum AnthropicStreamEvent {
+    MessageStart {
+        container_id: Option<String>, // Container ID for code execution sandbox persistence
+    },
     ContentBlockStart {
         block_type: String,
         content_block: serde_json::Value,
@@ -54,6 +58,9 @@ pub enum AnthropicStreamEvent {
 }
 
 /// Code execution tool use block (server_tool_use with bash/text_editor)
+/// Note: Currently unused as input is parsed via input_json_delta streaming,
+/// but kept for potential future use or debugging.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CodeExecutionToolUse {
     pub id: String,
@@ -62,6 +69,7 @@ pub struct CodeExecutionToolUse {
 }
 
 /// Input for code execution tools
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum CodeExecutionInput {
     Bash { command: String },
@@ -71,6 +79,7 @@ pub enum CodeExecutionInput {
 /// Result from code execution
 #[derive(Debug, Clone)]
 pub struct CodeExecutionResult {
+    #[allow(dead_code)]
     pub tool_use_id: String,
     pub tool_name: String, // "bash_code_execution" or "text_editor_code_execution"
     pub stdout: Option<String>,
@@ -121,6 +130,11 @@ impl AnthropicClient {
             "stream": true,
             "messages": config.messages,
         });
+
+        // Add container ID if provided (for code execution sandbox persistence)
+        if let Some(container_id) = &config.container_id {
+            body["container"] = serde_json::json!(container_id);
+        }
 
         // Add extended thinking if enabled
         if let Some(thinking) = &config.extended_thinking {
@@ -265,6 +279,13 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
     let event_type = parsed["type"].as_str().unwrap_or("");
 
     match event_type {
+        "message_start" => {
+            // Extract container ID from message.container.id if present
+            let container_id = parsed["message"]["container"]["id"]
+                .as_str()
+                .map(|s| s.to_string());
+            AnthropicStreamEvent::MessageStart { container_id }
+        }
         "content_block_start" => {
             let block_type = parsed["content_block"]["type"]
                 .as_str()
@@ -344,6 +365,9 @@ pub fn is_code_execution_block(block_type: &str, content_block: &serde_json::Val
 }
 
 /// Parse code execution tool use from content_block_start
+/// Note: Currently unused as input is parsed via input_json_delta streaming,
+/// but kept for potential future use or debugging.
+#[allow(dead_code)]
 pub fn parse_code_execution_tool_use(content_block: &serde_json::Value) -> Option<CodeExecutionToolUse> {
     let id = content_block["id"].as_str()?.to_string();
     let name = content_block["name"].as_str()?.to_string();

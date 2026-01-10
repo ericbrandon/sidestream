@@ -37,7 +37,6 @@ function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps
   // Get file extension from filename or mime_type
   const filenameExt = file.filename.includes('.') ? file.filename.split('.').pop()?.toLowerCase() : null;
   const mimeExt = getExtensionFromMimeType(file.mime_type);
-  const ext = filenameExt || mimeExt || '';
 
   // Build display filename with extension if missing
   const displayFilename = filenameExt ? file.filename : (mimeExt ? `${file.filename}.${mimeExt}` : file.filename);
