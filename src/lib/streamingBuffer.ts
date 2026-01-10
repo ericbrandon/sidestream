@@ -41,21 +41,6 @@ export function appendToStreamingBuffer(delta: string): void {
 }
 
 /**
- * Set the full content (used when switching sessions with active streams)
- */
-export function setStreamingBuffer(content: string): void {
-  buffer.content = content;
-  flushNow();
-}
-
-/**
- * Get the current buffered content (for finalization)
- */
-export function getStreamingBufferContent(): string {
-  return buffer.content;
-}
-
-/**
  * Clear the buffer (called when streaming ends)
  */
 export function clearStreamingBuffer(): void {

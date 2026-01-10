@@ -14,7 +14,7 @@ import {
   clearStreamingBuffer,
   flushStreamingBuffer,
 } from '../lib/streamingBuffer';
-import type { Message, ContentBlock, StreamDelta, StreamEvent } from '../lib/types';
+import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
@@ -39,6 +39,7 @@ export function useChat() {
     isStreaming,
     setPendingTurnId,
     clearStreamingContent,
+    setAnthropicContainerId,
   } = useChatStore();
 
   const { frontierLLM, customSystemPrompt } = useSettingsStore();
@@ -158,13 +159,20 @@ export function useChat() {
       const unlistenDone = await listen<StreamEvent>('chat-stream-done', (event) => {
         const turnId = event.payload.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
+        const chatStore = useChatStore.getState();
         const stream = backgroundStore.getStreamByTurnId(turnId);
 
         // Flush any remaining buffered content before finalizing
         flushStreamingBuffer();
 
-        // Complete the background stream (handles saving to correct session)
-        backgroundStore.completeChatStream(turnId);
+        if (stream) {
+          // Complete the background stream (handles saving to correct session)
+          backgroundStore.completeChatStream(turnId);
+        } else {
+          // No background stream - this means we used the fallback path in delta handler
+          // Finalize streaming directly on the chat store
+          chatStore.finalizeStreaming();
+        }
 
         // Clear the buffer for next stream
         clearStreamingBuffer();
@@ -181,7 +189,6 @@ export function useChat() {
         }
 
         // Clear pendingTurnId if this was the active session's stream
-        const chatStore = useChatStore.getState();
         if (chatStore.pendingTurnId === turnId) {
           setPendingTurnId(null);
         }
@@ -190,6 +197,7 @@ export function useChat() {
       const unlistenCancelled = await listen<StreamEvent>('chat-stream-cancelled', (event) => {
         const turnId = event.payload.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
+        const chatStore = useChatStore.getState();
         const stream = backgroundStore.getStreamByTurnId(turnId);
 
         // Clear the buffer
@@ -198,25 +206,37 @@ export function useChat() {
         // Remove from background store
         backgroundStore.cancelChatStream(turnId);
 
-        // Only update UI if still on this session
+        // Clear streaming UI state
         if (stream) {
           const activeSessionId = useSessionStore.getState().activeSessionId;
           if (stream.sessionId === activeSessionId) {
             clearStreamingContent();
+            setStreaming(false);
           }
+        } else {
+          // No background stream - clear directly
+          clearStreamingContent();
+          setStreaming(false);
         }
 
         // Clear pendingTurnId if this was the active session's stream
-        const chatStore = useChatStore.getState();
         if (chatStore.pendingTurnId === turnId) {
           setPendingTurnId(null);
         }
+      });
+
+      // Listen for container ID updates (Claude code execution)
+      const unlistenContainerId = await listen<ContainerIdEvent>('chat-container-id', (event) => {
+        const { container_id } = event.payload;
+        // Store the container ID for subsequent API calls in this session
+        setAnthropicContainerId(container_id);
       });
 
       return () => {
         unlistenDelta();
         unlistenDone();
         unlistenCancelled();
+        unlistenContainerId();
       };
     };
 
@@ -224,7 +244,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
+  }, [addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId, setAnthropicContainerId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -313,6 +333,7 @@ export function useChat() {
           codeExecutionEnabled: true, // Enable code execution for file generation
           sessionId: useSessionStore.getState().activeSessionId,
           turnId, // Pass turnId to backend so events can be routed correctly
+          anthropicContainerId: useChatStore.getState().anthropicContainerId, // Persist container across turns
           ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {
