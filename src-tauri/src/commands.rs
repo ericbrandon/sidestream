@@ -12,6 +12,12 @@ pub fn log_frontend_error(context: String, error: String) {
     eprintln!("[Frontend Error] {}: {}", context, error);
 }
 
+/// Log frontend debug messages to stderr (visible in terminal where app runs)
+#[tauri::command]
+pub fn log_frontend_debug(context: String, message: String) {
+    eprintln!("[Frontend Debug] {}: {}", context, message);
+}
+
 /// Log debug info to a file for debugging packaged apps
 #[tauri::command]
 pub fn log_debug(app: tauri::AppHandle, context: String, message: String) {

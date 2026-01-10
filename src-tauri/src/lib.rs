@@ -19,7 +19,7 @@ use audio::{
 use commands::{
     clear_chat_sessions_store, delete_api_key, delete_chat_session, download_anthropic_file,
     export_chat_to_html, get_configured_providers, has_api_key, list_chat_sessions,
-    load_chat_session, log_debug, log_frontend_error, print_webview, save_api_key,
+    load_chat_session, log_debug, log_frontend_debug, log_frontend_error, print_webview, save_api_key,
     save_chat_session,
 };
 use discovery::discover_resources;
@@ -118,6 +118,7 @@ pub fn run() {
             export_chat_to_html,
             print_webview,
             log_frontend_error,
+            log_frontend_debug,
             log_debug,
             // Native audio capture commands
             start_audio_recording,

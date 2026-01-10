@@ -16,9 +16,13 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
 
   // Auto-scroll to bottom as output streams
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    // Small delay to ensure the div is rendered and content is updated
+    const timer = setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 10);
+    return () => clearTimeout(timer);
   }, [output]);
 
   // Show collapsed state when execution is complete
@@ -76,7 +80,7 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
         {code && (
           <div className="mb-2">
             <div className="text-xs text-stone-400 dark:text-stone-500 mb-1">Code:</div>
-            <div className="max-h-24 overflow-y-auto text-xs text-stone-600 dark:text-stone-300 bg-stone-900 dark:bg-stone-950 rounded-lg p-3 font-mono whitespace-pre-wrap">
+            <div className="max-h-24 overflow-y-auto text-xs text-emerald-100 bg-stone-900 dark:bg-stone-950 rounded-lg p-3 font-mono whitespace-pre-wrap">
               {code}
             </div>
           </div>
