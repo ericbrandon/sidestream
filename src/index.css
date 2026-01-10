@@ -122,9 +122,13 @@
 
 @layer base {
   html, body, #root {
-    @apply h-full overflow-hidden;
+    @apply h-full;
+    overflow: hidden !important;
     margin: 0;
     padding: 0;
+    /* Prevent any scrolling at the document level */
+    position: fixed;
+    width: 100%;
   }
 
   body {
@@ -191,6 +195,13 @@
 /* Prose overrides */
 .prose {
   font-family: inherit;
+}
+
+/* Table overflow handling - allow horizontal scroll for wide tables */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 /* KaTeX display math */

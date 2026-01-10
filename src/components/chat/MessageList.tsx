@@ -57,8 +57,13 @@ export function MessageList() {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage?.role === 'user') {
       setTimeout(() => {
-        if (lastUserMessageRef.current) {
-          lastUserMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (lastUserMessageRef.current && containerRef.current) {
+          // Use manual scroll calculation instead of scrollIntoView to prevent
+          // scrollIntoView from affecting parent scroll containers
+          const container = containerRef.current;
+          const message = lastUserMessageRef.current;
+          const messageTop = message.offsetTop;
+          container.scrollTo({ top: messageTop, behavior: 'smooth' });
         }
       }, 50);
     }
@@ -110,7 +115,7 @@ export function MessageList() {
   const isWaitingForResponse = isStreaming && !streamingContent && !streamingThinking && !streamingExecutionCode;
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4">
       {messages.map((message, index) => (
         <div
           key={message.id}
