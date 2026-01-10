@@ -78,7 +78,6 @@ pub async fn send_chat_message_anthropic(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut full_response = String::new();
-    let mut full_thinking = String::new(); // Debug: track accumulated thinking
     let mut current_block_type: Option<String> = None;
     let mut previous_block_type: Option<String> = None;
     // Track current code execution tool for matching results
@@ -269,8 +268,6 @@ pub async fn send_chat_message_anthropic(
                                             }
                                             // Emit thinking deltas for ephemeral UI display
                                             if let Some(thinking_text) = thinking {
-                                                full_thinking.push_str(&thinking_text);
-                                                eprintln!("[THINKING] delta: {} chars, total: {} chars", thinking_text.len(), full_thinking.len());
                                                 let delta = StreamDelta {
                                                     turn_id: turn_id.clone(),
                                                     text: String::new(),
@@ -360,7 +357,6 @@ pub async fn send_chat_message_anthropic(
                                             previous_block_type = current_block_type.take();
                                         }
                                         AnthropicStreamEvent::MessageStop => {
-                                            eprintln!("[THINKING] MessageStop - final thinking total: {} chars", full_thinking.len());
                                             llm_logger::log_response_complete("chat", &full_response);
                                             if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);

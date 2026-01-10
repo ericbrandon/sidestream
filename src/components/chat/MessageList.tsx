@@ -22,6 +22,7 @@ export function MessageList() {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
+  const streamingAreaRef = useRef<HTMLDivElement>(null);
 
   // Update spacer height based on content below the last user message
   useEffect(() => {
@@ -64,6 +65,22 @@ export function MessageList() {
     }
   }, [messages]);
 
+  // Keep streaming area scrolled into view as execution output grows
+  useEffect(() => {
+    if (streamingExecutionOutput && streamingAreaRef.current && containerRef.current) {
+      // Scroll to keep the bottom of the streaming area visible
+      const container = containerRef.current;
+      const streamingArea = streamingAreaRef.current;
+      const streamingBottom = streamingArea.offsetTop + streamingArea.offsetHeight;
+      const containerBottom = container.scrollTop + container.clientHeight;
+
+      // If the streaming area extends below the visible area, scroll down
+      if (streamingBottom > containerBottom) {
+        container.scrollTop = streamingBottom - container.clientHeight + 20; // 20px padding
+      }
+    }
+  }, [streamingExecutionOutput]);
+
   // Find the last user message index
   let lastUserMessageIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -87,6 +104,12 @@ export function MessageList() {
     );
   }
 
+  // Determine what streaming state we're in
+  const hasThinking = isStreaming && !!streamingThinking;
+  const hasExecution = isStreaming && (executionStatus === 'running' || executionStatus === 'completed' || executionStatus === 'failed');
+  const hasContent = isStreaming && !!streamingContent;
+  const isWaitingForResponse = isStreaming && !streamingContent && !streamingThinking && executionStatus === 'idle';
+
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
       {messages.map((message, index) => (
@@ -100,51 +123,52 @@ export function MessageList() {
           />
         </div>
       ))}
-      {/* Show thinking indicator when model is thinking (before response content starts) */}
-      {/* Keep it expanded only when there's no execution running */}
-      {isStreaming && streamingThinking && !streamingContent && executionStatus === 'idle' && (
-        <ThinkingIndicator content={streamingThinking} />
-      )}
-      {/* When execution starts, collapse thinking and show execution indicator */}
-      {isStreaming && executionStatus === 'running' && !streamingContent && (
-        <>
-          {streamingThinking && (
+
+      {/* Streaming response area - render all active indicators together */}
+      {isStreaming && (
+        <div ref={streamingAreaRef} className="streaming-response">
+          {/* Thinking indicator - expanded when no content yet, collapsed otherwise */}
+          {hasThinking && !hasContent && !hasExecution && (
+            <ThinkingIndicator content={streamingThinking} />
+          )}
+          {hasThinking && (hasContent || hasExecution) && (
             <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
-          <ExecutionIndicator
-            code={streamingExecutionCode}
-            output={streamingExecutionOutput}
-          />
-        </>
-      )}
-      {/* Show collapsed thinking + streaming content */}
-      {/* Don't show execution indicator here - it would jump when message finalizes */}
-      {isStreaming && streamingContent && (
-        <>
-          {streamingThinking && (
-            <ThinkingIndicator content={streamingThinking} isThinkingComplete />
+
+          {/* Execution indicator - show when execution is running or just completed (before content) */}
+          {hasExecution && !hasContent && (
+            <ExecutionIndicator
+              code={streamingExecutionCode}
+              output={streamingExecutionOutput}
+            />
           )}
-          <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
-        </>
-      )}
-      {/* Show pulsing dots when waiting for first response (streaming but no content, thinking, or execution yet) */}
-      {isStreaming && !streamingContent && !streamingThinking && executionStatus === 'idle' && (
-        <div className="flex justify-start mb-4">
-          <div className="max-w-[85%] p-4">
-            <div className="flex items-center gap-1">
-              <div className="w-2 h-2 bg-stone-400 rounded-full animate-pulse" />
-              <div
-                className="w-2 h-2 bg-stone-400 rounded-full animate-pulse"
-                style={{ animationDelay: '0.2s' }}
-              />
-              <div
-                className="w-2 h-2 bg-stone-400 rounded-full animate-pulse"
-                style={{ animationDelay: '0.4s' }}
-              />
+
+          {/* Streaming message content */}
+          {hasContent && (
+            <StreamingMessage content={streamingContent} inlineCitations={streamingInlineCitations} />
+          )}
+
+          {/* Pulsing dots when waiting for first response */}
+          {isWaitingForResponse && (
+            <div className="flex justify-start mb-4">
+              <div className="max-w-[85%] p-4">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-stone-400 rounded-full animate-pulse" />
+                  <div
+                    className="w-2 h-2 bg-stone-400 rounded-full animate-pulse"
+                    style={{ animationDelay: '0.2s' }}
+                  />
+                  <div
+                    className="w-2 h-2 bg-stone-400 rounded-full animate-pulse"
+                    style={{ animationDelay: '0.4s' }}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
+
       {/* Spacer to allow scrolling user message to top - height is set dynamically */}
       <div ref={spacerRef} />
     </div>
