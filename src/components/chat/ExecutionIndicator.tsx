@@ -1,4 +1,4 @@
-import { memo, useRef, useLayoutEffect } from 'react';
+import { memo, useRef, useEffect } from 'react';
 
 interface ExecutionIndicatorProps {
   code?: string;
@@ -14,15 +14,18 @@ interface ExecutionIndicatorProps {
 function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndicatorProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom as output streams
-  useLayoutEffect(() => {
+  // Combine code and output for display
+  const content = [code, output].filter(Boolean).join('\n\n');
+
+  // Auto-scroll to bottom as content streams
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [output]);
+  }, [content]);
 
   // Show collapsed state when execution is complete
-  if (isComplete && (code || output)) {
+  if (isComplete && content) {
     return (
       <div className="flex justify-start mb-2">
         <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-800 rounded-lg text-xs text-stone-500 dark:text-stone-400">
@@ -39,7 +42,7 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
               d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-          <span>Executing code...</span>
+          <span>Executed code</span>
         </div>
       </div>
     );
@@ -72,31 +75,18 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
           </span>
         </div>
 
-        {/* Code being executed */}
-        {code && (
-          <div className="mb-2">
-            <div className="text-xs text-stone-400 dark:text-stone-500 mb-1">Code:</div>
-            <div className="max-h-24 overflow-y-auto text-xs text-emerald-100 bg-stone-900 dark:bg-stone-950 rounded-lg p-3 font-mono whitespace-pre-wrap">
-              {code}
-            </div>
+        {/* Scrollable content (code + output combined) */}
+        {content && (
+          <div
+            ref={scrollRef}
+            className="max-h-32 overflow-y-auto text-xs text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap"
+          >
+            {content}
           </div>
         )}
 
-        {/* Scrollable output */}
-        {output && (
-          <div>
-            <div className="text-xs text-stone-400 dark:text-stone-500 mb-1">Output:</div>
-            <div
-              ref={scrollRef}
-              className="max-h-32 overflow-y-auto text-xs text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap"
-            >
-              {output}
-            </div>
-          </div>
-        )}
-
-        {/* Pulsing dots when no output yet */}
-        {!output && !code && (
+        {/* Pulsing dots when no content yet */}
+        {!content && (
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
             <div
