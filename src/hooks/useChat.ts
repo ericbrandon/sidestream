@@ -8,6 +8,12 @@ import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
 import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
+import {
+  initStreamingBuffer,
+  appendToStreamingBuffer,
+  clearStreamingBuffer,
+  flushStreamingBuffer,
+} from '../lib/streamingBuffer';
 import type { Message, ContentBlock, StreamDelta, StreamEvent } from '../lib/types';
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
@@ -38,6 +44,13 @@ export function useChat() {
   const { frontierLLM, customSystemPrompt } = useSettingsStore();
   const { triggerDiscovery } = useDiscovery();
 
+  // Initialize streaming buffer with flush function
+  useEffect(() => {
+    initStreamingBuffer((content) => {
+      updateStreamingContent(content);
+    });
+  }, [updateStreamingContent]);
+
   // Set up streaming listeners
   // Events now include turn_id in payload, so we use that for routing instead of a shared ref
   useEffect(() => {
@@ -54,9 +67,9 @@ export function useChat() {
           // Fall back to updating current UI directly if this matches the active session's pending turn
           const pendingTurnId = useChatStore.getState().pendingTurnId;
           if (turnId === pendingTurnId) {
+            // Use throttled buffer for text deltas
             if (delta.text) {
-              const currentContent = useChatStore.getState().streamingContent;
-              updateStreamingContent(currentContent + delta.text);
+              appendToStreamingBuffer(delta.text);
             }
             if (delta.citations && delta.citations.length > 0) {
               addStreamingCitations(delta.citations);
@@ -107,9 +120,9 @@ export function useChat() {
         // Only update live UI if user is still viewing this session
         const activeSessionId = useSessionStore.getState().activeSessionId;
         if (stream.sessionId === activeSessionId) {
+          // Use throttled buffer for text deltas
           if (delta.text) {
-            const currentContent = useChatStore.getState().streamingContent;
-            updateStreamingContent(currentContent + delta.text);
+            appendToStreamingBuffer(delta.text);
           }
           if (delta.citations && delta.citations.length > 0) {
             addStreamingCitations(delta.citations);
@@ -147,8 +160,14 @@ export function useChat() {
         const backgroundStore = useBackgroundStreamStore.getState();
         const stream = backgroundStore.getStreamByTurnId(turnId);
 
+        // Flush any remaining buffered content before finalizing
+        flushStreamingBuffer();
+
         // Complete the background stream (handles saving to correct session)
         backgroundStore.completeChatStream(turnId);
+
+        // Clear the buffer for next stream
+        clearStreamingBuffer();
 
         // Trigger discovery with the turnId and original sessionId (skip if mode is 'none')
         const discoveryMode = useSettingsStore.getState().discoveryMode;
@@ -172,6 +191,9 @@ export function useChat() {
         const turnId = event.payload.turn_id;
         const backgroundStore = useBackgroundStreamStore.getState();
         const stream = backgroundStore.getStreamByTurnId(turnId);
+
+        // Clear the buffer
+        clearStreamingBuffer();
 
         // Remove from background store
         backgroundStore.cancelChatStream(turnId);
@@ -202,7 +224,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [updateStreamingContent, addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
+  }, [addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId]);
 
   const sendMessage = useCallback(
     async (content: string) => {

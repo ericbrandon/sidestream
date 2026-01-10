@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, memo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -8,6 +8,26 @@ import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
+
+/**
+ * Split content into completed paragraphs and trailing incomplete content.
+ * A paragraph is considered "complete" when followed by a double newline.
+ * This allows us to cache rendered markdown for completed sections.
+ */
+function splitContent(content: string): { completed: string; pending: string } {
+  // Find the last double newline - everything before it is "completed"
+  const lastDoubleNewline = content.lastIndexOf('\n\n');
+
+  if (lastDoubleNewline === -1) {
+    // No complete paragraphs yet
+    return { completed: '', pending: content };
+  }
+
+  return {
+    completed: content.slice(0, lastDoubleNewline + 2), // Include the double newline
+    pending: content.slice(lastDoubleNewline + 2),
+  };
+}
 
 /**
  * Render text with inline citations.
@@ -110,14 +130,25 @@ interface StreamingMessageProps {
   inlineCitations?: InlineCitationType[];
 }
 
-export function StreamingMessage({ content, inlineCitations = [] }: StreamingMessageProps) {
-  // Use ref to maintain stable citation map across renders
-  // Key by URL to ensure same citation always gets same key
-  const citationKeyMapRef = useRef<Map<string, number>>(new Map());
-  const showCitations = useSettingsStore((state) => state.showCitations);
-
-  // Process content with inline citations
+/**
+ * Cached markdown renderer for completed content.
+ * This only re-renders when the completed content changes (grows),
+ * which happens much less frequently than every delta.
+ */
+const CachedMarkdown = memo(function CachedMarkdown({
+  content,
+  inlineCitations,
+  showCitations,
+  citationKeyMapRef,
+}: {
+  content: string;
+  inlineCitations: InlineCitationType[];
+  showCitations: boolean;
+  citationKeyMapRef: React.MutableRefObject<Map<string, number>>;
+}) {
   const { processedContent, markdownComponents } = useMemo(() => {
+    if (!content) return { processedContent: '', markdownComponents: {} as Components };
+
     // First, extract ChatGPT-style parenthesized citations from content
     const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
       extractChatGPTCitations(content, showCitations);
@@ -134,32 +165,66 @@ export function StreamingMessage({ content, inlineCitations = [] }: StreamingMes
     });
 
     // Insert citation markers for position-based citations
-    const { content: processedContent, citationMap } = insertCitationMarkers(
+    const { content: processed, citationMap } = insertCitationMarkers(
       contentWithoutChatGPTCitations,
       existingCitations,
       { waitForNewline: true }
     );
 
-    // Add ChatGPT citations to the map (they already have markers from extractChatGPTCitations)
+    // Add ChatGPT citations to the map
     chatGPTCitations.forEach((citation, idx) => {
       citationMap.set(existingCitations.length + idx, citation);
     });
 
-    const markdownComponents = createMarkdownComponents(citationMap, keyMap);
-    return { processedContent, markdownComponents };
-  }, [content, inlineCitations, showCitations]);
+    const components = createMarkdownComponents(citationMap, keyMap);
+    return { processedContent: processed, markdownComponents: components };
+  }, [content, inlineCitations, showCitations, citationKeyMapRef]);
+
+  if (!content) return null;
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={markdownComponents}
+    >
+      {processedContent}
+    </ReactMarkdown>
+  );
+});
+
+/**
+ * Simple plain text renderer for pending (incomplete) content.
+ * This is much cheaper than markdown parsing and updates on every delta.
+ */
+function PendingText({ content }: { content: string }) {
+  if (!content) return null;
+
+  // Render as simple text with whitespace preserved
+  return <span className="whitespace-pre-wrap">{content}</span>;
+}
+
+export function StreamingMessage({ content, inlineCitations = [] }: StreamingMessageProps) {
+  // Use ref to maintain stable citation map across renders
+  const citationKeyMapRef = useRef<Map<string, number>>(new Map());
+  const showCitations = useSettingsStore((state) => state.showCitations);
+
+  // Split content into completed paragraphs (cached) and pending text (simple render)
+  const { completed, pending } = useMemo(() => splitContent(content), [content]);
 
   return (
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] p-4">
         <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-            components={markdownComponents}
-          >
-            {processedContent}
-          </ReactMarkdown>
+          {/* Cached rendered markdown for completed paragraphs */}
+          <CachedMarkdown
+            content={completed}
+            inlineCitations={inlineCitations}
+            showCitations={showCitations}
+            citationKeyMapRef={citationKeyMapRef}
+          />
+          {/* Simple text for pending (incomplete) paragraph */}
+          <PendingText content={pending} />
         </div>
         {/* Streaming indicator */}
         <div className="flex items-center gap-1 mt-2">
