@@ -135,11 +135,18 @@ export function MessageList() {
             <ThinkingIndicator content={streamingThinking} isThinkingComplete />
           )}
 
-          {/* Execution indicator - show when execution is running (even if content has started) */}
+          {/* Execution indicator - show expanded while running, collapsed after content starts */}
           {executionStatus === 'running' && (
             <ExecutionIndicator
               code={streamingExecutionCode}
               output={streamingExecutionOutput}
+            />
+          )}
+          {hasExecution && executionStatus !== 'running' && (
+            <ExecutionIndicator
+              code={streamingExecutionCode}
+              output={streamingExecutionOutput}
+              isComplete
             />
           )}
 

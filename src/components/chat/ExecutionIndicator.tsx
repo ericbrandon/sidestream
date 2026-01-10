@@ -1,4 +1,4 @@
-import { memo, useRef, useEffect } from 'react';
+import { memo, useRef, useLayoutEffect } from 'react';
 
 interface ExecutionIndicatorProps {
   code?: string;
@@ -15,14 +15,10 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom as output streams
-  useEffect(() => {
-    // Small delay to ensure the div is rendered and content is updated
-    const timer = setTimeout(() => {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
-    }, 10);
-    return () => clearTimeout(timer);
+  useLayoutEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
   }, [output]);
 
   // Show collapsed state when execution is complete
