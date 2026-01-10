@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -117,10 +117,10 @@ function createMarkdownComponents(
 
 interface MessageProps {
   message: MessageType;
-  onFork?: () => void;
+  onFork?: (messageId: string) => void;
 }
 
-export function Message({ message, onFork }: MessageProps) {
+export const Message = memo(function Message({ message, onFork }: MessageProps) {
   const isUser = message.role === 'user';
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const showCitations = useSettingsStore((state) => state.showCitations);
@@ -169,7 +169,7 @@ export function Message({ message, onFork }: MessageProps) {
     }
 
     if (isUser && onFork) {
-      menuItems.push({ label: 'Fork from here', onClick: onFork });
+      menuItems.push({ label: 'Fork from here', onClick: () => onFork(message.id) });
     }
 
     if (menuItems.length > 0) {
@@ -355,4 +355,4 @@ export function Message({ message, onFork }: MessageProps) {
       )}
     </div>
   );
-}
+});

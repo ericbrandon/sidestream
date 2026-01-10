@@ -7,16 +7,16 @@ import { ThinkingIndicator } from './ThinkingIndicator';
 import { ExecutionIndicator } from './ExecutionIndicator';
 
 export function MessageList() {
-  const {
-    messages,
-    isStreaming,
-    streamingContent,
-    streamingThinking,
-    streamingInlineCitations,
-    sessionLoadedAt,
-    streamingExecutionCode,
-    streamingExecutionOutput,
-  } = useChatStore();
+  // Use individual selectors to avoid re-rendering when unrelated state (like inputValue) changes
+  const messages = useChatStore((state) => state.messages);
+  const isStreaming = useChatStore((state) => state.isStreaming);
+  const streamingContent = useChatStore((state) => state.streamingContent);
+  const streamingThinking = useChatStore((state) => state.streamingThinking);
+  const streamingInlineCitations = useChatStore((state) => state.streamingInlineCitations);
+  const sessionLoadedAt = useChatStore((state) => state.sessionLoadedAt);
+  const streamingExecutionCode = useChatStore((state) => state.streamingExecutionCode);
+  const streamingExecutionOutput = useChatStore((state) => state.streamingExecutionOutput);
+
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
@@ -118,7 +118,7 @@ export function MessageList() {
         >
           <Message
             message={message}
-            onFork={message.role === 'user' ? () => forkFromMessage(message.id) : undefined}
+            onFork={message.role === 'user' ? forkFromMessage : undefined}
           />
         </div>
       ))}

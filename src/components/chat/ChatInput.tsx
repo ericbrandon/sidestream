@@ -1,6 +1,7 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useChat, useTextInputContextMenu } from '../../hooks';
 import { AttachmentButton } from './AttachmentButton';
 import { AttachmentPreview } from './AttachmentPreview';
@@ -16,19 +17,41 @@ import {
   getOpenAIReasoningOptions,
   getValidOpenAIReasoningLevel,
 } from '../../lib/thinkingOptions';
+export const ChatInput = memo(function ChatInput() {
+  // Use local state for instant typing responsiveness
+  // Only sync to Zustand when needed (submit, blur, external changes)
+  const storeInputValue = useChatStore((state) => state.inputValue);
+  const setStoreInput = useChatStore((state) => state.setInput);
+  const isStreaming = useChatStore((state) => state.isStreaming);
+  const attachments = useChatStore((state) => state.attachments);
+  const registerChatInputFocus = useChatStore((state) => state.registerChatInputFocus);
 
-export function ChatInput() {
-  const { inputValue, setInput, isStreaming, attachments, registerChatInputFocus } = useChatStore();
-  const { frontierLLM, setFrontierLLM, voiceMode, allowChatGPTExtraHighThinking, allowChatGPT5Pro } = useSettingsStore();
+  // Local state for textarea - bypasses React/Zustand on each keystroke
+  const [localValue, setLocalValue] = useState(storeInputValue);
+
+  // Sync from store to local when store changes externally (e.g., voice input, clear)
+  useEffect(() => {
+    setLocalValue(storeInputValue);
+  }, [storeInputValue]);
+
+  const { frontierLLM, setFrontierLLM, voiceMode, allowChatGPTExtraHighThinking, allowChatGPT5Pro } = useSettingsStore(
+    useShallow((state) => ({
+      frontierLLM: state.frontierLLM,
+      setFrontierLLM: state.setFrontierLLM,
+      voiceMode: state.voiceMode,
+      allowChatGPTExtraHighThinking: state.allowChatGPTExtraHighThinking,
+      allowChatGPT5Pro: state.allowChatGPT5Pro,
+    }))
+  );
   const { sendMessage, sendTranscribedMessage, cancelStream } = useChat();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showThinkingMenu, setShowThinkingMenu] = useState(false);
 
-  const getInputValue = useCallback(() => inputValue, [inputValue]);
+  const getInputValue = useCallback(() => localValue, [localValue]);
   const { contextMenu, handleContextMenu, closeContextMenu } = useTextInputContextMenu(
     textareaRef,
     getInputValue,
-    setInput
+    setLocalValue
   );
 
   // Register focus function for global keyboard handling
@@ -38,41 +61,101 @@ export function ChatInput() {
     });
   }, [registerChatInputFocus]);
 
-  // Determine provider for current model
-  const provider = getProviderFromModelId(frontierLLM.model);
-  const geminiThinkingOptions = provider === 'google' ? getGeminiThinkingOptions(frontierLLM.model) : [];
+  // Determine provider for current model - memoized
+  const provider = useMemo(() => getProviderFromModelId(frontierLLM.model), [frontierLLM.model]);
+
+  const geminiThinkingOptions = useMemo(
+    () => provider === 'google' ? getGeminiThinkingOptions(frontierLLM.model) : [],
+    [provider, frontierLLM.model]
+  );
+
   // Normalize the thinking level to a valid value for the current model
-  const effectiveGeminiThinkingLevel = provider === 'google'
-    ? getValidGeminiThinkingLevel(frontierLLM.geminiThinkingLevel, frontierLLM.model)
-    : frontierLLM.geminiThinkingLevel;
+  const effectiveGeminiThinkingLevel = useMemo(
+    () => provider === 'google'
+      ? getValidGeminiThinkingLevel(frontierLLM.geminiThinkingLevel, frontierLLM.model)
+      : frontierLLM.geminiThinkingLevel,
+    [provider, frontierLLM.geminiThinkingLevel, frontierLLM.model]
+  );
 
   // Get OpenAI reasoning options based on model, settings, and web search state
-  const openAIReasoningOptions = provider === 'openai'
-    ? getOpenAIReasoningOptions(frontierLLM.model, {
-        allowExtraHigh: allowChatGPTExtraHighThinking,
-        webSearchEnabled: frontierLLM.webSearchEnabled,
-      })
-    : [];
+  const openAIReasoningOptions = useMemo(
+    () => provider === 'openai'
+      ? getOpenAIReasoningOptions(frontierLLM.model, {
+          allowExtraHigh: allowChatGPTExtraHighThinking,
+          webSearchEnabled: frontierLLM.webSearchEnabled,
+        })
+      : [],
+    [provider, frontierLLM.model, allowChatGPTExtraHighThinking, frontierLLM.webSearchEnabled]
+  );
+
   // Normalize reasoning level to a valid value for the current model and web search state
-  const effectiveReasoningLevel = provider === 'openai'
-    ? getValidOpenAIReasoningLevel(frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled)
-    : frontierLLM.reasoningLevel;
+  const effectiveReasoningLevel = useMemo(
+    () => provider === 'openai'
+      ? getValidOpenAIReasoningLevel(frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled)
+      : frontierLLM.reasoningLevel,
+    [provider, frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled]
+  );
 
   // Build list of models to exclude based on settings
-  const excludedModels = allowChatGPT5Pro ? [] : ['gpt-5-pro'];
+  const excludedModels = useMemo(
+    () => allowChatGPT5Pro ? [] : ['gpt-5-pro'],
+    [allowChatGPT5Pro]
+  );
 
-  const handleSubmit = () => {
-    if (inputValue.trim() && !isStreaming) {
-      sendMessage(inputValue.trim());
+  const handleSubmit = useCallback(() => {
+    if (localValue.trim() && !isStreaming) {
+      const message = localValue.trim();
+      // Clear local value immediately for responsive UI
+      setLocalValue('');
+      // Send the message (this also clears store value)
+      sendMessage(message);
     }
-  };
+  }, [localValue, isStreaming, sendMessage]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
-  };
+  }, [handleSubmit]);
+
+  // Memoized handlers for toggle buttons
+  const toggleThinkingMenu = useCallback(() => {
+    setShowThinkingMenu(prev => !prev);
+  }, []);
+
+  const closeThinkingMenu = useCallback(() => {
+    setShowThinkingMenu(false);
+  }, []);
+
+  const toggleExtendedThinking = useCallback(() => {
+    setFrontierLLM({
+      extendedThinking: {
+        ...frontierLLM.extendedThinking,
+        enabled: !frontierLLM.extendedThinking.enabled,
+      },
+    });
+  }, [setFrontierLLM, frontierLLM.extendedThinking]);
+
+  const toggleWebSearch = useCallback(() => {
+    setFrontierLLM({
+      webSearchEnabled: !frontierLLM.webSearchEnabled,
+    });
+  }, [setFrontierLLM, frontierLLM.webSearchEnabled]);
+
+  const handleModelChange = useCallback((model: string) => {
+    setFrontierLLM({ model });
+  }, [setFrontierLLM]);
+
+  const handleTranscription = useCallback((text: string) => {
+    if (voiceMode === 'textbox') {
+      const newValue = localValue ? `${localValue} ${text}` : text;
+      setLocalValue(newValue);
+      setStoreInput(newValue);
+    } else if (voiceMode === 'chat_request') {
+      sendTranscribedMessage(text);
+    }
+  }, [voiceMode, localValue, setStoreInput, sendTranscribedMessage]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -80,7 +163,7 @@ export function ChatInput() {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
     }
-  }, [inputValue]);
+  }, [localValue]);
 
   return (
     <div className="p-4 border-t border-stone-200 dark:border-gray-700">
@@ -102,7 +185,7 @@ export function ChatInput() {
           <div className="relative">
             <Tooltip content={`Reasoning: ${effectiveReasoningLevel}`}>
               <button
-                onClick={() => setShowThinkingMenu(!showThinkingMenu)}
+                onClick={toggleThinkingMenu}
                 className={`
                   p-2 rounded transition-colors flex items-center gap-1
                   ${
@@ -135,7 +218,7 @@ export function ChatInput() {
               <>
                 <div
                   className="fixed inset-0 z-10"
-                  onClick={() => setShowThinkingMenu(false)}
+                  onClick={closeThinkingMenu}
                 />
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-stone-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
                   {openAIReasoningOptions.map((option) => (
@@ -143,7 +226,7 @@ export function ChatInput() {
                       key={option.value}
                       onClick={() => {
                         setFrontierLLM({ reasoningLevel: option.value });
-                        setShowThinkingMenu(false);
+                        closeThinkingMenu();
                       }}
                       className={`
                         w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors
@@ -162,7 +245,7 @@ export function ChatInput() {
           <div className="relative">
             <Tooltip content={`Thinking: ${effectiveGeminiThinkingLevel}`}>
               <button
-                onClick={() => setShowThinkingMenu(!showThinkingMenu)}
+                onClick={toggleThinkingMenu}
                 className={`
                   p-2 rounded transition-colors flex items-center gap-1
                   ${
@@ -195,7 +278,7 @@ export function ChatInput() {
               <>
                 <div
                   className="fixed inset-0 z-10"
-                  onClick={() => setShowThinkingMenu(false)}
+                  onClick={closeThinkingMenu}
                 />
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-stone-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
                   {geminiThinkingOptions.map((option) => (
@@ -203,7 +286,7 @@ export function ChatInput() {
                       key={option.value}
                       onClick={() => {
                         setFrontierLLM({ geminiThinkingLevel: option.value });
-                        setShowThinkingMenu(false);
+                        closeThinkingMenu();
                       }}
                       className={`
                         w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors
@@ -227,14 +310,7 @@ export function ChatInput() {
             }
           >
             <button
-              onClick={() =>
-                setFrontierLLM({
-                  extendedThinking: {
-                    ...frontierLLM.extendedThinking,
-                    enabled: !frontierLLM.extendedThinking.enabled,
-                  },
-                })
-              }
+              onClick={toggleExtendedThinking}
               className={`
                 p-2 rounded transition-colors
                 ${
@@ -271,11 +347,7 @@ export function ChatInput() {
           }
         >
           <button
-            onClick={() =>
-              setFrontierLLM({
-                webSearchEnabled: !frontierLLM.webSearchEnabled,
-              })
-            }
+            onClick={toggleWebSearch}
             className={`
               p-2 rounded transition-colors
               ${
@@ -304,8 +376,8 @@ export function ChatInput() {
 
         <textarea
           ref={textareaRef}
-          value={inputValue}
-          onChange={(e) => setInput(e.target.value)}
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onContextMenu={handleContextMenu}
           placeholder={
@@ -323,15 +395,7 @@ export function ChatInput() {
 
         {/* Voice Input Button */}
         <VoiceInputButton
-          onTranscription={(text) => {
-            if (voiceMode === 'textbox') {
-              // Append transcription to input for user to edit
-              setInput(inputValue ? `${inputValue} ${text}` : text);
-            } else if (voiceMode === 'chat_request') {
-              // Send transcription directly as a message
-              sendTranscribedMessage(text);
-            }
-          }}
+          onTranscription={handleTranscription}
         />
 
         <button
@@ -376,7 +440,7 @@ export function ChatInput() {
       <div className="mt-2 flex items-center">
         <InlineModelPicker
           value={frontierLLM.model}
-          onChange={(model) => setFrontierLLM({ model })}
+          onChange={handleModelChange}
           excludeModels={excludedModels}
         />
       </div>
@@ -392,4 +456,4 @@ export function ChatInput() {
       )}
     </div>
   );
-}
+});
