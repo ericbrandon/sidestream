@@ -120,14 +120,9 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
         <img
           src={imageData}
           alt={file.filename}
-          className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
+          className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-pointer"
+          onClick={onClose}
         />
-      </div>
-
-      {/* Instructions hint - bottom center */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/40 text-xs">
-        Press Esc or click outside to close
       </div>
     </div>
   );
