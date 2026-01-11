@@ -1,26 +1,19 @@
 /**
- * Streaming content buffer with throttled flush to React state.
+ * Streaming content buffer that immediately flushes to React state.
  *
- * This accumulates streaming deltas and only flushes to the store
- * at most every THROTTLE_MS milliseconds. This dramatically reduces
- * React re-renders during streaming, improving performance.
+ * Previously this throttled updates, but since we now render markdown
+ * on every update (and cache previous content), there's no benefit to
+ * throttling - it just adds latency.
  */
-
-// Throttle interval for flushing buffered content to React state
-const THROTTLE_MS = 50;
 
 interface StreamingBuffer {
   content: string;
-  lastFlush: number;
-  flushTimer: ReturnType<typeof setTimeout> | null;
   flushFn: ((content: string) => void) | null;
 }
 
 // Single global buffer instance
 const buffer: StreamingBuffer = {
   content: '',
-  lastFlush: 0,
-  flushTimer: null,
   flushFn: null,
 };
 
@@ -32,12 +25,13 @@ export function initStreamingBuffer(flushFn: (content: string) => void): void {
 }
 
 /**
- * Append content to the buffer. Will be flushed to React state
- * either immediately (if enough time has passed) or after THROTTLE_MS.
+ * Append content to the buffer and immediately flush to React state.
  */
 export function appendToStreamingBuffer(delta: string): void {
   buffer.content += delta;
-  scheduleFlush();
+  if (buffer.flushFn) {
+    buffer.flushFn(buffer.content);
+  }
 }
 
 /**
@@ -45,49 +39,11 @@ export function appendToStreamingBuffer(delta: string): void {
  */
 export function clearStreamingBuffer(): void {
   buffer.content = '';
-  buffer.lastFlush = 0;
-  if (buffer.flushTimer) {
-    clearTimeout(buffer.flushTimer);
-    buffer.flushTimer = null;
-  }
 }
 
 /**
- * Force an immediate flush (used before finalization)
+ * Flush the buffer (no-op now, but kept for API compatibility)
  */
 export function flushStreamingBuffer(): void {
-  flushNow();
-}
-
-function scheduleFlush(): void {
-  const now = Date.now();
-  const timeSinceLastFlush = now - buffer.lastFlush;
-
-  // Clear any pending flush
-  if (buffer.flushTimer) {
-    clearTimeout(buffer.flushTimer);
-    buffer.flushTimer = null;
-  }
-
-  if (timeSinceLastFlush >= THROTTLE_MS) {
-    // Enough time has passed, flush immediately
-    flushNow();
-  } else {
-    // Schedule a flush for later
-    buffer.flushTimer = setTimeout(() => {
-      flushNow();
-    }, THROTTLE_MS - timeSinceLastFlush);
-  }
-}
-
-function flushNow(): void {
-  if (buffer.flushTimer) {
-    clearTimeout(buffer.flushTimer);
-    buffer.flushTimer = null;
-  }
-
-  if (buffer.flushFn && buffer.content) {
-    buffer.flushFn(buffer.content);
-    buffer.lastFlush = Date.now();
-  }
+  // Immediate flushing means nothing to do here
 }
