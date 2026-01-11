@@ -181,7 +181,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           // Normal load (no active stream)
           useChatStore.getState().loadSession(
             session.messages.map(serializeMessage),
-            session.settings?.anthropicContainerId
+            session.settings?.anthropicContainerId,
+            session.settings?.openaiContainerId
           );
         }
 

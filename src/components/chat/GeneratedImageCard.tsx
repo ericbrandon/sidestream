@@ -4,6 +4,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { GeneratedFile } from '../../lib/types';
 import { useChatStore } from '../../stores/chatStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface GeneratedImageCardProps {
   file: GeneratedFile;
@@ -29,10 +30,28 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
     const fetchImage = async () => {
       try {
         setIsLoading(true);
-        const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-          'download_anthropic_file',
-          { fileId: file.file_id, filename: file.filename }
-        );
+
+        // Determine which API to use based on current model
+        const currentModel = useSettingsStore.getState().frontierLLM.model;
+        const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+        let result: { data: number[]; filename: string; mime_type?: string };
+
+        if (isOpenAI) {
+          const containerId = useChatStore.getState().openaiContainerId;
+          if (!containerId) {
+            throw new Error('No OpenAI container ID available for file download');
+          }
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_openai_file',
+            { containerId, fileId: file.file_id, filename: file.filename }
+          );
+        } else {
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_anthropic_file',
+            { fileId: file.file_id, filename: file.filename }
+          );
+        }
 
         // Convert to base64 data URL
         const bytes = new Uint8Array(result.data);
@@ -60,10 +79,27 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
 
     setIsDownloading(true);
     try {
-      const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-        'download_anthropic_file',
-        { fileId: file.file_id, filename: file.filename }
-      );
+      // Determine which API to use based on current model
+      const currentModel = useSettingsStore.getState().frontierLLM.model;
+      const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+      let result: { data: number[]; filename: string; mime_type?: string };
+
+      if (isOpenAI) {
+        const containerId = useChatStore.getState().openaiContainerId;
+        if (!containerId) {
+          throw new Error('No OpenAI container ID available for file download');
+        }
+        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+          'download_openai_file',
+          { containerId, fileId: file.file_id, filename: file.filename }
+        );
+      } else {
+        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+          'download_anthropic_file',
+          { fileId: file.file_id, filename: file.filename }
+        );
+      }
 
       const savePath = await save({
         defaultPath: result.filename,

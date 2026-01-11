@@ -66,6 +66,7 @@ export function useChat() {
     setPendingTurnId,
     clearStreamingContent,
     setAnthropicContainerId,
+    setOpenaiContainerId,
   } = useChatStore();
 
   const { frontierLLM, customSystemPrompt } = useSettingsStore();
@@ -251,11 +252,17 @@ export function useChat() {
         }
       });
 
-      // Listen for container ID updates (Claude code execution)
+      // Listen for container ID updates (Claude code execution / OpenAI code interpreter)
       const unlistenContainerId = await listen<ContainerIdEvent>('chat-container-id', (event) => {
         const { container_id } = event.payload;
-        // Store the container ID for subsequent API calls in this session
-        setAnthropicContainerId(container_id);
+        // Route to correct provider based on current model
+        const currentModel = useSettingsStore.getState().frontierLLM.model;
+        const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+        if (isOpenAI) {
+          setOpenaiContainerId(container_id);
+        } else {
+          setAnthropicContainerId(container_id);
+        }
       });
 
       return () => {
@@ -270,7 +277,7 @@ export function useChat() {
     return () => {
       cleanup.then((fn) => fn());
     };
-  }, [addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId, setAnthropicContainerId]);
+  }, [addStreamingCitations, addStreamingInlineCitations, appendStreamingThinking, setExecutionStarted, appendExecutionOutput, setExecutionCompleted, setExecutionFailed, triggerDiscovery, clearStreamingContent, setPendingTurnId, setAnthropicContainerId, setOpenaiContainerId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -401,7 +408,8 @@ export function useChat() {
           codeExecutionEnabled: true, // Enable code execution for file generation
           sessionId: useSessionStore.getState().activeSessionId,
           turnId, // Pass turnId to backend so events can be routed correctly
-          anthropicContainerId: useChatStore.getState().anthropicContainerId, // Persist container across turns
+          anthropicContainerId: useChatStore.getState().anthropicContainerId, // Persist container across turns (Claude)
+          openaiContainerId: useChatStore.getState().openaiContainerId, // Persist container across turns (OpenAI)
           ...buildProviderThinkingParams(frontierLLM),
         });
       } catch (error) {

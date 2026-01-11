@@ -308,6 +308,57 @@ pub async fn download_anthropic_file(
     })
 }
 
+/// Download a file from OpenAI's Containers API (for code interpreter files)
+#[tauri::command]
+pub async fn download_openai_file(
+    app: tauri::AppHandle,
+    container_id: String,
+    file_id: String,
+    filename: String,
+) -> Result<DownloadedFile, String> {
+    let api_key = get_api_key_async(&app, "openai").await?;
+
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.openai.com/v1/containers/{}/files/{}/content",
+        container_id, file_id
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("File download request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("File download API error: {}", error_text));
+    }
+
+    // Get content-type header for mime type
+    let mime_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    // Fix filename extension based on mime type if missing
+    let final_filename = fix_filename_extension(&filename, mime_type.as_deref());
+
+    let data = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read file content: {}", e))?
+        .to_vec();
+
+    Ok(DownloadedFile {
+        data,
+        filename: final_filename,
+        mime_type,
+    })
+}
+
 /// Add or fix file extension based on mime type
 fn fix_filename_extension(filename: &str, mime_type: Option<&str>) -> String {
     // If filename already has a recognized extension, keep it

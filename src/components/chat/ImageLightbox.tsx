@@ -3,6 +3,8 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import type { GeneratedFile } from '../../lib/types';
+import { useChatStore } from '../../stores/chatStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface ImageLightboxProps {
   file: GeneratedFile;
@@ -36,10 +38,27 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-        'download_anthropic_file',
-        { fileId: file.file_id, filename: file.filename }
-      );
+      // Determine which API to use based on current model
+      const currentModel = useSettingsStore.getState().frontierLLM.model;
+      const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+      let result: { data: number[]; filename: string; mime_type?: string };
+
+      if (isOpenAI) {
+        const containerId = useChatStore.getState().openaiContainerId;
+        if (!containerId) {
+          throw new Error('No OpenAI container ID available for file download');
+        }
+        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+          'download_openai_file',
+          { containerId, fileId: file.file_id, filename: file.filename }
+        );
+      } else {
+        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+          'download_anthropic_file',
+          { fileId: file.file_id, filename: file.filename }
+        );
+      }
 
       const savePath = await save({
         defaultPath: result.filename,

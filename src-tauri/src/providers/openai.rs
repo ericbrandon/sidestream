@@ -16,6 +16,8 @@ pub struct ChatRequestConfig {
     pub reasoning_effort: Option<ReasoningEffort>,
     pub web_search_enabled: bool,
     pub prompt_cache_key: Option<String>,
+    pub code_interpreter_enabled: bool,
+    pub container_id: Option<String>,
 }
 
 /// Reasoning effort levels for OpenAI reasoning models
@@ -68,6 +70,32 @@ pub enum OpenAIStreamEvent {
     ReasoningSummary { text: String },
     /// Web search started
     WebSearchStarted,
+    /// Code interpreter call started
+    CodeInterpreterStarted {
+        #[allow(dead_code)]
+        call_id: String,
+    },
+    /// Code interpreter code delta (incremental code)
+    CodeInterpreterCodeDelta {
+        #[allow(dead_code)]
+        call_id: String,
+        code: String,
+    },
+    /// Code interpreter code complete
+    CodeInterpreterCodeDone {
+        #[allow(dead_code)]
+        call_id: String,
+        code: String,
+    },
+    /// Code interpreter execution result
+    CodeInterpreterResult {
+        #[allow(dead_code)]
+        call_id: String,
+        container_id: Option<String>,
+        stdout: Option<String>,
+        stderr: Option<String>,
+        files: Vec<ContainerFileCitation>,
+    },
     /// Response completed
     ResponseCompleted,
     /// Stream finished
@@ -76,6 +104,14 @@ pub enum OpenAIStreamEvent {
     Error { message: String },
     /// Unknown/unhandled event
     Unknown,
+}
+
+/// File citation from OpenAI code interpreter output
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContainerFileCitation {
+    pub file_id: String,
+    pub container_id: String,
+    pub filename: String,
 }
 
 /// URL citation from web search results
@@ -202,11 +238,35 @@ impl OpenAIClient {
             });
         }
 
+        // Build tools array
+        let mut tools: Vec<serde_json::Value> = Vec::new();
+
         // Add web search tool if enabled
         if config.web_search_enabled {
-            body["tools"] = serde_json::json!([{
-                "type": "web_search"
-            }]);
+            tools.push(serde_json::json!({"type": "web_search"}));
+        }
+
+        // Add code interpreter tool if enabled
+        if config.code_interpreter_enabled {
+            let code_interpreter = if let Some(container_id) = &config.container_id {
+                // Reuse existing container for file persistence across turns
+                serde_json::json!({
+                    "type": "code_interpreter",
+                    "container": container_id
+                })
+            } else {
+                // Auto-create new container
+                serde_json::json!({
+                    "type": "code_interpreter",
+                    "container": {"type": "auto"}
+                })
+            };
+            tools.push(code_interpreter);
+        }
+
+        // Add tools to request if any are enabled
+        if !tools.is_empty() {
+            body["tools"] = serde_json::json!(tools);
         }
 
         // Add prompt cache key if provided
@@ -315,11 +375,15 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
             OpenAIStreamEvent::TextDone { text, annotations }
         }
 
-        // Output item added (web search or reasoning)
+        // Output item added (web search, code interpreter, or reasoning)
         "response.output_item.added" => {
             let item_type = parsed["item"]["type"].as_str().unwrap_or("");
             match item_type {
                 "web_search_call" => OpenAIStreamEvent::WebSearchStarted,
+                "code_interpreter_call" => {
+                    let call_id = parsed["item"]["id"].as_str().unwrap_or("").to_string();
+                    OpenAIStreamEvent::CodeInterpreterStarted { call_id }
+                }
                 "reasoning" => {
                     // Extract reasoning summary text from the summary array
                     // Format: {"type": "reasoning", "summary": [{"type": "summary_text", "text": "..."}]}
@@ -342,6 +406,47 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
                     OpenAIStreamEvent::Unknown
                 }
                 _ => OpenAIStreamEvent::Unknown,
+            }
+        }
+
+        // Code interpreter code delta (streaming code as it's written)
+        "response.code_interpreter_call.code.delta" => {
+            let call_id = parsed["item_id"].as_str().unwrap_or("").to_string();
+            let code = parsed["delta"].as_str().unwrap_or("").to_string();
+            OpenAIStreamEvent::CodeInterpreterCodeDelta { call_id, code }
+        }
+
+        // Code interpreter code complete
+        "response.code_interpreter_call.code.done" => {
+            let call_id = parsed["item_id"].as_str().unwrap_or("").to_string();
+            let code = parsed["code"].as_str().unwrap_or("").to_string();
+            OpenAIStreamEvent::CodeInterpreterCodeDone { call_id, code }
+        }
+
+        // Code interpreter output item done - contains execution results and files
+        "response.output_item.done" => {
+            let item_type = parsed["item"]["type"].as_str().unwrap_or("");
+            if item_type == "code_interpreter_call" {
+                let call_id = parsed["item"]["id"].as_str().unwrap_or("").to_string();
+                let container_id = parsed["item"]["container_id"].as_str().map(|s| s.to_string());
+
+                // Parse output results
+                let output = &parsed["item"]["output"];
+                let stdout = output["logs"].as_str().map(|s| s.to_string());
+                let stderr = output["error"].as_str().map(|s| s.to_string());
+
+                // Parse file citations from annotations in output
+                let files = parse_container_file_citations(&output["annotations"], &container_id);
+
+                OpenAIStreamEvent::CodeInterpreterResult {
+                    call_id,
+                    container_id,
+                    stdout,
+                    stderr,
+                    files,
+                }
+            } else {
+                OpenAIStreamEvent::Unknown
             }
         }
 
@@ -393,6 +498,39 @@ fn parse_annotations(annotations: &serde_json::Value) -> Vec<UrlCitation> {
     }
 
     citations
+}
+
+/// Parse container_file_citation annotations from code interpreter output
+fn parse_container_file_citations(
+    annotations: &serde_json::Value,
+    fallback_container_id: &Option<String>,
+) -> Vec<ContainerFileCitation> {
+    let mut files = Vec::new();
+
+    if let Some(arr) = annotations.as_array() {
+        for annotation in arr {
+            if annotation["type"].as_str() == Some("container_file_citation") {
+                let file_id = annotation["file_id"].as_str().unwrap_or("").to_string();
+                let filename = annotation["filename"].as_str().unwrap_or("file").to_string();
+                // Use container_id from annotation, or fall back to the one from the call
+                let container_id = annotation["container_id"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| fallback_container_id.clone())
+                    .unwrap_or_default();
+
+                if !file_id.is_empty() {
+                    files.push(ContainerFileCitation {
+                        file_id,
+                        container_id,
+                        filename,
+                    });
+                }
+            }
+        }
+    }
+
+    files
 }
 
 /// Convert a reasoning level string from the frontend to ReasoningEffort

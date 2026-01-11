@@ -19,6 +19,7 @@ import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useChatStore } from '../../stores/chatStore';
 
 /**
  * Render text with inline citations.
@@ -254,10 +255,30 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
 
           const downloadFile = async (f: GeneratedFile) => {
             try {
-              const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                'download_anthropic_file',
-                { fileId: f.file_id, filename: f.filename }
-              );
+              // Determine which API to use based on current model
+              const currentModel = useSettingsStore.getState().frontierLLM.model;
+              const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+              let result: { data: number[]; filename: string; mime_type?: string };
+
+              if (isOpenAI) {
+                // OpenAI requires container_id for file downloads
+                const containerId = useChatStore.getState().openaiContainerId;
+                if (!containerId) {
+                  throw new Error('No OpenAI container ID available for file download');
+                }
+                result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                  'download_openai_file',
+                  { containerId, fileId: f.file_id, filename: f.filename }
+                );
+              } else {
+                // Anthropic download
+                result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                  'download_anthropic_file',
+                  { fileId: f.file_id, filename: f.filename }
+                );
+              }
+
               const savePath = await save({
                 defaultPath: result.filename,
                 title: 'Save Generated File',

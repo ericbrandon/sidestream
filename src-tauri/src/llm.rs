@@ -134,6 +134,7 @@ pub async fn send_chat_message(
     session_id: Option<String>,             // For OpenAI prompt caching
     turn_id: String,                        // Unique ID for this conversation turn
     anthropic_container_id: Option<String>, // Claude code execution container ID for sandbox persistence
+    openai_container_id: Option<String>,    // OpenAI code interpreter container ID for file persistence
 ) -> Result<(), String> {
     // Create a cancellation token for this stream
     let cancel_token = CancellationToken::new();
@@ -155,9 +156,11 @@ pub async fn send_chat_message(
                 messages,
                 system_prompt,
                 web_search_enabled,
+                code_execution_enabled,
                 reasoning_level,
                 session_id,
                 turn_id,
+                openai_container_id,
             )
             .await
         }

@@ -25,6 +25,8 @@ interface ChatState {
   pendingTurnId: string | null; // Track the turnId for the current turn
   // Claude code execution container ID (persists sandbox state across requests)
   anthropicContainerId: string | null;
+  // OpenAI code interpreter container ID (persists file access across requests)
+  openaiContainerId: string | null;
 
   // Focus management
   _focusChatInput: (() => void) | null;
@@ -49,7 +51,7 @@ interface ChatState {
   clearAttachments: () => void;
   setStreaming: (streaming: boolean) => void;
   clearChat: () => void;
-  loadSession: (messages: Message[], anthropicContainerId?: string | null) => void;
+  loadSession: (messages: Message[], anthropicContainerId?: string | null, openaiContainerId?: string | null) => void;
   loadSessionWithStreaming: (
     messages: Message[],
     streamingContent: string,
@@ -60,6 +62,7 @@ interface ChatState {
   ) => void;
   setPendingTurnId: (turnId: string | null) => void;
   setAnthropicContainerId: (containerId: string) => void;
+  setOpenaiContainerId: (containerId: string) => void;
   clearStreamingContent: () => void;
   registerChatInputFocus: (focusFn: () => void) => void;
   focusChatInput: () => void;
@@ -87,6 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionLoadedAt: null,
   pendingTurnId: null,
   anthropicContainerId: null,
+  openaiContainerId: null,
   _focusChatInput: null,
 
   addMessage: (message) => {
@@ -270,9 +274,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: false,
       pendingTurnId: null,
       anthropicContainerId: null, // New session = new container
+      openaiContainerId: null,    // New session = new container
     }),
 
-  loadSession: (messages, anthropicContainerId = null) =>
+  loadSession: (messages, anthropicContainerId = null, openaiContainerId = null) =>
     set({
       messages,
       inputValue: '',
@@ -293,6 +298,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionLoadedAt: Date.now(),
       pendingTurnId: null,
       anthropicContainerId: anthropicContainerId ?? null,
+      openaiContainerId: openaiContainerId ?? null,
     }),
 
   loadSessionWithStreaming: (messages, streamingContent, streamingCitations, streamingInlineCitations, pendingTurnId, streamingThinking = '') =>
@@ -314,6 +320,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setAnthropicContainerId: (containerId) => {
     set({ anthropicContainerId: containerId });
+    // Mark session dirty so the container ID gets persisted
+    useSessionStore.getState().markDirty();
+  },
+
+  setOpenaiContainerId: (containerId) => {
+    set({ openaiContainerId: containerId });
     // Mark session dirty so the container ID gets persisted
     useSessionStore.getState().markDirty();
   },

@@ -240,6 +240,8 @@ export interface ChatSessionSettings {
   evaluatorGeminiThinkingLevel?: GeminiThinkingLevel;
   // Claude code execution container ID (persists sandbox state across requests)
   anthropicContainerId?: string;
+  // OpenAI code interpreter container ID (persists file access across requests)
+  openaiContainerId?: string;
 }
 
 export interface ChatSession {

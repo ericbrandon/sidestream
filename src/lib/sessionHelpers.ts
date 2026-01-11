@@ -8,6 +8,7 @@ interface SettingsStoreState {
 
 interface ChatStoreState {
   anthropicContainerId: string | null;
+  openaiContainerId: string | null;
 }
 
 /**
@@ -28,6 +29,7 @@ export function buildSessionSettings(settingsStore: SettingsStoreState, chatStor
     evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
     evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
     anthropicContainerId: chatStore?.anthropicContainerId ?? undefined,
+    openaiContainerId: chatStore?.openaiContainerId ?? undefined,
   };
 }
 

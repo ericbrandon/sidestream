@@ -3,7 +3,10 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
+use crate::llm::{
+    ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta,
+    StreamEvent,
+};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::openai::{
@@ -21,9 +24,11 @@ pub async fn send_chat_message_openai(
     messages: Vec<ChatMessage>,
     system_prompt: Option<String>,
     web_search_enabled: bool,
+    code_execution_enabled: bool,
     reasoning_level: Option<String>,
     session_id: Option<String>,
     turn_id: String,
+    openai_container_id: Option<String>,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "openai").await?;
     let client = OpenAIClient::new(api_key);
@@ -61,6 +66,8 @@ pub async fn send_chat_message_openai(
         reasoning_effort,
         web_search_enabled,
         prompt_cache_key: session_id.map(|id| format!("chat-{}", id)),
+        code_interpreter_enabled: code_execution_enabled,
+        container_id: openai_container_id,
     };
     let body = client.build_chat_request(&config);
 
@@ -75,6 +82,10 @@ pub async fn send_chat_message_openai(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut full_response = String::new();
+
+    // State tracking for code interpreter (reuses same pattern as Anthropic)
+    let mut pending_code = String::new();
+    let mut _execution_text_position: Option<usize> = None;
 
     loop {
         tokio::select! {
@@ -164,6 +175,99 @@ pub async fn send_chat_message_openai(
                                         }
                                         OpenAIStreamEvent::WebSearchStarted => {
                                             llm_logger::log_feature_used("chat", "OpenAI Web Search initiated");
+                                        }
+                                        // Code interpreter events - reuse same ExecutionDelta pattern as Anthropic
+                                        OpenAIStreamEvent::CodeInterpreterStarted { call_id: _ } => {
+                                            llm_logger::log_feature_used("chat", "OpenAI Code Interpreter started");
+                                            pending_code.clear();
+                                            _execution_text_position = Some(full_response.len());
+                                        }
+                                        OpenAIStreamEvent::CodeInterpreterCodeDelta { call_id: _, code } => {
+                                            pending_code.push_str(&code);
+                                        }
+                                        OpenAIStreamEvent::CodeInterpreterCodeDone { call_id: _, code } => {
+                                            // Emit execution started with full code
+                                            let final_code = if code.is_empty() { pending_code.clone() } else { code };
+                                            let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
+                                                text: String::new(),
+                                                citations: None,
+                                                inline_citations: None,
+                                                thinking: None,
+                                                execution: Some(ExecutionDelta {
+                                                    tool_name: "code_interpreter".to_string(),
+                                                    stdout: None,
+                                                    stderr: None,
+                                                    status: ExecutionStatus::Started,
+                                                    code: Some(final_code),
+                                                    files: None,
+                                                }),
+                                            };
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit execution started delta: {}", err);
+                                            }
+                                        }
+                                        OpenAIStreamEvent::CodeInterpreterResult {
+                                            call_id: _,
+                                            container_id,
+                                            stdout,
+                                            stderr,
+                                            files,
+                                        } => {
+                                            // Emit container ID for persistence (reuse same event as Anthropic)
+                                            if let Some(ref cid) = container_id {
+                                                if let Err(err) = window.emit(
+                                                    "chat-container-id",
+                                                    ContainerIdEvent {
+                                                        turn_id: turn_id.clone(),
+                                                        container_id: cid.clone(),
+                                                    },
+                                                ) {
+                                                    eprintln!("Failed to emit container ID: {}", err);
+                                                }
+                                            }
+
+                                            // Convert files to GeneratedFile format (same as Anthropic)
+                                            let generated_files: Vec<GeneratedFile> = files
+                                                .into_iter()
+                                                .map(|f| GeneratedFile {
+                                                    file_id: f.file_id,
+                                                    filename: f.filename,
+                                                    mime_type: None, // Will be determined on download
+                                                })
+                                                .collect();
+
+                                            // Determine status based on stderr
+                                            let status = if stderr.is_some() {
+                                                ExecutionStatus::Failed {
+                                                    error: stderr.clone().unwrap_or_default(),
+                                                }
+                                            } else {
+                                                ExecutionStatus::Completed
+                                            };
+
+                                            let delta = StreamDelta {
+                                                turn_id: turn_id.clone(),
+                                                text: String::new(),
+                                                citations: None,
+                                                inline_citations: None,
+                                                thinking: None,
+                                                execution: Some(ExecutionDelta {
+                                                    tool_name: "code_interpreter".to_string(),
+                                                    stdout,
+                                                    stderr,
+                                                    status,
+                                                    code: None,
+                                                    files: if generated_files.is_empty() {
+                                                        None
+                                                    } else {
+                                                        Some(generated_files)
+                                                    },
+                                                }),
+                                            };
+                                            if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                eprintln!("Failed to emit execution result delta: {}", err);
+                                            }
                                         }
                                         OpenAIStreamEvent::Error { message } => {
                                             llm_logger::log_error("chat", &message);
