@@ -49,7 +49,7 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
   }
 
   return (
-    <div className="flex justify-start mb-4">
+    <div className="flex justify-start mb-4 font-scalable">
       <div className="max-w-[85%] p-4">
         {/* Header with spinning indicator */}
         <div className="flex items-center gap-2 mb-2">

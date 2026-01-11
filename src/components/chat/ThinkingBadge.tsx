@@ -26,7 +26,7 @@ function ThinkingBadgeComponent({ content, durationMs }: ThinkingBadgeProps) {
   const durationText = durationMs ? formatDuration(durationMs) : null;
 
   return (
-    <div className="mb-2">
+    <div className="mb-2 font-scalable">
       {/* Collapsed badge */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}

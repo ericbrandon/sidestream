@@ -37,7 +37,7 @@ function ExecutionBadgeComponent({
   const isError = status === 'error';
 
   return (
-    <div className="mb-2">
+    <div className="mb-2 font-scalable">
       {/* Collapsed badge */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
