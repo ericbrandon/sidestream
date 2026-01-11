@@ -91,7 +91,7 @@ function ExecutionBadgeComponent({
           {/* Code that was executed */}
           {code && (
             <div>
-              <div className="text-xs text-stone-400 dark:text-stone-500 mb-1">Code:</div>
+              <div className="text-xs text-stone-500 dark:text-stone-400 mb-1">Code:</div>
               <div className="max-h-48 overflow-y-auto text-xs text-stone-300 bg-stone-900 dark:bg-[#0d2818] rounded-lg p-3 font-mono whitespace-pre-wrap">
                 {code}
               </div>
@@ -101,8 +101,8 @@ function ExecutionBadgeComponent({
           {/* Output */}
           {output && (
             <div>
-              <div className="text-xs text-stone-400 dark:text-stone-500 mb-1">Output:</div>
-              <div className="max-h-64 overflow-y-auto text-xs text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap">
+              <div className="text-xs text-stone-500 dark:text-stone-400 mb-1">Output:</div>
+              <div className="max-h-64 overflow-y-auto text-xs text-stone-600 dark:text-stone-300 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap">
                 {output}
               </div>
             </div>

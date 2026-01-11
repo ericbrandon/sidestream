@@ -42,10 +42,10 @@ function GeneratedFileCardComponent({ file, onDownload }: GeneratedFileCardProps
   const displayFilename = filenameExt ? file.filename : (mimeExt ? `${file.filename}.${mimeExt}` : file.filename);
 
   const style = {
-    bgColor: 'bg-blue-100 dark:bg-stone-800',
-    borderColor: 'border-blue-300 dark:border-stone-600',
-    iconBg: 'bg-blue-200 dark:bg-stone-700',
-    iconColor: 'text-blue-700 dark:text-blue-400',
+    bgColor: 'bg-blue-100 dark:bg-stone-700/50',
+    borderColor: 'border-blue-300 dark:border-stone-500',
+    iconBg: 'bg-blue-200 dark:bg-stone-600',
+    iconColor: 'text-blue-700 dark:text-stone-300',
   };
 
   const handleDownload = async () => {
