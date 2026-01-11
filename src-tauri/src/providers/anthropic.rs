@@ -41,6 +41,9 @@ pub enum AnthropicStreamEvent {
     MessageStart {
         container_id: Option<String>, // Container ID for code execution sandbox persistence
     },
+    MessageDelta {
+        container_id: Option<String>, // Container ID appears here in streaming responses
+    },
     ContentBlockStart {
         block_type: String,
         content_block: serde_json::Value,
@@ -280,7 +283,8 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
 
     match event_type {
         "message_start" => {
-            // Extract container ID from message.container.id if present
+            // Note: For streaming responses, container ID comes in message_delta, not message_start
+            // We keep this here for potential future API changes or non-streaming compatibility
             let container_id = parsed["message"]["container"]["id"]
                 .as_str()
                 .map(|s| s.to_string());
@@ -350,6 +354,13 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
             }
         }
         "content_block_stop" => AnthropicStreamEvent::ContentBlockStop,
+        "message_delta" => {
+            // Container ID appears in message_delta.delta.container.id for streaming responses
+            let container_id = parsed["delta"]["container"]["id"]
+                .as_str()
+                .map(|s| s.to_string());
+            AnthropicStreamEvent::MessageDelta { container_id }
+        }
         "message_stop" => AnthropicStreamEvent::MessageStop,
         _ => AnthropicStreamEvent::Unknown,
     }

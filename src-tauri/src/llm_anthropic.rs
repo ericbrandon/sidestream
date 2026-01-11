@@ -56,14 +56,15 @@ pub async fn send_chat_message_anthropic(
         },
         web_search_enabled,
         code_execution_enabled,
-        container_id,
+        container_id: container_id.clone(),
     };
     let body = client.build_chat_request(&config);
 
     llm_logger::log_request("chat", &model, &body);
 
-    // Use beta header if code execution is enabled
-    let beta_header = if code_execution_enabled {
+    // Use beta header if code execution is enabled OR if we have a container ID
+    // (container reuse requires the code-execution beta header)
+    let beta_header = if code_execution_enabled || container_id.is_some() {
         Some("code-execution-2025-08-25")
     } else {
         None
@@ -369,6 +370,18 @@ pub async fn send_chat_message_anthropic(
                                                 }
                                             }
                                             previous_block_type = current_block_type.take();
+                                        }
+                                        AnthropicStreamEvent::MessageDelta { container_id } => {
+                                            // Container ID arrives in message_delta for streaming responses
+                                            if let Some(id) = container_id {
+                                                llm_logger::log_feature_used("chat", &format!("Container ID received: {}", id));
+                                                if let Err(err) = window.emit("chat-container-id", ContainerIdEvent {
+                                                    turn_id: turn_id.clone(),
+                                                    container_id: id,
+                                                }) {
+                                                    eprintln!("Failed to emit chat-container-id event: {}", err);
+                                                }
+                                            }
                                         }
                                         AnthropicStreamEvent::MessageStop => {
                                             llm_logger::log_response_complete("chat", &full_response);
