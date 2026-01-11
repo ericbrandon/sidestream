@@ -125,6 +125,9 @@
     @apply h-full overflow-hidden;
     margin: 0;
     padding: 0;
+    /* Prevent scrollIntoView from affecting document-level scroll */
+    position: fixed;
+    width: 100%;
   }
 
   body {
