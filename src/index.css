@@ -230,6 +230,14 @@
 
 /* Print styles */
 @media print {
+  /* Reset fixed positioning that prevents printing */
+  html, body, #root {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: auto !important;
+  }
+
   /* Hide everything except the printable chat */
   body {
     background: white !important;
@@ -241,9 +249,7 @@
 
   .printable-chat-wrapper {
     display: block !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
+    position: static !important;
     width: 100% !important;
   }
 

@@ -250,15 +250,17 @@ export function extractUsedCSS(element: Element): string {
 export function getBaseExportStyles(): string {
   return `
     html, body {
-      height: auto;
-      overflow: auto;
+      height: auto !important;
+      overflow: auto !important;
+      position: static !important;
+      width: auto !important;
     }
     body {
-      background: white;
-      padding: 20px;
-      font-family: Georgia, 'Times New Roman', serif;
-      line-height: 1.5;
-      color: #1f2937;
+      background: white !important;
+      padding: 20px !important;
+      font-family: Georgia, 'Times New Roman', serif !important;
+      line-height: 1.5 !important;
+      color: #1f2937 !important;
     }
     .printable-chat-wrapper { display: block !important; }
     .printable-chat { display: block !important; }

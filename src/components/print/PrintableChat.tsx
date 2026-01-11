@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import type { Message, DiscoveryItem, InlineCitation as InlineCitationType } from '../../lib/types';
+import { isImageFile } from '../../lib/types';
 import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
@@ -158,7 +159,7 @@ function processMessageWithCitations(
 }
 
 /**
- * Component to render a single message with citation support
+ * Component to render a single message with citation support and generated files
  */
 function PrintableMessage({ message, showCitations }: { message: Message; showCitations: boolean }) {
   const { processedContent, markdownComponents } = useMemo(
@@ -166,14 +167,56 @@ function PrintableMessage({ message, showCitations }: { message: Message; showCi
     [message, showCitations]
   );
 
+  // Separate image files from other files
+  const imageFiles = message.generatedFiles?.filter(isImageFile) || [];
+  const otherFiles = message.generatedFiles?.filter(f => !isImageFile(f)) || [];
+
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
-      components={markdownComponents}
-    >
-      {processedContent}
-    </ReactMarkdown>
+    <>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents}
+      >
+        {processedContent}
+      </ReactMarkdown>
+
+      {/* Generated images - render inline if we have the preview data */}
+      {imageFiles.length > 0 && (
+        <div className="mt-4 space-y-4">
+          {imageFiles.map((file) => (
+            <div key={file.file_id} className="generated-image">
+              {file.image_preview ? (
+                <img
+                  src={file.image_preview}
+                  alt={file.filename}
+                  className="max-w-full rounded-lg"
+                  style={{ pageBreakInside: 'avoid' }}
+                />
+              ) : (
+                <div className="bg-gray-200 rounded-lg p-4 text-gray-500 text-sm">
+                  Image: {file.filename} (not loaded)
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Other generated files - show as simple list */}
+      {otherFiles.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {otherFiles.map((file) => (
+            <div
+              key={file.file_id}
+              className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-gray-700 inline-block mr-2"
+            >
+              {file.filename}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
