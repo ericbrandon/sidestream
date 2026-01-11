@@ -4,8 +4,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
 use crate::llm::{
-    ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta,
-    StreamEvent,
+    tool_names, ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile,
+    StreamDelta, StreamEvent,
 };
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
@@ -87,9 +87,8 @@ pub async fn send_chat_message_openai(
     let mut buffer = String::new();
     let mut full_response = String::new();
 
-    // State tracking for code interpreter (reuses same pattern as Anthropic)
+    // State tracking for code interpreter
     let mut pending_code = String::new();
-    let mut _execution_text_position: Option<usize> = None;
 
     loop {
         tokio::select! {
@@ -214,7 +213,7 @@ pub async fn send_chat_message_openai(
                                                     inline_citations: None,
                                                     thinking: None,
                                                     execution: Some(ExecutionDelta {
-                                                        tool_name: "code_interpreter".to_string(),
+                                                        tool_name: tool_names::CODE_INTERPRETER.to_string(),
                                                         stdout: None,
                                                         stderr: None,
                                                         status: ExecutionStatus::Completed,
@@ -234,7 +233,6 @@ pub async fn send_chat_message_openai(
                                         OpenAIStreamEvent::CodeInterpreterStarted { call_id: _ } => {
                                             llm_logger::log_feature_used("chat", "OpenAI Code Interpreter started");
                                             pending_code.clear();
-                                            _execution_text_position = Some(full_response.len());
                                         }
                                         OpenAIStreamEvent::CodeInterpreterCodeDelta { call_id: _, code } => {
                                             pending_code.push_str(&code);
@@ -249,7 +247,7 @@ pub async fn send_chat_message_openai(
                                                 inline_citations: None,
                                                 thinking: None,
                                                 execution: Some(ExecutionDelta {
-                                                    tool_name: "code_interpreter".to_string(),
+                                                    tool_name: tool_names::CODE_INTERPRETER.to_string(),
                                                     stdout: None,
                                                     stderr: None,
                                                     status: ExecutionStatus::Started,
@@ -312,7 +310,7 @@ pub async fn send_chat_message_openai(
                                                 inline_citations: None,
                                                 thinking: None,
                                                 execution: Some(ExecutionDelta {
-                                                    tool_name: "code_interpreter".to_string(),
+                                                    tool_name: tool_names::CODE_INTERPRETER.to_string(),
                                                     stdout,
                                                     stderr,
                                                     status,

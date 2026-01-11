@@ -7,6 +7,7 @@ mod llm_gemini;
 mod llm_logger;
 mod llm_openai;
 mod llm_voice;
+mod mime_utils;
 mod providers;
 mod secure_storage;
 

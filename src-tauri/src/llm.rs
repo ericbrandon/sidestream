@@ -21,6 +21,16 @@ use crate::llm_openai::send_chat_message_openai;
 use crate::llm_voice::{send_voice_message_impl, transcribe_audio_gemini_impl};
 use crate::providers::anthropic::{Citation, InlineCitation};
 
+/// Tool name constants for code execution across providers
+pub mod tool_names {
+    /// OpenAI code interpreter tool
+    pub const CODE_INTERPRETER: &str = "code_interpreter";
+    /// Anthropic bash code execution tool
+    pub const BASH_CODE_EXECUTION: &str = "bash_code_execution";
+    /// Anthropic text editor code execution tool
+    pub const TEXT_EDITOR_CODE_EXECUTION: &str = "text_editor_code_execution";
+}
+
 /// Shared state for managing stream cancellation
 pub struct StreamState {
     pub cancel_token: Arc<Mutex<Option<CancellationToken>>>,

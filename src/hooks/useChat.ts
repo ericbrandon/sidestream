@@ -14,7 +14,72 @@ import {
   clearStreamingBuffer,
   flushStreamingBuffer,
 } from '../lib/streamingBuffer';
-import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent } from '../lib/types';
+import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent, ExecutionDelta, Citation, InlineCitation, GeneratedFile } from '../lib/types';
+
+/**
+ * Process execution delta and update UI state.
+ * Extracted to avoid duplication between background stream and fallback paths.
+ */
+function processExecutionDelta(
+  exec: ExecutionDelta,
+  setExecutionStarted: (code: string) => void,
+  appendExecutionOutput: (output: string) => void,
+  setExecutionCompleted: (files?: GeneratedFile[]) => void,
+  setExecutionFailed: (error: string) => void
+) {
+  if (exec.status === 'started' && exec.code) {
+    setExecutionStarted(exec.code);
+  }
+  if (exec.stdout) {
+    appendExecutionOutput(exec.stdout);
+  }
+  if (exec.stderr) {
+    appendExecutionOutput(exec.stderr);
+  }
+  if (exec.status === 'completed') {
+    setExecutionCompleted(exec.files ?? undefined);
+  }
+  if (typeof exec.status === 'object' && 'failed' in exec.status) {
+    setExecutionFailed(exec.status.failed.error);
+  }
+}
+
+/**
+ * Process a stream delta and update UI state.
+ * Extracted to avoid duplication between background stream and fallback paths.
+ */
+function processStreamDelta(
+  delta: StreamDelta,
+  addStreamingCitations: (citations: Citation[]) => void,
+  addStreamingInlineCitations: (citations: InlineCitation[]) => void,
+  appendStreamingThinking: (thinking: string) => void,
+  setExecutionStarted: (code: string) => void,
+  appendExecutionOutput: (output: string) => void,
+  setExecutionCompleted: (files?: GeneratedFile[]) => void,
+  setExecutionFailed: (error: string) => void
+) {
+  if (delta.text) {
+    appendToStreamingBuffer(delta.text);
+  }
+  if (delta.citations && delta.citations.length > 0) {
+    addStreamingCitations(delta.citations);
+  }
+  if (delta.inline_citations && delta.inline_citations.length > 0) {
+    addStreamingInlineCitations(delta.inline_citations);
+  }
+  if (delta.thinking) {
+    appendStreamingThinking(delta.thinking);
+  }
+  if (delta.execution) {
+    processExecutionDelta(
+      delta.execution,
+      setExecutionStarted,
+      appendExecutionOutput,
+      setExecutionCompleted,
+      setExecutionFailed
+    );
+  }
+}
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
@@ -106,38 +171,16 @@ export function useChat() {
           // Fall back to updating current UI directly if this matches the active session's pending turn
           const pendingTurnId = useChatStore.getState().pendingTurnId;
           if (turnId === pendingTurnId) {
-            // Use throttled buffer for text deltas
-            if (delta.text) {
-              appendToStreamingBuffer(delta.text);
-            }
-            if (delta.citations && delta.citations.length > 0) {
-              addStreamingCitations(delta.citations);
-            }
-            if (delta.inline_citations && delta.inline_citations.length > 0) {
-              addStreamingInlineCitations(delta.inline_citations);
-            }
-            if (delta.thinking) {
-              appendStreamingThinking(delta.thinking);
-            }
-            // Handle execution deltas
-            if (delta.execution) {
-              const exec = delta.execution;
-              if (exec.status === 'started' && exec.code) {
-                setExecutionStarted(exec.code);
-              }
-              if (exec.stdout) {
-                appendExecutionOutput(exec.stdout);
-              }
-              if (exec.stderr) {
-                appendExecutionOutput(exec.stderr);
-              }
-              if (exec.status === 'completed') {
-                setExecutionCompleted(exec.files ?? undefined);
-              }
-              if (typeof exec.status === 'object' && 'failed' in exec.status) {
-                setExecutionFailed(exec.status.failed.error);
-              }
-            }
+            processStreamDelta(
+              delta,
+              addStreamingCitations,
+              addStreamingInlineCitations,
+              appendStreamingThinking,
+              setExecutionStarted,
+              appendExecutionOutput,
+              setExecutionCompleted,
+              setExecutionFailed
+            );
           }
           return;
         }
@@ -159,38 +202,16 @@ export function useChat() {
         // Only update live UI if user is still viewing this session
         const activeSessionId = useSessionStore.getState().activeSessionId;
         if (stream.sessionId === activeSessionId) {
-          // Use throttled buffer for text deltas
-          if (delta.text) {
-            appendToStreamingBuffer(delta.text);
-          }
-          if (delta.citations && delta.citations.length > 0) {
-            addStreamingCitations(delta.citations);
-          }
-          if (delta.inline_citations && delta.inline_citations.length > 0) {
-            addStreamingInlineCitations(delta.inline_citations);
-          }
-          if (delta.thinking) {
-            appendStreamingThinking(delta.thinking);
-          }
-          // Handle execution deltas
-          if (delta.execution) {
-            const exec = delta.execution;
-            if (exec.status === 'started' && exec.code) {
-              setExecutionStarted(exec.code);
-            }
-            if (exec.stdout) {
-              appendExecutionOutput(exec.stdout);
-            }
-            if (exec.stderr) {
-              appendExecutionOutput(exec.stderr);
-            }
-            if (exec.status === 'completed') {
-              setExecutionCompleted(exec.files ?? undefined);
-            }
-            if (typeof exec.status === 'object' && 'failed' in exec.status) {
-              setExecutionFailed(exec.status.failed.error);
-            }
-          }
+          processStreamDelta(
+            delta,
+            addStreamingCitations,
+            addStreamingInlineCitations,
+            appendStreamingThinking,
+            setExecutionStarted,
+            appendExecutionOutput,
+            setExecutionCompleted,
+            setExecutionFailed
+          );
         }
       });
 

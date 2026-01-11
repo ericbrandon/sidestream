@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::llm::tool_names;
+use crate::mime_utils;
+
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
@@ -60,30 +63,9 @@ pub enum AnthropicStreamEvent {
     Unknown,
 }
 
-/// Code execution tool use block (server_tool_use with bash/text_editor)
-/// Note: Currently unused as input is parsed via input_json_delta streaming,
-/// but kept for potential future use or debugging.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct CodeExecutionToolUse {
-    pub id: String,
-    pub name: String, // "bash_code_execution" or "text_editor_code_execution"
-    pub input: CodeExecutionInput,
-}
-
-/// Input for code execution tools
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum CodeExecutionInput {
-    Bash { command: String },
-    TextEditor { command: String, path: String, file_text: Option<String>, old_str: Option<String>, new_str: Option<String> },
-}
-
 /// Result from code execution
 #[derive(Debug, Clone)]
 pub struct CodeExecutionResult {
-    #[allow(dead_code)]
-    pub tool_use_id: String,
     pub tool_name: String, // "bash_code_execution" or "text_editor_code_execution"
     pub stdout: Option<String>,
     pub stderr: Option<String>,
@@ -372,35 +354,7 @@ pub fn is_code_execution_block(block_type: &str, content_block: &serde_json::Val
         return false;
     }
     let name = content_block["name"].as_str().unwrap_or("");
-    name == "bash_code_execution" || name == "text_editor_code_execution"
-}
-
-/// Parse code execution tool use from content_block_start
-/// Note: Currently unused as input is parsed via input_json_delta streaming,
-/// but kept for potential future use or debugging.
-#[allow(dead_code)]
-pub fn parse_code_execution_tool_use(content_block: &serde_json::Value) -> Option<CodeExecutionToolUse> {
-    let id = content_block["id"].as_str()?.to_string();
-    let name = content_block["name"].as_str()?.to_string();
-    let input_obj = &content_block["input"];
-
-    let input = match name.as_str() {
-        "bash_code_execution" => {
-            let command = input_obj["command"].as_str().unwrap_or("").to_string();
-            CodeExecutionInput::Bash { command }
-        }
-        "text_editor_code_execution" => {
-            let command = input_obj["command"].as_str().unwrap_or("").to_string();
-            let path = input_obj["path"].as_str().unwrap_or("").to_string();
-            let file_text = input_obj["file_text"].as_str().map(|s| s.to_string());
-            let old_str = input_obj["old_str"].as_str().map(|s| s.to_string());
-            let new_str = input_obj["new_str"].as_str().map(|s| s.to_string());
-            CodeExecutionInput::TextEditor { command, path, file_text, old_str, new_str }
-        }
-        _ => return None,
-    };
-
-    Some(CodeExecutionToolUse { id, name, input })
+    name == tool_names::BASH_CODE_EXECUTION || name == tool_names::TEXT_EDITOR_CODE_EXECUTION
 }
 
 /// Check if a content block is a code execution result
@@ -410,13 +364,14 @@ pub fn is_code_execution_result(block_type: &str) -> bool {
 
 /// Parse code execution result from content_block_start
 pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json::Value) -> Option<CodeExecutionResult> {
-    let tool_use_id = content_block["tool_use_id"].as_str()?.to_string();
+    // Verify tool_use_id exists (required for valid result block)
+    content_block["tool_use_id"].as_str()?;
     let content = &content_block["content"];
 
     let tool_name = if block_type == "bash_code_execution_tool_result" {
-        "bash_code_execution".to_string()
+        tool_names::BASH_CODE_EXECUTION.to_string()
     } else {
-        "text_editor_code_execution".to_string()
+        tool_names::TEXT_EDITOR_CODE_EXECUTION.to_string()
     };
 
     // Parse stdout/stderr/return_code for bash execution
@@ -451,21 +406,7 @@ pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json:
 
                     // If no filename or no extension, construct from mime_type
                     if filename.is_none() || filename.as_ref().map(|f| !f.contains('.')).unwrap_or(false) {
-                        let extension = mime_type.as_deref().and_then(|mt| {
-                            match mt {
-                                "text/csv" => Some("csv"),
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
-                                "application/vnd.ms-excel" => Some("xls"),
-                                "application/pdf" => Some("pdf"),
-                                "image/png" => Some("png"),
-                                "image/jpeg" => Some("jpg"),
-                                "application/json" => Some("json"),
-                                "text/plain" => Some("txt"),
-                                "text/html" => Some("html"),
-                                "application/zip" => Some("zip"),
-                                _ => mt.split('/').last()
-                            }
-                        });
+                        let extension = mime_type.as_deref().map(mime_utils::mime_to_extension_or_subtype);
 
                         let base_name = filename.unwrap_or_else(|| {
                             format!("file_{}", &file_id[..8.min(file_id.len())])
@@ -493,7 +434,6 @@ pub fn parse_code_execution_result(block_type: &str, content_block: &serde_json:
         .unwrap_or_default();
 
     Some(CodeExecutionResult {
-        tool_use_id,
         tool_name,
         stdout,
         stderr,

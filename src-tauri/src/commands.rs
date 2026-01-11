@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
+use crate::mime_utils;
 use crate::secure_storage;
 
 /// Log frontend errors to stderr (visible in terminal where app runs)
@@ -251,7 +252,7 @@ pub async fn transcribe_audio_bytes(
     Ok(transcript.trim().to_string())
 }
 
-/// Response from downloading a file from Anthropic's Files API
+/// Response from downloading a file from provider APIs
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DownloadedFile {
     pub data: Vec<u8>,
@@ -259,23 +260,20 @@ pub struct DownloadedFile {
     pub mime_type: Option<String>,
 }
 
-/// Download a file from Anthropic's Files API
-#[tauri::command]
-pub async fn download_anthropic_file(
-    app: tauri::AppHandle,
-    file_id: String,
-    filename: String,
+/// Generic file download helper that handles the common download logic
+async fn download_file_from_url(
+    url: &str,
+    headers: Vec<(&str, String)>,
+    filename: &str,
 ) -> Result<DownloadedFile, String> {
-    let api_key = get_api_key_async(&app, "anthropic").await?;
-
     let client = reqwest::Client::new();
-    let url = format!("https://api.anthropic.com/v1/files/{}/content", file_id);
+    let mut request = client.get(url);
 
-    let response = client
-        .get(&url)
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("anthropic-beta", "files-api-2025-04-14")
+    for (key, value) in headers {
+        request = request.header(key, value);
+    }
+
+    let response = request
         .send()
         .await
         .map_err(|e| format!("File download request failed: {}", e))?;
@@ -285,15 +283,13 @@ pub async fn download_anthropic_file(
         return Err(format!("File download API error: {}", error_text));
     }
 
-    // Get content-type header for mime type
     let mime_type = response
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    // Fix filename extension based on mime type if missing
-    let final_filename = fix_filename_extension(&filename, mime_type.as_deref());
+    let final_filename = fix_filename_extension(filename, mime_type.as_deref());
 
     let data = response
         .bytes()
@@ -306,6 +302,28 @@ pub async fn download_anthropic_file(
         filename: final_filename,
         mime_type,
     })
+}
+
+/// Download a file from Anthropic's Files API
+#[tauri::command]
+pub async fn download_anthropic_file(
+    app: tauri::AppHandle,
+    file_id: String,
+    filename: String,
+) -> Result<DownloadedFile, String> {
+    let api_key = get_api_key_async(&app, "anthropic").await?;
+    let url = format!("https://api.anthropic.com/v1/files/{}/content", file_id);
+
+    download_file_from_url(
+        &url,
+        vec![
+            ("x-api-key", api_key),
+            ("anthropic-version", "2023-06-01".to_string()),
+            ("anthropic-beta", "files-api-2025-04-14".to_string()),
+        ],
+        &filename,
+    )
+    .await
 }
 
 /// Download a file from OpenAI's Containers API (for code interpreter files)
@@ -317,46 +335,17 @@ pub async fn download_openai_file(
     filename: String,
 ) -> Result<DownloadedFile, String> {
     let api_key = get_api_key_async(&app, "openai").await?;
-
-    let client = reqwest::Client::new();
     let url = format!(
         "https://api.openai.com/v1/containers/{}/files/{}/content",
         container_id, file_id
     );
 
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .send()
-        .await
-        .map_err(|e| format!("File download request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        let error_text = response.text().await.unwrap_or_default();
-        return Err(format!("File download API error: {}", error_text));
-    }
-
-    // Get content-type header for mime type
-    let mime_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    // Fix filename extension based on mime type if missing
-    let final_filename = fix_filename_extension(&filename, mime_type.as_deref());
-
-    let data = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read file content: {}", e))?
-        .to_vec();
-
-    Ok(DownloadedFile {
-        data,
-        filename: final_filename,
-        mime_type,
-    })
+    download_file_from_url(
+        &url,
+        vec![("Authorization", format!("Bearer {}", api_key))],
+        &filename,
+    )
+    .await
 }
 
 /// Download a file from OpenAI container by filename (resolves file_id via container file listing)
@@ -424,25 +413,8 @@ fn fix_filename_extension(filename: &str, mime_type: Option<&str>) -> String {
         }
     }
 
-    // Map mime type to extension
-    let extension = mime_type.and_then(|mt| {
-        // Handle mime types with parameters (e.g., "text/csv; charset=utf-8")
-        let mt = mt.split(';').next().unwrap_or(mt).trim();
-        match mt {
-            "text/csv" => Some("csv"),
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
-            "application/vnd.ms-excel" => Some("xls"),
-            "application/pdf" => Some("pdf"),
-            "image/png" => Some("png"),
-            "image/jpeg" => Some("jpg"),
-            "application/json" => Some("json"),
-            "text/plain" => Some("txt"),
-            "text/html" => Some("html"),
-            "application/zip" => Some("zip"),
-            "application/xml" | "text/xml" => Some("xml"),
-            _ => None
-        }
-    });
+    // Map mime type to extension using shared utility
+    let extension = mime_type.and_then(mime_utils::mime_to_extension);
 
     if let Some(ext) = extension {
         // Remove any existing extension-like suffix and add the correct one

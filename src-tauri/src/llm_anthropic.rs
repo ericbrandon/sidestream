@@ -3,8 +3,9 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
+use crate::llm::{tool_names, ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
 use crate::llm_logger;
+use crate::mime_utils;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
     fetch_file_metadata, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
@@ -83,8 +84,7 @@ pub async fn send_chat_message_anthropic(
     let mut full_response = String::new();
     let mut current_block_type: Option<String> = None;
     let mut previous_block_type: Option<String> = None;
-    // Track current code execution tool for matching results
-    let mut _current_execution_tool_id: Option<String> = None;
+    // Track current code execution tool name for result handling
     let mut current_execution_tool_name: Option<String> = None;
     // Accumulate input JSON for tool use blocks (code comes via input_json_delta)
     let mut pending_tool_input_json: String = String::new();
@@ -138,10 +138,8 @@ pub async fn send_chat_message_anthropic(
                                             // Check for code execution tool use
                                             if is_code_execution_block(&block_type, &content_block) {
                                                 // Just note the tool name - actual input comes via input_json_delta
-                                                let id = content_block["id"].as_str().unwrap_or("").to_string();
                                                 let name = content_block["name"].as_str().unwrap_or("").to_string();
                                                 llm_logger::log_feature_used("chat", &format!("Code execution started: {}", name));
-                                                _current_execution_tool_id = Some(id);
                                                 current_execution_tool_name = Some(name);
                                                 // Reset input JSON accumulator for this tool use
                                                 pending_tool_input_json.clear();
@@ -172,20 +170,8 @@ pub async fn send_chat_message_anthropic(
                                                                 let filename = if metadata.filename.contains('.') {
                                                                     metadata.filename
                                                                 } else {
-                                                                    // Add extension based on mime_type
-                                                                    let ext = match metadata.mime_type.as_str() {
-                                                                        "text/csv" => "csv",
-                                                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
-                                                                        "application/vnd.ms-excel" => "xls",
-                                                                        "application/pdf" => "pdf",
-                                                                        "image/png" => "png",
-                                                                        "image/jpeg" => "jpg",
-                                                                        "application/json" => "json",
-                                                                        "text/plain" => "txt",
-                                                                        "text/html" => "html",
-                                                                        "application/zip" => "zip",
-                                                                        _ => metadata.mime_type.split('/').last().unwrap_or("bin"),
-                                                                    };
+                                                                    // Add extension based on mime_type using shared utility
+                                                                    let ext = mime_utils::mime_to_extension_or_subtype(&metadata.mime_type);
                                                                     format!("{}.{}", metadata.filename, ext)
                                                                 };
                                                                 (filename, Some(metadata.mime_type))
@@ -224,7 +210,6 @@ pub async fn send_chat_message_anthropic(
                                                     }
 
                                                     // Clear current execution tracking
-                                                    _current_execution_tool_id = None;
                                                     current_execution_tool_name = None;
                                                 }
                                             }
@@ -329,10 +314,10 @@ pub async fn send_chat_message_anthropic(
                                                     if let Ok(input_obj) = serde_json::from_str::<serde_json::Value>(&pending_tool_input_json) {
                                                         let tool_name = current_execution_tool_name.as_ref().unwrap();
                                                         let code = match tool_name.as_str() {
-                                                            "bash_code_execution" => {
+                                                            tool_names::BASH_CODE_EXECUTION => {
                                                                 input_obj["command"].as_str().map(|s| s.to_string())
                                                             }
-                                                            "text_editor_code_execution" => {
+                                                            tool_names::TEXT_EDITOR_CODE_EXECUTION => {
                                                                 let command = input_obj["command"].as_str().unwrap_or("");
                                                                 let path = input_obj["path"].as_str().unwrap_or("");
                                                                 let file_text = input_obj["file_text"].as_str();
