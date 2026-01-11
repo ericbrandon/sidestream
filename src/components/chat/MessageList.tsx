@@ -20,7 +20,6 @@ export function MessageList() {
   const forkFromMessage = useSessionStore((state) => state.forkFromMessage);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUserMessageRef = useRef<HTMLDivElement>(null);
-  const streamingAreaRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
 
   // Track whether we should scroll on next user message
@@ -71,21 +70,6 @@ export function MessageList() {
     }
   }, [messages]);
 
-  // Keep streaming area visible as content grows
-  useEffect(() => {
-    if (isStreaming && streamingAreaRef.current && containerRef.current) {
-      const container = containerRef.current;
-      const streamingArea = streamingAreaRef.current;
-      const streamingBottom = streamingArea.offsetTop + streamingArea.offsetHeight;
-      const containerBottom = container.scrollTop + container.clientHeight;
-
-      // If streaming content extends below visible area, scroll to keep it visible
-      if (streamingBottom > containerBottom) {
-        container.scrollTop = streamingBottom - container.clientHeight + 20;
-      }
-    }
-  }, [isStreaming, streamingContent, streamingThinking, streamingExecutionCode, streamingExecutionOutput]);
-
   // Find the last user message index for ref assignment
   let lastUserMessageIndex = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -131,7 +115,7 @@ export function MessageList() {
 
       {/* Streaming response area - render all active indicators together */}
       {isStreaming && (
-        <div ref={streamingAreaRef} className="streaming-response">
+        <div className="streaming-response">
           {/* Thinking indicator - expanded when alone, collapsed when other content present */}
           {hasThinking && !hasContent && !hasExecutionData && (
             <ThinkingIndicator content={streamingThinking} />
