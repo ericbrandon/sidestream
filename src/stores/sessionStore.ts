@@ -169,13 +169,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         const activeStream = backgroundStore.getStreamForSession(sessionId);
 
         if (activeStream) {
-          // Restore session with active streaming state
+          // Restore session with active streaming state (including thinking and execution)
           useChatStore.getState().loadSessionWithStreaming(
             session.messages.map(serializeMessage),
             activeStream.streamingContent,
             activeStream.streamingCitations,
             activeStream.streamingInlineCitations,
-            activeStream.turnId
+            activeStream.turnId,
+            activeStream.streamingThinking,
+            // Execution state
+            activeStream.streamingExecutionCode,
+            activeStream.streamingExecutionOutput,
+            activeStream.executionStatus,
+            activeStream.executionError,
+            activeStream.executionStartTime,
+            activeStream.executionTextPosition,
+            activeStream.streamingGeneratedFiles
           );
         } else {
           // Normal load (no active stream)

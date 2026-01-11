@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession } from '../lib/types';
+import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile } from '../lib/types';
 import { buildSessionSettings } from '../lib/sessionHelpers';
 import { deduplicateCitations } from '../lib/citationHelpers';
 import { logError } from '../lib/logger';
@@ -17,6 +17,14 @@ interface BackgroundChatStream {
   streamingThinking: string;
   thinkingStartTime: number | null;
   startedAt: Date;
+  // Execution tracking
+  streamingExecutionCode: string;
+  streamingExecutionOutput: string;
+  executionStatus: 'idle' | 'running' | 'completed' | 'failed';
+  executionError: string | null;
+  executionStartTime: number | null;
+  executionTextPosition: number | null;
+  streamingGeneratedFiles: GeneratedFile[];
 }
 
 interface BackgroundDiscoveryStream {
@@ -39,6 +47,10 @@ interface BackgroundStreamState {
   addChatCitations: (turnId: string, citations: Citation[]) => void;
   addChatInlineCitations: (turnId: string, citations: InlineCitation[]) => void;
   appendChatThinking: (turnId: string, text: string) => void;
+  setExecutionStarted: (turnId: string, code: string) => void;
+  appendExecutionOutput: (turnId: string, output: string) => void;
+  setExecutionCompleted: (turnId: string, files?: GeneratedFile[]) => void;
+  setExecutionFailed: (turnId: string, error: string) => void;
   completeChatStream: (turnId: string) => Promise<void>;
   cancelChatStream: (turnId: string) => void;
 
@@ -71,6 +83,14 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
         streamingThinking: '',
         thinkingStartTime: null,
         startedAt: new Date(),
+        // Execution fields
+        streamingExecutionCode: '',
+        streamingExecutionOutput: '',
+        executionStatus: 'idle',
+        executionError: null,
+        executionStartTime: null,
+        executionTextPosition: null,
+        streamingGeneratedFiles: [],
       });
       return { chatStreams: newStreams };
     });
@@ -134,6 +154,75 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     });
   },
 
+  setExecutionStarted: (turnId, code) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, {
+        ...stream,
+        // Append new code to existing (multiple executions in one turn)
+        streamingExecutionCode: stream.streamingExecutionCode
+          ? `${stream.streamingExecutionCode}\n\n${code}`
+          : code,
+        executionStatus: 'running',
+        executionError: null,
+        // Record start time on first execution only
+        executionStartTime: stream.executionStartTime ?? Date.now(),
+        // Capture text position on first execution only
+        executionTextPosition: stream.executionTextPosition ?? stream.streamingContent.length,
+      });
+      return { chatStreams: newStreams };
+    });
+  },
+
+  appendExecutionOutput: (turnId, output) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, {
+        ...stream,
+        streamingExecutionOutput: stream.streamingExecutionOutput + output,
+      });
+      return { chatStreams: newStreams };
+    });
+  },
+
+  setExecutionCompleted: (turnId, files) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, {
+        ...stream,
+        executionStatus: 'completed',
+        streamingGeneratedFiles: files
+          ? [...stream.streamingGeneratedFiles, ...files]
+          : stream.streamingGeneratedFiles,
+      });
+      return { chatStreams: newStreams };
+    });
+  },
+
+  setExecutionFailed: (turnId, error) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, {
+        ...stream,
+        executionStatus: 'failed',
+        executionError: error,
+      });
+      return { chatStreams: newStreams };
+    });
+  },
+
   completeChatStream: async (turnId) => {
     const stream = get().chatStreams.get(turnId);
     if (!stream) return;
@@ -159,6 +248,11 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
       ? Date.now() - stream.thinkingStartTime
       : undefined;
 
+    // Calculate execution duration if we had execution
+    const executionDurationMs = stream.streamingExecutionCode && stream.executionStartTime
+      ? Date.now() - stream.executionStartTime
+      : undefined;
+
     // Create the final assistant message
     const assistantMessage: Message = {
       id: crypto.randomUUID(),
@@ -170,6 +264,18 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
       turnId: stream.turnId,
       thinkingContent: stream.streamingThinking || undefined,
       thinkingDurationMs,
+      // Execution fields
+      executionCode: stream.streamingExecutionCode || undefined,
+      executionOutput: stream.streamingExecutionOutput || undefined,
+      executionStatus: stream.executionStatus !== 'idle'
+        ? (stream.executionStatus === 'failed' ? 'error' : 'success')
+        : undefined,
+      executionError: stream.executionError || undefined,
+      executionDurationMs,
+      executionTextPosition: stream.executionTextPosition ?? undefined,
+      generatedFiles: stream.streamingGeneratedFiles.length > 0
+        ? stream.streamingGeneratedFiles
+        : undefined,
     };
 
     const activeSessionId = useSessionStore.getState().activeSessionId;

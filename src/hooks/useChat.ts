@@ -198,6 +198,25 @@ export function useChat() {
         if (delta.thinking) {
           backgroundStore.appendChatThinking(turnId, delta.thinking);
         }
+        // Also store execution deltas to background store
+        if (delta.execution) {
+          const exec = delta.execution;
+          if (exec.status === 'started' && exec.code) {
+            backgroundStore.setExecutionStarted(turnId, exec.code);
+          }
+          if (exec.stdout) {
+            backgroundStore.appendExecutionOutput(turnId, exec.stdout);
+          }
+          if (exec.stderr) {
+            backgroundStore.appendExecutionOutput(turnId, exec.stderr);
+          }
+          if (exec.status === 'completed') {
+            backgroundStore.setExecutionCompleted(turnId, exec.files ?? undefined);
+          }
+          if (typeof exec.status === 'object' && 'failed' in exec.status) {
+            backgroundStore.setExecutionFailed(turnId, exec.status.failed.error);
+          }
+        }
 
         // Only update live UI if user is still viewing this session
         const activeSessionId = useSessionStore.getState().activeSessionId;

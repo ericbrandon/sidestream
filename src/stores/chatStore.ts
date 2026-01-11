@@ -58,7 +58,15 @@ interface ChatState {
     streamingCitations: Citation[],
     streamingInlineCitations: InlineCitation[],
     pendingTurnId: string,
-    streamingThinking?: string
+    streamingThinking?: string,
+    // Execution state
+    streamingExecutionCode?: string,
+    streamingExecutionOutput?: string,
+    executionStatus?: 'idle' | 'running' | 'completed' | 'failed',
+    executionError?: string | null,
+    executionStartTime?: number | null,
+    executionTextPosition?: number | null,
+    streamingGeneratedFiles?: GeneratedFile[]
   ) => void;
   setPendingTurnId: (turnId: string | null) => void;
   setAnthropicContainerId: (containerId: string) => void;
@@ -301,7 +309,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       openaiContainerId: openaiContainerId ?? null,
     }),
 
-  loadSessionWithStreaming: (messages, streamingContent, streamingCitations, streamingInlineCitations, pendingTurnId, streamingThinking = '') =>
+  loadSessionWithStreaming: (
+    messages,
+    streamingContent,
+    streamingCitations,
+    streamingInlineCitations,
+    pendingTurnId,
+    streamingThinking = '',
+    streamingExecutionCode = '',
+    streamingExecutionOutput = '',
+    executionStatus: 'idle' | 'running' | 'completed' | 'failed' = 'idle',
+    executionError: string | null = null,
+    executionStartTime: number | null = null,
+    executionTextPosition: number | null = null,
+    streamingGeneratedFiles: GeneratedFile[] = []
+  ) =>
     set({
       messages,
       inputValue: '',
@@ -314,6 +336,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: true,
       sessionLoadedAt: Date.now(),
       pendingTurnId,
+      // Execution state
+      streamingExecutionCode,
+      streamingExecutionOutput,
+      executionStatus,
+      executionError,
+      executionStartTime,
+      executionTextPosition,
+      streamingGeneratedFiles,
     }),
 
   setPendingTurnId: (turnId) => set({ pendingTurnId: turnId }),
