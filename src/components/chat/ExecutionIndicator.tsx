@@ -79,7 +79,7 @@ function ExecutionIndicatorComponent({ code, output, isComplete }: ExecutionIndi
         {content && (
           <div
             ref={scrollRef}
-            className="max-h-32 overflow-y-auto text-xs text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap"
+            className="max-h-32 overflow-y-auto text-xs text-stone-500 dark:text-stone-300 bg-stone-50 dark:bg-[#0d2818] rounded-lg p-3 font-mono whitespace-pre-wrap"
           >
             {content}
           </div>

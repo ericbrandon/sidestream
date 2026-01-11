@@ -60,7 +60,7 @@ function ThinkingBadgeComponent({ content, durationMs }: ThinkingBadgeProps) {
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="mt-2 max-h-64 overflow-y-auto text-xs text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap">
+        <div className="mt-2 max-h-64 overflow-y-auto text-xs text-stone-500 dark:text-stone-300 bg-stone-50 dark:bg-stone-800/50 rounded-lg p-3 font-mono whitespace-pre-wrap">
           {content}
         </div>
       )}

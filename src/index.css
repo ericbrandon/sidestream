@@ -228,6 +228,14 @@
   color: #d1d5db;
 }
 
+/* Dark mode code block styling - dark green background instead of black */
+.dark .prose pre {
+  background-color: #0d2818;
+}
+.dark .prose :not(pre) > code {
+  background-color: #0d2818;
+}
+
 /* Print styles */
 @media print {
   /* Reset fixed positioning that prevents printing */
