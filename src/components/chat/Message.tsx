@@ -300,6 +300,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                 <GeneratedImageCard
                   key={file.file_id}
                   file={file}
+                  messageId={message.id}
                   onExpand={handleImageExpand}
                 />
               ))}

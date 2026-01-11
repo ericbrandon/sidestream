@@ -63,6 +63,7 @@ interface ChatState {
   clearStreamingContent: () => void;
   registerChatInputFocus: (focusFn: () => void) => void;
   focusChatInput: () => void;
+  updateGeneratedFilePreview: (messageId: string, fileId: string, imagePreview: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -371,5 +372,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   focusChatInput: () => {
     const focusFn = get()._focusChatInput;
     if (focusFn) focusFn();
+  },
+
+  updateGeneratedFilePreview: (messageId, fileId, imagePreview) => {
+    set((state) => ({
+      messages: state.messages.map((msg) => {
+        if (msg.id !== messageId || !msg.generatedFiles) return msg;
+        return {
+          ...msg,
+          generatedFiles: msg.generatedFiles.map((file) =>
+            file.file_id === fileId ? { ...file, image_preview: imagePreview } : file
+          ),
+        };
+      }),
+    }));
+    useSessionStore.getState().markDirty();
   },
 }));

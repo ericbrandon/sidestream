@@ -3,9 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { GeneratedFile } from '../../lib/types';
+import { useChatStore } from '../../stores/chatStore';
 
 interface GeneratedImageCardProps {
   file: GeneratedFile;
+  messageId: string;
   onExpand: (file: GeneratedFile, imageData: string) => void;
 }
 
@@ -13,11 +15,12 @@ interface GeneratedImageCardProps {
  * Component for displaying generated image files inline with preview.
  * Shows the image with expand and download icons at the bottom.
  */
-function GeneratedImageCardComponent({ file, onExpand }: GeneratedImageCardProps) {
+function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedImageCardProps) {
   const [imageData, setImageData] = useState<string | null>(file.image_preview || null);
   const [isLoading, setIsLoading] = useState(!file.image_preview);
   const [error, setError] = useState<string | null>(file.download_error || null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const updateGeneratedFilePreview = useChatStore((state) => state.updateGeneratedFilePreview);
 
   // Fetch image data if not already loaded
   useEffect(() => {
@@ -38,8 +41,8 @@ function GeneratedImageCardComponent({ file, onExpand }: GeneratedImageCardProps
         const dataUrl = `data:${mimeType};base64,${base64}`;
 
         setImageData(dataUrl);
-        // Store in the file object for caching
-        file.image_preview = dataUrl;
+        // Persist to store so it's available for print/export
+        updateGeneratedFilePreview(messageId, file.file_id, dataUrl);
       } catch (err) {
         console.error('Failed to load image:', err);
         setError(err instanceof Error ? err.message : 'Failed to load image');
@@ -49,7 +52,7 @@ function GeneratedImageCardComponent({ file, onExpand }: GeneratedImageCardProps
     };
 
     fetchImage();
-  }, [file, imageData, error]);
+  }, [file, messageId, imageData, error, updateGeneratedFilePreview]);
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
