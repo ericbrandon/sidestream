@@ -42,10 +42,18 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
           if (!containerId) {
             throw new Error('No OpenAI container ID available for file download');
           }
-          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-            'download_openai_file',
-            { containerId, fileId: file.file_id, filename: file.filename }
-          );
+          // Check if file_id is a sandbox placeholder (needs resolution by name)
+          if (file.file_id.startsWith('sandbox:')) {
+            result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+              'download_openai_file_by_name',
+              { containerId, filename: file.filename }
+            );
+          } else {
+            result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+              'download_openai_file',
+              { containerId, fileId: file.file_id, filename: file.filename }
+            );
+          }
         } else {
           result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
             'download_anthropic_file',
@@ -90,10 +98,18 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
         if (!containerId) {
           throw new Error('No OpenAI container ID available for file download');
         }
-        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-          'download_openai_file',
-          { containerId, fileId: file.file_id, filename: file.filename }
-        );
+        // Check if file_id is a sandbox placeholder (needs resolution by name)
+        if (file.file_id.startsWith('sandbox:')) {
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_openai_file_by_name',
+            { containerId, filename: file.filename }
+          );
+        } else {
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_openai_file',
+            { containerId, fileId: file.file_id, filename: file.filename }
+          );
+        }
       } else {
         result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
           'download_anthropic_file',

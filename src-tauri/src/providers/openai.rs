@@ -60,11 +60,12 @@ pub struct DiscoveryRequestConfig {
 pub enum OpenAIStreamEvent {
     /// Text delta - incremental text content
     TextDelta { text: String },
-    /// Text output complete with annotations (citations)
+    /// Text output complete with annotations (citations and file references)
     TextDone {
         #[allow(dead_code)]
         text: String,
         annotations: Vec<UrlCitation>,
+        file_citations: Vec<ContainerFileCitation>,
     },
     /// Reasoning summary text (for ephemeral thinking UI)
     ReasoningSummary { text: String },
@@ -368,11 +369,17 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
             OpenAIStreamEvent::TextDelta { text }
         }
 
-        // Text output complete (may contain citations)
+        // Text output complete (may contain citations and file references)
         "response.output_text.done" => {
             let text = parsed["text"].as_str().unwrap_or("").to_string();
-            let annotations = parse_annotations(&parsed["annotations"]);
-            OpenAIStreamEvent::TextDone { text, annotations }
+            let annotations = parse_url_citations(&parsed["annotations"]);
+            // First try to get file citations from annotations
+            let mut file_citations = parse_container_file_citations(&parsed["annotations"], &None);
+            // If no annotations, extract from sandbox: URLs in the text
+            if file_citations.is_empty() {
+                file_citations = extract_sandbox_files(&text);
+            }
+            OpenAIStreamEvent::TextDone { text, annotations, file_citations }
         }
 
         // Output item added (web search, code interpreter, or reasoning)
@@ -410,14 +417,16 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
         }
 
         // Code interpreter code delta (streaming code as it's written)
-        "response.code_interpreter_call.code.delta" => {
+        // Note: OpenAI uses underscore format: response.code_interpreter_call_code.delta
+        "response.code_interpreter_call.code.delta" | "response.code_interpreter_call_code.delta" => {
             let call_id = parsed["item_id"].as_str().unwrap_or("").to_string();
             let code = parsed["delta"].as_str().unwrap_or("").to_string();
             OpenAIStreamEvent::CodeInterpreterCodeDelta { call_id, code }
         }
 
         // Code interpreter code complete
-        "response.code_interpreter_call.code.done" => {
+        // Note: OpenAI uses underscore format: response.code_interpreter_call_code.done
+        "response.code_interpreter_call.code.done" | "response.code_interpreter_call_code.done" => {
             let call_id = parsed["item_id"].as_str().unwrap_or("").to_string();
             let code = parsed["code"].as_str().unwrap_or("").to_string();
             OpenAIStreamEvent::CodeInterpreterCodeDone { call_id, code }
@@ -476,8 +485,8 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
     }
 }
 
-/// Parse annotations array from OpenAI response
-fn parse_annotations(annotations: &serde_json::Value) -> Vec<UrlCitation> {
+/// Parse URL citation annotations from OpenAI response
+fn parse_url_citations(annotations: &serde_json::Value) -> Vec<UrlCitation> {
     let mut citations = Vec::new();
 
     if let Some(arr) = annotations.as_array() {
@@ -528,6 +537,34 @@ fn parse_container_file_citations(
                 }
             }
         }
+    }
+
+    files
+}
+
+/// Extract file references from sandbox: URLs in text
+/// OpenAI embeds files as markdown links: [text](sandbox:/mnt/data/filename.ext)
+/// Since we don't have file_id from this format, we generate a placeholder
+/// that can be resolved later using container file listing
+fn extract_sandbox_files(text: &str) -> Vec<ContainerFileCitation> {
+    use regex::Regex;
+
+    let mut files = Vec::new();
+
+    // Match markdown links with sandbox: URLs
+    // Format: [link text](sandbox:/mnt/data/filename.ext)
+    let re = Regex::new(r"\[([^\]]*)\]\(sandbox:/mnt/data/([^)]+)\)").unwrap();
+
+    for cap in re.captures_iter(text) {
+        let filename = cap.get(2).map(|m| m.as_str()).unwrap_or("file").to_string();
+
+        // We don't have file_id from sandbox URLs, so use the path as a placeholder
+        // The actual file_id will need to be resolved by listing container files
+        files.push(ContainerFileCitation {
+            file_id: format!("sandbox:/mnt/data/{}", filename), // Placeholder - needs resolution
+            container_id: String::new(), // Will be filled from code_interpreter_call result
+            filename,
+        });
     }
 
     files

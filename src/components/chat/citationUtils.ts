@@ -8,6 +8,49 @@ export const CITATION_MARKER_REGEX = /\{\{CITE:(\d+)\}\}/g;
 const PARENTHESIZED_LINK_REGEX = /\(\[([^\]]+)\]\(([^)]+)\)\)/g;
 
 /**
+ * Check if a URL is an OpenAI sandbox URL.
+ * Format: sandbox:/mnt/data/filename.ext
+ */
+export function isSandboxUrl(url: string): boolean {
+  return url.startsWith('sandbox:');
+}
+
+/**
+ * Extract filename from a sandbox URL.
+ * Input: sandbox:/mnt/data/filename.ext
+ * Output: filename.ext
+ */
+export function extractSandboxFilename(url: string): string | null {
+  const match = url.match(/^sandbox:\/mnt\/data\/(.+)$/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Strip OpenAI sandbox: URLs from markdown content.
+ * These are file references from OpenAI's code interpreter that link to sandbox:/mnt/data/...
+ * Since files are displayed via GeneratedFileCard/GeneratedImageCard, we strip these links
+ * to avoid showing non-functional download links in the markdown.
+ *
+ * Handles patterns like:
+ * - [Download filename](sandbox:/mnt/data/filename.ext)
+ * - [filename](sandbox:/mnt/data/filename.ext)
+ * - Standalone sandbox:/mnt/data/filename.ext URLs
+ */
+export function stripSandboxUrls(content: string): string {
+  // Strip markdown links with sandbox URLs: [text](sandbox:/mnt/data/...)
+  // This removes the entire link including the link text
+  let result = content.replace(/\[([^\]]*)\]\(sandbox:\/mnt\/data\/[^)]+\)/g, '');
+
+  // Strip standalone sandbox URLs (not in markdown link format)
+  result = result.replace(/sandbox:\/mnt\/data\/\S+/g, '');
+
+  // Clean up any resulting empty lines (multiple consecutive newlines -> double newline)
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  return result;
+}
+
+/**
  * Extract ChatGPT-style inline citations from content.
  * ChatGPT wraps citation links in parentheses: ([title](url))
  * This distinguishes them from regular markdown links.

@@ -57,6 +57,10 @@ pub async fn send_chat_message_openai(
         None
     };
 
+    // Track current container ID (will be updated if we receive a new one)
+    // Used to associate files extracted from sandbox URLs with the correct container
+    let mut current_container_id: Option<String> = openai_container_id.clone();
+
     // Build request using OpenAI provider
     // Let OpenAI use its model defaults for max output tokens
     let config = OpenAIChatRequestConfig {
@@ -110,6 +114,16 @@ pub async fn send_chat_message_openai(
 
                             for line in event.lines() {
                                 if let Some(data) = line.strip_prefix("data: ") {
+                                    // Debug: log all SSE events to understand what OpenAI sends
+                                    if data != "[DONE]" {
+                                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
+                                            let event_type = parsed["type"].as_str().unwrap_or("unknown");
+                                            // Log code interpreter and text done events in detail
+                                            if event_type.contains("code_interpreter") || event_type == "response.output_text.done" || event_type == "response.output_item.done" {
+                                                eprintln!("[OpenAI SSE] {}: {}", event_type, data);
+                                            }
+                                        }
+                                    }
                                     match openai_parse_sse_event(data) {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);
@@ -146,8 +160,8 @@ pub async fn send_chat_message_openai(
                                                 eprintln!("Failed to emit chat-stream-delta event: {}", err);
                                             }
                                         }
-                                        OpenAIStreamEvent::TextDone { text: _, annotations } => {
-                                            // Convert OpenAI citations to common format
+                                        OpenAIStreamEvent::TextDone { text: _, annotations, file_citations } => {
+                                            // Convert OpenAI URL citations to common format
                                             // OpenAI doesn't provide position info, so we use end-of-message citations
                                             if !annotations.is_empty() {
                                                 let offset = full_response.len();
@@ -170,6 +184,56 @@ pub async fn send_chat_message_openai(
                                                 };
                                                 if let Err(err) = window.emit("chat-stream-delta", delta) {
                                                     eprintln!("Failed to emit chat-stream-delta event: {}", err);
+                                                }
+                                            }
+
+                                            // Emit container file citations as generated files
+                                            // These come from text annotations when model references files in markdown
+                                            if !file_citations.is_empty() {
+                                                // Emit container ID - from file citation or from tracked container_id
+                                                let effective_container_id = file_citations.first()
+                                                    .filter(|f| !f.container_id.is_empty())
+                                                    .map(|f| f.container_id.clone())
+                                                    .or_else(|| current_container_id.clone());
+
+                                                if let Some(ref cid) = effective_container_id {
+                                                    if let Err(err) = window.emit(
+                                                        "chat-container-id",
+                                                        ContainerIdEvent {
+                                                            turn_id: turn_id.clone(),
+                                                            container_id: cid.clone(),
+                                                        },
+                                                    ) {
+                                                        eprintln!("Failed to emit container ID: {}", err);
+                                                    }
+                                                }
+
+                                                let generated_files: Vec<GeneratedFile> = file_citations
+                                                    .into_iter()
+                                                    .map(|f| GeneratedFile {
+                                                        file_id: f.file_id,
+                                                        filename: f.filename,
+                                                        mime_type: None,
+                                                    })
+                                                    .collect();
+
+                                                let delta = StreamDelta {
+                                                    turn_id: turn_id.clone(),
+                                                    text: String::new(),
+                                                    citations: None,
+                                                    inline_citations: None,
+                                                    thinking: None,
+                                                    execution: Some(ExecutionDelta {
+                                                        tool_name: "code_interpreter".to_string(),
+                                                        stdout: None,
+                                                        stderr: None,
+                                                        status: ExecutionStatus::Completed,
+                                                        code: None,
+                                                        files: Some(generated_files),
+                                                    }),
+                                                };
+                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                                    eprintln!("Failed to emit file citations delta: {}", err);
                                                 }
                                             }
                                         }
@@ -214,6 +278,11 @@ pub async fn send_chat_message_openai(
                                             stderr,
                                             files,
                                         } => {
+                                            // Track container ID for later use in TextDone
+                                            if container_id.is_some() {
+                                                current_container_id = container_id.clone();
+                                            }
+
                                             // Emit container ID for persistence (reuse same event as Anthropic)
                                             if let Some(ref cid) = container_id {
                                                 if let Err(err) = window.emit(

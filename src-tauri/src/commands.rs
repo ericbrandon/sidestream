@@ -359,6 +359,66 @@ pub async fn download_openai_file(
     })
 }
 
+/// Download a file from OpenAI container by filename (resolves file_id via container file listing)
+/// This is needed for sandbox: URLs where we only have the filename, not the file_id
+#[tauri::command]
+pub async fn download_openai_file_by_name(
+    app: tauri::AppHandle,
+    container_id: String,
+    filename: String,
+) -> Result<DownloadedFile, String> {
+    let api_key = get_api_key_async(&app, "openai").await?;
+    let client = reqwest::Client::new();
+
+    // First, list files in the container to find the file_id
+    let list_url = format!(
+        "https://api.openai.com/v1/containers/{}/files",
+        container_id
+    );
+
+    let list_response = client
+        .get(&list_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Container file listing request failed: {}", e))?;
+
+    if !list_response.status().is_success() {
+        let error_text = list_response.text().await.unwrap_or_default();
+        return Err(format!("Container file listing API error: {}", error_text));
+    }
+
+    let list_body: serde_json::Value = list_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse file listing: {}", e))?;
+
+    // Debug: log the container file listing response
+    eprintln!("[OpenAI Container Files] Looking for '{}' in container '{}'", filename, container_id);
+    eprintln!("[OpenAI Container Files] Response: {}", serde_json::to_string_pretty(&list_body).unwrap_or_default());
+
+    // Find the file by path
+    // Response format: { "data": [{ "id": "...", "path": "/mnt/data/filename.ext", ... }] }
+    let file_id = list_body["data"]
+        .as_array()
+        .and_then(|files| {
+            files.iter().find_map(|f| {
+                let path = f["path"].as_str().unwrap_or("");
+                eprintln!("[OpenAI Container Files] Checking file path: '{}' vs '{}'", path, filename);
+                // Match by path ending with the filename
+                if path.ends_with(&format!("/{}", filename)) || path == format!("/mnt/data/{}", filename) {
+                    f["id"].as_str().map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or_else(|| format!("File '{}' not found in container", filename))?;
+
+    // Now download using the resolved file_id
+    download_openai_file(app, container_id, file_id, filename).await
+}
+
 /// Add or fix file extension based on mime type
 fn fix_filename_extension(filename: &str, mime_type: Option<&str>) -> String {
     // If filename already has a recognized extension, keep it

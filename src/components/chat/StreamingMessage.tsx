@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 /**
@@ -149,9 +149,12 @@ const CachedMarkdown = memo(function CachedMarkdown({
   const { processedContent, markdownComponents } = useMemo(() => {
     if (!content) return { processedContent: '', markdownComponents: {} as Components };
 
-    // First, extract ChatGPT-style parenthesized citations from content
+    // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
+    const contentWithoutSandbox = stripSandboxUrls(content);
+
+    // Then extract ChatGPT-style parenthesized citations from content
     const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-      extractChatGPTCitations(content, showCitations);
+      extractChatGPTCitations(contentWithoutSandbox, showCitations);
 
     // Get existing inline citations (from Claude/Gemini)
     const existingCitations = showCitations ? inlineCitations : [];
@@ -200,8 +203,11 @@ const CachedMarkdown = memo(function CachedMarkdown({
 function PendingText({ content }: { content: string }) {
   if (!content) return null;
 
+  // Strip sandbox URLs from pending content too
+  const cleanedContent = stripSandboxUrls(content);
+
   // Render as simple text with whitespace preserved
-  return <span className="whitespace-pre-wrap">{content}</span>;
+  return <span className="whitespace-pre-wrap">{cleanedContent}</span>;
 }
 
 export function StreamingMessage({ content, inlineCitations = [] }: StreamingMessageProps) {

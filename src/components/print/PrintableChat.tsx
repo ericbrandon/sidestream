@@ -9,7 +9,7 @@ import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from '../chat/citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls } from '../chat/citationUtils';
 import { PrintableInlineCitation } from './PrintableInlineCitation';
 
 interface PrintableChatProps {
@@ -136,9 +136,12 @@ function processMessageWithCitations(
   message: Message,
   showCitations: boolean
 ): { processedContent: string; markdownComponents: Components } {
-  // First, extract ChatGPT-style parenthesized citations from content
+  // First, strip OpenAI sandbox: URLs (files are shown via generated file sections)
+  const contentWithoutSandbox = stripSandboxUrls(message.content);
+
+  // Then extract ChatGPT-style parenthesized citations from content
   const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-    extractChatGPTCitations(message.content, showCitations);
+    extractChatGPTCitations(contentWithoutSandbox, showCitations);
 
   // Get existing inline citations (from Claude/Gemini)
   const existingCitations = showCitations ? (message.inlineCitations || []) : [];

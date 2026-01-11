@@ -17,7 +17,7 @@ import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, isSandboxUrl, extractSandboxFilename } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -65,6 +65,41 @@ function renderTextWithCitations(
 }
 
 /**
+ * Handle clicks on sandbox: URLs - download the file via OpenAI container API
+ */
+async function handleSandboxUrlClick(href: string): Promise<void> {
+  const filename = extractSandboxFilename(href);
+  if (!filename) {
+    console.error('Could not extract filename from sandbox URL:', href);
+    return;
+  }
+
+  const containerId = useChatStore.getState().openaiContainerId;
+  if (!containerId) {
+    console.error('No OpenAI container ID available for sandbox file download');
+    return;
+  }
+
+  try {
+    const result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+      'download_openai_file_by_name',
+      { containerId, filename }
+    );
+
+    const savePath = await save({
+      defaultPath: result.filename,
+      title: 'Save File',
+    });
+
+    if (savePath) {
+      await writeFile(savePath, new Uint8Array(result.data));
+    }
+  } catch (err) {
+    console.error('Failed to download sandbox file:', err);
+  }
+}
+
+/**
  * Create markdown components that handle inline citations
  */
 function createMarkdownComponents(
@@ -108,7 +143,12 @@ function createMarkdownComponents(
         onClick={(e) => {
           e.preventDefault();
           if (href) {
-            openUrl(href);
+            // Check if this is a sandbox: URL (OpenAI code interpreter file)
+            if (isSandboxUrl(href)) {
+              handleSandboxUrlClick(href);
+            } else {
+              openUrl(href);
+            }
           }
         }}
         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
@@ -132,9 +172,12 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
 
   // Process content with inline citations
   const { processedContent, markdownComponents } = useMemo(() => {
-    // First, extract ChatGPT-style parenthesized citations from content
+    // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
+    const contentWithoutSandbox = stripSandboxUrls(message.content);
+
+    // Then extract ChatGPT-style parenthesized citations from content
     const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-      extractChatGPTCitations(message.content, showCitations);
+      extractChatGPTCitations(contentWithoutSandbox, showCitations);
 
     // Get existing inline citations (from Claude/Gemini)
     const existingCitations = showCitations ? (message.inlineCitations || []) : [];
@@ -267,10 +310,18 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                 if (!containerId) {
                   throw new Error('No OpenAI container ID available for file download');
                 }
-                result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                  'download_openai_file',
-                  { containerId, fileId: f.file_id, filename: f.filename }
-                );
+                // Check if file_id is a sandbox placeholder (needs resolution by name)
+                if (f.file_id.startsWith('sandbox:')) {
+                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                    'download_openai_file_by_name',
+                    { containerId, filename: f.filename }
+                  );
+                } else {
+                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                    'download_openai_file',
+                    { containerId, fileId: f.file_id, filename: f.filename }
+                  );
+                }
               } else {
                 // Anthropic download
                 result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
