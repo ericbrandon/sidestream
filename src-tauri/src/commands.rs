@@ -393,10 +393,6 @@ pub async fn download_openai_file_by_name(
         .await
         .map_err(|e| format!("Failed to parse file listing: {}", e))?;
 
-    // Debug: log the container file listing response
-    eprintln!("[OpenAI Container Files] Looking for '{}' in container '{}'", filename, container_id);
-    eprintln!("[OpenAI Container Files] Response: {}", serde_json::to_string_pretty(&list_body).unwrap_or_default());
-
     // Find the file by path
     // Response format: { "data": [{ "id": "...", "path": "/mnt/data/filename.ext", ... }] }
     let file_id = list_body["data"]
@@ -404,7 +400,6 @@ pub async fn download_openai_file_by_name(
         .and_then(|files| {
             files.iter().find_map(|f| {
                 let path = f["path"].as_str().unwrap_or("");
-                eprintln!("[OpenAI Container Files] Checking file path: '{}' vs '{}'", path, filename);
                 // Match by path ending with the filename
                 if path.ends_with(&format!("/{}", filename)) || path == format!("/mnt/data/{}", filename) {
                     f["id"].as_str().map(|s| s.to_string())

@@ -114,16 +114,6 @@ pub async fn send_chat_message_openai(
 
                             for line in event.lines() {
                                 if let Some(data) = line.strip_prefix("data: ") {
-                                    // Debug: log all SSE events to understand what OpenAI sends
-                                    if data != "[DONE]" {
-                                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                                            let event_type = parsed["type"].as_str().unwrap_or("unknown");
-                                            // Log code interpreter and text done events in detail
-                                            if event_type.contains("code_interpreter") || event_type == "response.output_text.done" || event_type == "response.output_item.done" {
-                                                eprintln!("[OpenAI SSE] {}: {}", event_type, data);
-                                            }
-                                        }
-                                    }
                                     match openai_parse_sse_event(data) {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);

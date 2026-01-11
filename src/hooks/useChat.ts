@@ -19,11 +19,19 @@ import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
 /**
- * Build container context hint for Claude when there's an active container.
- * This helps Claude know about previously created files without sending full execution history.
+ * Build container context hint for LLM when there's an active container.
+ * This helps the model know about previously created files without sending full execution history.
+ * Uses provider-specific paths: /tmp/ for Anthropic, /mnt/data/ for OpenAI.
  */
-function buildContainerContext(messages: Message[], hasContainerId: boolean): string {
-  if (!hasContainerId) return '';
+function buildContainerContext(
+  messages: Message[],
+  anthropicContainerId: string | null,
+  openaiContainerId: string | null
+): string {
+  const hasAnthropicContainer = !!anthropicContainerId;
+  const hasOpenaiContainer = !!openaiContainerId;
+
+  if (!hasAnthropicContainer && !hasOpenaiContainer) return '';
 
   // Collect all generated files from previous messages
   const generatedFiles: string[] = [];
@@ -35,7 +43,10 @@ function buildContainerContext(messages: Message[], hasContainerId: boolean): st
     }
   }
 
-  let context = '\n\n---\n[System note: You have a persistent sandbox container with files from earlier in this conversation. IMPORTANT: Before writing new code or creating files, first run `ls -la /tmp/` to check what files already exist.]';
+  // Use provider-specific sandbox path
+  const sandboxPath = hasOpenaiContainer ? '/mnt/data/' : '/tmp/';
+
+  let context = `\n\n---\n[System note: You have a persistent sandbox container with files from earlier in this conversation. IMPORTANT: Before writing new code or creating files, first run \`ls -la ${sandboxPath}\` to check what files already exist.]`;
 
   if (generatedFiles.length > 0) {
     context += `\n[The user has downloaded these files you provided: ${generatedFiles.join(', ')}]`;
@@ -315,8 +326,9 @@ export function useChat() {
       });
 
       // Calculate container context BEFORE adding message so we can store it for cache stability
-      const containerId = useChatStore.getState().anthropicContainerId;
-      const containerContext = buildContainerContext(messages, !!containerId);
+      const anthropicContainerId = useChatStore.getState().anthropicContainerId;
+      const openaiContainerId = useChatStore.getState().openaiContainerId;
+      const containerContext = buildContainerContext(messages, anthropicContainerId, openaiContainerId);
 
       // Build user message with only supported attachments
       const userMessage: Omit<Message, 'id' | 'timestamp'> = {
