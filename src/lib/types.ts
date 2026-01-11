@@ -48,6 +48,7 @@ export interface Message {
   executionError?: string; // Error message if execution failed
   executionTextPosition?: number; // Character position in content where execution occurred
   generatedFiles?: GeneratedFile[]; // Files created by code execution
+  containerHint?: string; // Container context hint that was appended when this message was sent (for cache stability)
 }
 
 // Discovery item types

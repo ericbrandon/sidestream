@@ -18,6 +18,32 @@ import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent 
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation whenever appropriate: inline with $...$ and display blocks with $$...$$. This includes math equations, chemical formulas ($\\ce{H2O}$, $\\ce{2H2 + O2 -> 2H2O}$), physics notation, Greek letters, and other scientific or technical expressions.`;
 
+/**
+ * Build container context hint for Claude when there's an active container.
+ * This helps Claude know about previously created files without sending full execution history.
+ */
+function buildContainerContext(messages: Message[], hasContainerId: boolean): string {
+  if (!hasContainerId) return '';
+
+  // Collect all generated files from previous messages
+  const generatedFiles: string[] = [];
+  for (const msg of messages) {
+    if (msg.generatedFiles) {
+      for (const file of msg.generatedFiles) {
+        generatedFiles.push(file.filename);
+      }
+    }
+  }
+
+  let context = '\n\n---\n[System note: You have a persistent sandbox container with files from earlier in this conversation. IMPORTANT: Before writing new code or creating files, first run `ls -la /tmp/` to check what files already exist.]';
+
+  if (generatedFiles.length > 0) {
+    context += `\n[The user has downloaded these files you provided: ${generatedFiles.join(', ')}]`;
+  }
+
+  return context;
+}
+
 export function useChat() {
   const {
     messages,
@@ -281,12 +307,18 @@ export function useChat() {
         return false;
       });
 
+      // Calculate container context BEFORE adding message so we can store it for cache stability
+      const containerId = useChatStore.getState().anthropicContainerId;
+      const containerContext = buildContainerContext(messages, !!containerId);
+
       // Build user message with only supported attachments
       const userMessage: Omit<Message, 'id' | 'timestamp'> = {
         role: 'user',
         content,
         attachments: supportedAttachments.length > 0 ? [...supportedAttachments] : undefined,
         turnId,
+        // Store container hint with the message for cache stability on future turns
+        containerHint: containerContext || undefined,
       };
 
       addMessage(userMessage);
@@ -314,11 +346,47 @@ export function useChat() {
 
       try {
         // Convert all messages to API format
+        // For previous messages, use their stored containerHint for cache stability
+        // For the current message, use the freshly computed containerContext
         const allMessages = [...messages, { ...userMessage, id: '', timestamp: new Date() }];
-        const apiMessages = allMessages.map((m) => ({
-          role: m.role,
-          content: formatMessageContent(m).content,
-        }));
+
+        const apiMessages = allMessages.map((m, index) => {
+          const formattedContent = formatMessageContent(m).content;
+          const isLastMessage = index === allMessages.length - 1;
+
+          // Determine which container hint to use:
+          // - For previous user messages: use the stored containerHint (for cache stability)
+          // - For current message: use freshly computed containerContext
+          const hintToUse = isLastMessage ? containerContext : m.containerHint;
+
+          if (m.role === 'user' && hintToUse) {
+            // Append container hint to user message content
+            if (typeof formattedContent === 'string') {
+              return { role: m.role, content: formattedContent + hintToUse };
+            }
+            // If content is an array of blocks, append to the last text block
+            if (Array.isArray(formattedContent)) {
+              const blocks = [...formattedContent] as ContentBlock[];
+              // Find the last text block
+              let lastTextIndex = -1;
+              for (let i = blocks.length - 1; i >= 0; i--) {
+                if (blocks[i].type === 'text') {
+                  lastTextIndex = i;
+                  break;
+                }
+              }
+              if (lastTextIndex >= 0) {
+                const textBlock = blocks[lastTextIndex] as { type: 'text'; text: string };
+                blocks[lastTextIndex] = {
+                  ...textBlock,
+                  text: textBlock.text + hintToUse,
+                };
+              }
+              return { role: m.role, content: blocks };
+            }
+          }
+          return { role: m.role, content: formattedContent };
+        });
 
         // Build system prompt, appending user's custom instructions if present
         const systemPrompt = customSystemPrompt
