@@ -28,3 +28,32 @@ pub fn mime_to_extension_or_subtype(mime_type: &str) -> &str {
         mime_type.split('/').last().unwrap_or("bin")
     })
 }
+
+/// Map a file extension to a MIME type
+/// Returns the MIME type for known extensions
+pub fn extension_to_mime(filename: &str) -> Option<&'static str> {
+    let ext = filename.rsplit('.').next()?.to_lowercase();
+    match ext.as_str() {
+        "csv" => Some("text/csv"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        "xls" => Some("application/vnd.ms-excel"),
+        "pdf" => Some("application/pdf"),
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "json" => Some("application/json"),
+        "txt" => Some("text/plain"),
+        "html" | "htm" => Some("text/html"),
+        "zip" => Some("application/zip"),
+        "xml" => Some("application/xml"),
+        "py" => Some("text/x-python"),
+        "js" => Some("text/javascript"),
+        "ts" => Some("text/typescript"),
+        "java" => Some("text/x-java"),
+        "c" => Some("text/x-c"),
+        "cpp" | "cc" | "cxx" => Some("text/x-c++"),
+        "md" => Some("text/markdown"),
+        _ => None,
+    }
+}

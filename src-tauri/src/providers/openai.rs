@@ -594,3 +594,32 @@ pub fn supports_reasoning(model: &str) -> bool {
         || model.contains("-o-")
 }
 
+/// Fetch file content from OpenAI Containers API and return as base64
+pub async fn fetch_file_content_base64(api_key: &str, container_id: &str, file_id: &str) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://api.openai.com/v1/containers/{}/files/{}/content",
+        container_id, file_id
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch file content: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("File content API error: {}", error_text));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read file content: {}", e))?;
+
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+

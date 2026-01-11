@@ -300,15 +300,10 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
 
           const downloadFile = async (f: GeneratedFile) => {
             try {
-              // Determine which API to use based on current model
-              const currentModel = useSettingsStore.getState().frontierLLM.model;
-              const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
-              const isGemini = currentModel.startsWith('gemini');
-
               let result: { data: number[]; filename: string; mime_type?: string };
 
-              if (isGemini && f.inline_data) {
-                // Gemini: data is already inline, decode base64
+              // If inline_data is available (persisted), use it directly
+              if (f.inline_data) {
                 const binary = atob(f.inline_data);
                 const bytes = new Uint8Array(binary.length);
                 for (let i = 0; i < binary.length; i++) {
@@ -319,30 +314,36 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                   filename: f.filename,
                   mime_type: f.mime_type,
                 };
-              } else if (isOpenAI) {
-                // OpenAI requires container_id for file downloads
-                const containerId = useChatStore.getState().openaiContainerId;
-                if (!containerId) {
-                  throw new Error('No OpenAI container ID available for file download');
-                }
-                // Check if file_id is a sandbox placeholder (needs resolution by name)
-                if (f.file_id.startsWith('sandbox:')) {
-                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                    'download_openai_file_by_name',
-                    { containerId, filename: f.filename }
-                  );
-                } else {
-                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                    'download_openai_file',
-                    { containerId, fileId: f.file_id, filename: f.filename }
-                  );
-                }
               } else {
-                // Anthropic download
-                result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                  'download_anthropic_file',
-                  { fileId: f.file_id, filename: f.filename }
-                );
+                // Fallback to API download if inline_data not available (legacy data)
+                const currentModel = useSettingsStore.getState().frontierLLM.model;
+                const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+                if (isOpenAI) {
+                  // OpenAI requires container_id for file downloads
+                  const containerId = useChatStore.getState().openaiContainerId;
+                  if (!containerId) {
+                    throw new Error('No OpenAI container ID available for file download');
+                  }
+                  // Check if file_id is a sandbox placeholder (needs resolution by name)
+                  if (f.file_id.startsWith('sandbox:')) {
+                    result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                      'download_openai_file_by_name',
+                      { containerId, filename: f.filename }
+                    );
+                  } else {
+                    result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                      'download_openai_file',
+                      { containerId, fileId: f.file_id, filename: f.filename }
+                    );
+                  }
+                } else {
+                  // Anthropic download
+                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+                    'download_anthropic_file',
+                    { fileId: f.file_id, filename: f.filename }
+                  );
+                }
               }
 
               const savePath = await save({

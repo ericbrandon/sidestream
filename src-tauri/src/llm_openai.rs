@@ -11,7 +11,7 @@ use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::openai::{
     parse_sse_event as openai_parse_sse_event, string_to_reasoning_effort, supports_reasoning,
-    ChatRequestConfig as OpenAIChatRequestConfig, OpenAIClient, OpenAIStreamEvent,
+    fetch_file_content_base64, ChatRequestConfig as OpenAIChatRequestConfig, OpenAIClient, OpenAIStreamEvent,
     ReasoningEffort,
 };
 
@@ -31,7 +31,7 @@ pub async fn send_chat_message_openai(
     openai_container_id: Option<String>,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "openai").await?;
-    let client = OpenAIClient::new(api_key);
+    let client = OpenAIClient::new(api_key.clone());
 
     // Build messages for OpenAI
     let api_messages: Vec<serde_json::Value> = messages
@@ -197,16 +197,43 @@ pub async fn send_chat_message_openai(
                                                     }
                                                 }
 
-                                                let generated_files: Vec<GeneratedFile> = file_citations
-                                                    .into_iter()
-                                                    .map(|f| GeneratedFile {
+                                                // Fetch file content for persistence
+                                                let mut generated_files: Vec<GeneratedFile> = Vec::new();
+                                                for f in file_citations {
+                                                    // Use container_id from file citation or effective_container_id
+                                                    let cid = if !f.container_id.is_empty() {
+                                                        Some(f.container_id.clone())
+                                                    } else {
+                                                        effective_container_id.clone()
+                                                    };
+
+                                                    let (inline_data, image_preview, mime_type) = if let Some(ref container_id) = cid {
+                                                        match fetch_file_content_base64(&api_key, container_id, &f.file_id).await {
+                                                            Ok(data) => {
+                                                                // Guess mime type from filename extension
+                                                                let mime = crate::mime_utils::extension_to_mime(&f.filename);
+                                                                let preview = mime.as_ref()
+                                                                    .filter(|m| m.starts_with("image/"))
+                                                                    .map(|m| format!("data:{};base64,{}", m, data));
+                                                                (Some(data), preview, mime.map(|s| s.to_string()))
+                                                            }
+                                                            Err(e) => {
+                                                                eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
+                                                                (None, None, None)
+                                                            }
+                                                        }
+                                                    } else {
+                                                        (None, None, None)
+                                                    };
+
+                                                    generated_files.push(GeneratedFile {
                                                         file_id: f.file_id,
                                                         filename: f.filename,
-                                                        mime_type: None,
-                                                        image_preview: None,
-                                                        inline_data: None,
-                                                    })
-                                                    .collect();
+                                                        mime_type,
+                                                        image_preview,
+                                                        inline_data,
+                                                    });
+                                                }
 
                                                 let delta = StreamDelta {
                                                     turn_id: turn_id.clone(),
@@ -286,17 +313,36 @@ pub async fn send_chat_message_openai(
                                                 }
                                             }
 
-                                            // Convert files to GeneratedFile format (same as Anthropic)
-                                            let generated_files: Vec<GeneratedFile> = files
-                                                .into_iter()
-                                                .map(|f| GeneratedFile {
+                                            // Convert files to GeneratedFile format, fetching content for persistence
+                                            let mut generated_files: Vec<GeneratedFile> = Vec::new();
+                                            for f in files {
+                                                let (inline_data, image_preview, mime_type) = if let Some(ref cid) = container_id {
+                                                    match fetch_file_content_base64(&api_key, cid, &f.file_id).await {
+                                                        Ok(data) => {
+                                                            // Guess mime type from filename extension
+                                                            let mime = crate::mime_utils::extension_to_mime(&f.filename);
+                                                            let preview = mime.as_ref()
+                                                                .filter(|m| m.starts_with("image/"))
+                                                                .map(|m| format!("data:{};base64,{}", m, data));
+                                                            (Some(data), preview, mime.map(|s| s.to_string()))
+                                                        }
+                                                        Err(e) => {
+                                                            eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
+                                                            (None, None, None)
+                                                        }
+                                                    }
+                                                } else {
+                                                    (None, None, None)
+                                                };
+
+                                                generated_files.push(GeneratedFile {
                                                     file_id: f.file_id,
                                                     filename: f.filename,
-                                                    mime_type: None, // Will be determined on download
-                                                    image_preview: None,
-                                                    inline_data: None,
-                                                })
-                                                .collect();
+                                                    mime_type,
+                                                    image_preview,
+                                                    inline_data,
+                                                });
+                                            }
 
                                             // Determine status based on stderr
                                             let status = if stderr.is_some() {

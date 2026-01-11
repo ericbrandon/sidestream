@@ -8,7 +8,7 @@ use crate::llm_logger;
 use crate::mime_utils;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
-    fetch_file_metadata, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
+    fetch_file_metadata, fetch_file_content_base64, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
     ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation, ThinkingConfig,
 };
@@ -160,7 +160,7 @@ pub async fn send_chat_message_anthropic(
                                                         ExecutionStatus::Completed
                                                     };
 
-                                                    // Convert files to GeneratedFile, fetching metadata to get mime_type
+                                                    // Convert files to GeneratedFile, fetching metadata and content for persistence
                                                     let mut files: Vec<GeneratedFile> = Vec::new();
                                                     for f in result.files {
                                                         // Try to fetch metadata to get the correct mime_type and filename
@@ -182,12 +182,31 @@ pub async fn send_chat_message_anthropic(
                                                                 (f.filename, f.mime_type)
                                                             }
                                                         };
+
+                                                        // Fetch file content for persistent storage
+                                                        let inline_data = match fetch_file_content_base64(&api_key, &f.file_id).await {
+                                                            Ok(data) => Some(data),
+                                                            Err(e) => {
+                                                                eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
+                                                                None
+                                                            }
+                                                        };
+
+                                                        // Generate image preview for image files
+                                                        let image_preview = if final_mime_type.as_ref().map(|m| m.starts_with("image/")).unwrap_or(false) {
+                                                            inline_data.as_ref().map(|data| {
+                                                                format!("data:{};base64,{}", final_mime_type.as_ref().unwrap(), data)
+                                                            })
+                                                        } else {
+                                                            None
+                                                        };
+
                                                         files.push(GeneratedFile {
                                                             file_id: f.file_id,
                                                             filename: final_filename,
                                                             mime_type: final_mime_type,
-                                                            image_preview: None,
-                                                            inline_data: None,
+                                                            image_preview,
+                                                            inline_data,
                                                         });
                                                     }
 

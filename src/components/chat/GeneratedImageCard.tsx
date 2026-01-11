@@ -31,6 +31,17 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
       try {
         setIsLoading(true);
 
+        // If inline_data is available (persisted), use it directly
+        if (file.inline_data) {
+          const mimeType = file.mime_type || 'image/png';
+          const dataUrl = `data:${mimeType};base64,${file.inline_data}`;
+          setImageData(dataUrl);
+          updateGeneratedFilePreview(messageId, file.file_id, dataUrl);
+          setIsLoading(false);
+          return;
+        }
+
+        // Fallback to API download if inline_data not available (legacy data)
         // Determine which API to use based on current model
         const currentModel = useSettingsStore.getState().frontierLLM.model;
         const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
@@ -87,34 +98,49 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
 
     setIsDownloading(true);
     try {
-      // Determine which API to use based on current model
-      const currentModel = useSettingsStore.getState().frontierLLM.model;
-      const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
-
       let result: { data: number[]; filename: string; mime_type?: string };
 
-      if (isOpenAI) {
-        const containerId = useChatStore.getState().openaiContainerId;
-        if (!containerId) {
-          throw new Error('No OpenAI container ID available for file download');
+      // If inline_data is available (persisted), use it directly
+      if (file.inline_data) {
+        const binary = atob(file.inline_data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
         }
-        // Check if file_id is a sandbox placeholder (needs resolution by name)
-        if (file.file_id.startsWith('sandbox:')) {
-          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-            'download_openai_file_by_name',
-            { containerId, filename: file.filename }
-          );
+        result = {
+          data: Array.from(bytes),
+          filename: file.filename,
+          mime_type: file.mime_type,
+        };
+      } else {
+        // Fallback to API download if inline_data not available (legacy data)
+        // Determine which API to use based on current model
+        const currentModel = useSettingsStore.getState().frontierLLM.model;
+        const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+        if (isOpenAI) {
+          const containerId = useChatStore.getState().openaiContainerId;
+          if (!containerId) {
+            throw new Error('No OpenAI container ID available for file download');
+          }
+          // Check if file_id is a sandbox placeholder (needs resolution by name)
+          if (file.file_id.startsWith('sandbox:')) {
+            result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+              'download_openai_file_by_name',
+              { containerId, filename: file.filename }
+            );
+          } else {
+            result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+              'download_openai_file',
+              { containerId, fileId: file.file_id, filename: file.filename }
+            );
+          }
         } else {
           result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-            'download_openai_file',
-            { containerId, fileId: file.file_id, filename: file.filename }
+            'download_anthropic_file',
+            { fileId: file.file_id, filename: file.filename }
           );
         }
-      } else {
-        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-          'download_anthropic_file',
-          { fileId: file.file_id, filename: file.filename }
-        );
       }
 
       const savePath = await save({
