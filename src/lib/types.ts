@@ -179,6 +179,34 @@ export interface GeneratedFile {
   // Populated client-side after download:
   blob_url?: string;
   download_error?: string;
+  // For image files - base64 data URL for inline preview
+  image_preview?: string;
+}
+
+// Supported image MIME types that can be displayed inline
+export const SUPPORTED_IMAGE_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/gif',
+  'image/webp',
+] as const;
+
+// Image extensions (for filename-based detection)
+export const SUPPORTED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const;
+
+// Helper to check if a file is a displayable image
+export function isImageFile(file: GeneratedFile): boolean {
+  // Check by MIME type first
+  if (file.mime_type) {
+    const mt = file.mime_type.split(';')[0].trim().toLowerCase();
+    if (SUPPORTED_IMAGE_MIME_TYPES.includes(mt as typeof SUPPORTED_IMAGE_MIME_TYPES[number])) {
+      return true;
+    }
+  }
+  // Fall back to extension check
+  const ext = file.filename.split('.').pop()?.toLowerCase();
+  return ext ? SUPPORTED_IMAGE_EXTENSIONS.includes(ext as typeof SUPPORTED_IMAGE_EXTENSIONS[number]) : false;
 }
 
 // Event payload for stream completion/cancellation events

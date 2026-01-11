@@ -9,11 +9,14 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
 import type { Message as MessageType, InlineCitation as InlineCitationType, GeneratedFile } from '../../lib/types';
+import { isImageFile } from '../../lib/types';
 import { ContextMenu, type ContextMenuItem } from '../shared/ContextMenu';
 import { InlineCitation } from './InlineCitation';
 import { ThinkingBadge } from './ThinkingBadge';
 import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
+import { GeneratedImageCard } from './GeneratedImageCard';
+import { ImageLightbox } from './ImageLightbox';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
@@ -123,6 +126,7 @@ interface MessageProps {
 export const Message = memo(function Message({ message, onFork }: MessageProps) {
   const isUser = message.role === 'user';
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ file: GeneratedFile; imageData: string } | null>(null);
   const showCitations = useSettingsStore((state) => state.showCitations);
 
   // Process content with inline citations
@@ -279,10 +283,33 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
             </div>
           );
 
-          // Generated files (always at bottom)
-          const generatedFilesSection = message.generatedFiles && message.generatedFiles.length > 0 && (
+          // Separate image files from other files
+          const imageFiles = message.generatedFiles?.filter(isImageFile) || [];
+          const otherFiles = message.generatedFiles?.filter(f => !isImageFile(f)) || [];
+
+          // Handler for expanding images in lightbox
+          const handleImageExpand = (file: GeneratedFile, imageData: string) => {
+            setLightboxImage({ file, imageData });
+          };
+
+          // Generated images section (displayed inline with preview)
+          // Each image takes full width of the message container
+          const generatedImagesSection = imageFiles.length > 0 && (
+            <div className="mt-4 flex flex-col gap-4">
+              {imageFiles.map((file) => (
+                <GeneratedImageCard
+                  key={file.file_id}
+                  file={file}
+                  onExpand={handleImageExpand}
+                />
+              ))}
+            </div>
+          );
+
+          // Generated files section (non-image files with download cards)
+          const generatedFilesSection = otherFiles.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
-              {message.generatedFiles.map((file) => (
+              {otherFiles.map((file) => (
                 <GeneratedFileCard
                   key={file.file_id}
                   file={file}
@@ -320,6 +347,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                     </ReactMarkdown>
                   </div>
                 )}
+                {generatedImagesSection}
                 {generatedFilesSection}
               </>
             );
@@ -338,6 +366,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                 </ReactMarkdown>
               </div>
               {executionBadge}
+              {generatedImagesSection}
               {generatedFilesSection}
             </>
           );
@@ -351,6 +380,15 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
           y={contextMenu.y}
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Image lightbox for fullscreen viewing */}
+      {lightboxImage && (
+        <ImageLightbox
+          file={lightboxImage.file}
+          imageData={lightboxImage.imageData}
+          onClose={() => setLightboxImage(null)}
         />
       )}
     </div>
