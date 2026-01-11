@@ -29,6 +29,8 @@ pub mod tool_names {
     pub const BASH_CODE_EXECUTION: &str = "bash_code_execution";
     /// Anthropic text editor code execution tool
     pub const TEXT_EDITOR_CODE_EXECUTION: &str = "text_editor_code_execution";
+    /// Gemini code execution tool
+    pub const GEMINI_CODE_EXECUTION: &str = "gemini_code_execution";
 }
 
 /// Shared state for managing stream cancellation
@@ -101,6 +103,10 @@ pub struct GeneratedFile {
     pub filename: String,
     /// MIME type of the file
     pub mime_type: Option<String>,
+    /// For images: base64 data URL for inline preview (Gemini provides inline)
+    pub image_preview: Option<String>,
+    /// Raw base64 data for file content (Gemini provides inline, enables persistence)
+    pub inline_data: Option<String>,
 }
 
 /// Event payload for stream completion/cancellation events

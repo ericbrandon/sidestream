@@ -203,6 +203,8 @@ pub async fn send_chat_message_openai(
                                                         file_id: f.file_id,
                                                         filename: f.filename,
                                                         mime_type: None,
+                                                        image_preview: None,
+                                                        inline_data: None,
                                                     })
                                                     .collect();
 
@@ -291,6 +293,8 @@ pub async fn send_chat_message_openai(
                                                     file_id: f.file_id,
                                                     filename: f.filename,
                                                     mime_type: None, // Will be determined on download
+                                                    image_preview: None,
+                                                    inline_data: None,
                                                 })
                                                 .collect();
 

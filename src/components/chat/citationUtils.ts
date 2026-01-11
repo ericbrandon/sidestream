@@ -51,6 +51,37 @@ export function stripSandboxUrls(content: string): string {
 }
 
 /**
+ * Strip Gemini local file references from markdown content.
+ * Gemini's code execution outputs markdown image/link syntax referencing local filenames
+ * like ![Graph](graph.png) or [Download](data.csv) - these reference files in Gemini's
+ * sandbox that aren't accessible via URL. Since we display generated files via
+ * GeneratedFileCard/GeneratedImageCard using inline_data, we strip these references.
+ *
+ * Handles patterns like:
+ * - ![alt text](filename.png) - markdown images with local filename
+ * - [link text](filename.csv) - markdown links with local filename
+ *
+ * Only strips references that look like local filenames (no protocol, no path separators).
+ */
+export function stripGeminiLocalFileRefs(content: string): string {
+  // Strip markdown images with local filenames: ![alt](filename.ext)
+  // Matches: ![anything](word.ext) where word.ext has no / or : (not a URL or path)
+  let result = content.replace(/!\[([^\]]*)\]\(([^/:\s)]+\.[a-zA-Z0-9]+)\)/g, '');
+
+  // Strip markdown links with local filenames: [text](filename.ext)
+  // Only if it looks like a generated file (common extensions from code execution)
+  const generatedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'csv', 'json', 'txt', 'pdf', 'xlsx', 'html'];
+  const extPattern = generatedExtensions.join('|');
+  const linkRegex = new RegExp(`\\[([^\\]]*)\\]\\(([^/:\\s)]+\\.(${extPattern}))\\)`, 'gi');
+  result = result.replace(linkRegex, '');
+
+  // Clean up any resulting empty lines (multiple consecutive newlines -> double newline)
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  return result;
+}
+
+/**
  * Extract ChatGPT-style inline citations from content.
  * ChatGPT wraps citation links in parentheses: ([title](url))
  * This distinguishes them from regular markdown links.

@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 
@@ -131,11 +131,13 @@ const CachedMarkdown = memo(function CachedMarkdown({
     if (!content) return { processedContent: '', markdownComponents: {} as Components };
 
     // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
-    const contentWithoutSandbox = stripSandboxUrls(content);
+    let strippedContent = stripSandboxUrls(content);
+    // Also strip Gemini local file references (files are shown via GeneratedImageCard/GeneratedFileCard)
+    strippedContent = stripGeminiLocalFileRefs(strippedContent);
 
     // Then extract ChatGPT-style parenthesized citations from content
     const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-      extractChatGPTCitations(contentWithoutSandbox, showCitations);
+      extractChatGPTCitations(strippedContent, showCitations);
 
     // Get existing inline citations (from Claude/Gemini)
     const existingCitations = showCitations ? inlineCitations : [];

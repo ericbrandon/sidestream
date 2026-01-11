@@ -9,7 +9,7 @@ import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls } from '../chat/citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs } from '../chat/citationUtils';
 import { PrintableInlineCitation } from './PrintableInlineCitation';
 
 interface PrintableChatProps {
@@ -137,11 +137,13 @@ function processMessageWithCitations(
   showCitations: boolean
 ): { processedContent: string; markdownComponents: Components } {
   // First, strip OpenAI sandbox: URLs (files are shown via generated file sections)
-  const contentWithoutSandbox = stripSandboxUrls(message.content);
+  let strippedContent = stripSandboxUrls(message.content);
+  // Also strip Gemini local file references (files are shown via generated file sections)
+  strippedContent = stripGeminiLocalFileRefs(strippedContent);
 
   // Then extract ChatGPT-style parenthesized citations from content
   const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-    extractChatGPTCitations(contentWithoutSandbox, showCitations);
+    extractChatGPTCitations(strippedContent, showCitations);
 
   // Get existing inline citations (from Claude/Gemini)
   const existingCitations = showCitations ? (message.inlineCitations || []) : [];

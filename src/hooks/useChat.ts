@@ -409,6 +409,9 @@ export function useChat() {
         // For the current message, use the freshly computed containerContext
         const allMessages = [...messages, { ...userMessage, id: '', timestamp: new Date() }];
 
+        // Check if using Gemini (needs execution context appended since no container persistence)
+        const isGemini = frontierLLM.model.startsWith('gemini');
+
         const apiMessages = allMessages.map((m, index) => {
           const formattedContent = formatMessageContent(m).content;
           const isLastMessage = index === allMessages.length - 1;
@@ -444,6 +447,20 @@ export function useChat() {
               return { role: m.role, content: blocks };
             }
           }
+
+          // For Gemini: append execution context to assistant messages
+          // This provides code execution history since Gemini has no container persistence
+          if (isGemini && m.role === 'assistant' && m.executionCode) {
+            let executionContext = '\n\n---\n[Code execution context for this turn:]\n';
+            executionContext += '```python\n' + m.executionCode + '\n```\n';
+            if (m.executionOutput) {
+              executionContext += '\nOutput:\n```\n' + m.executionOutput + '\n```';
+            }
+            if (typeof formattedContent === 'string') {
+              return { role: m.role, content: formattedContent + executionContext };
+            }
+          }
+
           return { role: m.role, content: formattedContent };
         });
 

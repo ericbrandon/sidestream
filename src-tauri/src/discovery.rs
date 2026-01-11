@@ -570,7 +570,9 @@ async fn discover_resources_gemini(
             sse_buffer = sse_buffer[line_end + 1..].to_string();
 
             if let Some(data) = line.strip_prefix("data: ") {
-                match gemini_parse_sse_event(data) {
+                // parse_sse_event returns Vec since one SSE can have multiple parts
+                for event in gemini_parse_sse_event(data) {
+                match event {
                     GeminiStreamEvent::ResponseComplete => {
                         llm_logger::log_response_complete("discovery", &full_response);
                         if let Err(err) = window.emit(
@@ -628,6 +630,7 @@ async fn discover_resources_gemini(
                     }
                     _ => {}
                 }
+                } // end for event in events
             }
         }
     }

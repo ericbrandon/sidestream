@@ -14,6 +14,7 @@ pub struct ChatRequestConfig {
     pub system_prompt: Option<String>,
     pub thinking_config: Option<ThinkingConfig>,
     pub web_search_enabled: bool,
+    pub code_execution_enabled: bool,
 }
 
 /// Configuration for thinking/reasoning
@@ -74,6 +75,12 @@ pub enum GeminiStreamEvent {
     GroundingMetadata { metadata: GroundingInfo },
     /// Error occurred
     Error { message: String },
+    /// Code execution: Python code to be executed
+    ExecutableCode { code: String },
+    /// Code execution: Output from executed code
+    CodeExecutionResult { output: String },
+    /// Inline data: Generated file (image, CSV, etc.) as base64
+    InlineData { mime_type: String, data: String },
     /// Unknown/unhandled event
     Unknown,
 }
@@ -251,11 +258,22 @@ impl GeminiClient {
             });
         }
 
+        // Build tools array
+        let mut tools: Vec<serde_json::Value> = Vec::new();
+
         // Add Google Search tool if enabled
         if config.web_search_enabled {
-            body["tools"] = serde_json::json!([{
-                "google_search": {}
-            }]);
+            tools.push(serde_json::json!({"google_search": {}}));
+        }
+
+        // Add Code Execution tool if enabled
+        if config.code_execution_enabled {
+            tools.push(serde_json::json!({"codeExecution": {}}));
+        }
+
+        // Add tools to request body if any are enabled
+        if !tools.is_empty() {
+            body["tools"] = serde_json::json!(tools);
         }
 
         body
@@ -512,13 +530,16 @@ impl GeminiClient {
     }
 }
 
-/// Parse a single SSE data payload into a GeminiStreamEvent
+/// Parse a single SSE data payload into a list of GeminiStreamEvents
 /// Gemini SSE format: data: {"candidates": [...], "usageMetadata": {...}}
-pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
+/// A single SSE event can contain multiple parts (text, code, inlineData, etc.)
+pub fn parse_sse_event(data: &str) -> Vec<GeminiStreamEvent> {
     let parsed: serde_json::Value = match serde_json::from_str(data) {
         Ok(v) => v,
-        Err(_) => return GeminiStreamEvent::Unknown,
+        Err(_) => return vec![GeminiStreamEvent::Unknown],
     };
+
+    let mut events = Vec::new();
 
     // Check for error
     if let Some(error) = parsed.get("error") {
@@ -526,7 +547,7 @@ pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
             .as_str()
             .unwrap_or("Unknown error")
             .to_string();
-        return GeminiStreamEvent::Error { message };
+        return vec![GeminiStreamEvent::Error { message }];
     }
 
     // Check for grounding metadata (search results)
@@ -594,38 +615,69 @@ pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
             .unwrap_or_default();
 
         if !queries.is_empty() || !chunks.is_empty() || !supports.is_empty() {
-            return GeminiStreamEvent::GroundingMetadata {
+            events.push(GeminiStreamEvent::GroundingMetadata {
                 metadata: GroundingInfo {
                     web_search_queries: queries,
                     grounding_chunks: chunks,
                     grounding_supports: supports,
                 },
-            };
+            });
         }
     }
 
-    // Extract text from candidates
+    // Extract content from candidates - collect ALL parts, not just first
     if let Some(candidates) = parsed["candidates"].as_array() {
         if let Some(first_candidate) = candidates.first() {
             if let Some(content) = first_candidate.get("content") {
                 if let Some(parts) = content["parts"].as_array() {
-                    // First pass: look for non-thinking text parts
                     for part in parts {
                         // Check if this is a thinking part
                         if part.get("thought").and_then(|v| v.as_bool()) == Some(true) {
                             // Extract thinking text for ephemeral UI display
                             if let Some(thinking_text) = part["text"].as_str() {
-                                return GeminiStreamEvent::ThinkingDelta {
+                                events.push(GeminiStreamEvent::ThinkingDelta {
                                     text: thinking_text.to_string(),
-                                };
+                                });
                             }
                             continue;
                         }
+
+                        // Check for executableCode (code execution tool)
+                        if let Some(exec_code) = part.get("executableCode") {
+                            if let Some(code) = exec_code["code"].as_str() {
+                                events.push(GeminiStreamEvent::ExecutableCode {
+                                    code: code.to_string(),
+                                });
+                            }
+                        }
+
+                        // Check for codeExecutionResult (output from code execution)
+                        if let Some(result) = part.get("codeExecutionResult") {
+                            if let Some(output) = result["output"].as_str() {
+                                events.push(GeminiStreamEvent::CodeExecutionResult {
+                                    output: output.to_string(),
+                                });
+                            }
+                        }
+
+                        // Check for inlineData (generated files/images)
+                        if let Some(inline_data) = part.get("inlineData") {
+                            if let (Some(mime_type), Some(data)) = (
+                                inline_data["mimeType"].as_str(),
+                                inline_data["data"].as_str(),
+                            ) {
+                                events.push(GeminiStreamEvent::InlineData {
+                                    mime_type: mime_type.to_string(),
+                                    data: data.to_string(),
+                                });
+                            }
+                        }
+
                         // Regular text part
                         if let Some(text) = part["text"].as_str() {
-                            return GeminiStreamEvent::TextDelta {
+                            events.push(GeminiStreamEvent::TextDelta {
                                 text: text.to_string(),
-                            };
+                            });
                         }
                     }
                 }
@@ -633,12 +685,48 @@ pub fn parse_sse_event(data: &str) -> GeminiStreamEvent {
         }
     }
 
-    // Check for usage metadata (indicates completion)
-    if parsed.get("usageMetadata").is_some() {
-        return GeminiStreamEvent::ResponseComplete;
+    // Check for finishReason in candidates (indicates completion)
+    // Note: usageMetadata is sent with EVERY chunk, so we can't use that as completion signal
+    if let Some(candidates) = parsed["candidates"].as_array() {
+        if let Some(first_candidate) = candidates.first() {
+            if let Some(finish_reason) = first_candidate.get("finishReason") {
+                if finish_reason.as_str().is_some() {
+                    events.push(GeminiStreamEvent::ResponseComplete);
+                }
+            }
+        }
     }
 
-    GeminiStreamEvent::Unknown
+    if events.is_empty() {
+        vec![GeminiStreamEvent::Unknown]
+    } else {
+        events
+    }
+}
+
+/// Map MIME type to file extension
+pub fn mime_to_extension(mime_type: &str) -> &'static str {
+    match mime_type {
+        "image/png" => "png",
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "text/csv" => "csv",
+        "application/json" => "json",
+        "text/plain" => "txt",
+        "application/pdf" => "pdf",
+        "text/html" => "html",
+        "application/xml" | "text/xml" => "xml",
+        // Programming languages - Gemini returns these from code execution
+        "text/x-python" | "application/x-python" => "py",
+        "text/javascript" | "application/javascript" => "js",
+        "text/x-java" | "text/java" => "java",
+        "text/x-c" => "c",
+        "text/x-c++" | "text/x-cpp" => "cpp",
+        "text/x-typescript" => "ts",
+        "text/markdown" => "md",
+        _ => "bin",
+    }
 }
 
 /// Inline citation with position information

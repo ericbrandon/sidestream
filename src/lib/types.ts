@@ -181,6 +181,8 @@ export interface GeneratedFile {
   download_error?: string;
   // For image files - base64 data URL for inline preview
   image_preview?: string;
+  // Raw base64 data for file content (Gemini returns inline, persists across sessions)
+  inline_data?: string;
 }
 
 // Supported image MIME types that can be displayed inline

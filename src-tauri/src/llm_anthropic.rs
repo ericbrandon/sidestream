@@ -186,6 +186,8 @@ pub async fn send_chat_message_anthropic(
                                                             file_id: f.file_id,
                                                             filename: final_filename,
                                                             mime_type: final_mime_type,
+                                                            image_preview: None,
+                                                            inline_data: None,
                                                         });
                                                     }
 

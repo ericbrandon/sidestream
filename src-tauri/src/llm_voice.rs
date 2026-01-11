@@ -96,7 +96,9 @@ pub async fn send_voice_message_impl(
                             buffer = buffer[line_end + 1..].to_string();
 
                             if let Some(data) = line.strip_prefix("data: ") {
-                                match gemini_parse_sse_event(data) {
+                                // parse_sse_event returns Vec since one SSE can have multiple parts
+                                for event in gemini_parse_sse_event(data) {
+                                match event {
                                     GeminiStreamEvent::TextDelta { text: t } => {
                                         // Gemini sends complete text in each chunk, need to diff
                                         let new_text = if t.starts_with(&accumulated_text) {
@@ -189,8 +191,13 @@ pub async fn send_voice_message_impl(
                                         llm_logger::log_error("voice-chat", &message);
                                         return Err(message);
                                     }
+                                    // Code execution events not applicable to voice transcription
+                                    GeminiStreamEvent::ExecutableCode { .. } => {}
+                                    GeminiStreamEvent::CodeExecutionResult { .. } => {}
+                                    GeminiStreamEvent::InlineData { .. } => {}
                                     GeminiStreamEvent::Unknown => {}
                                 }
+                                } // end for event in events
                             }
                         }
                     }

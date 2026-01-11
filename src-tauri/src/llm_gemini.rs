@@ -2,12 +2,14 @@ use futures::StreamExt;
 use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::commands::get_api_key_async;
-use crate::llm::{ChatMessage, StreamDelta, StreamEvent};
+use crate::llm::{tool_names, ChatMessage, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::gemini::{
-    extract_inline_citations_from_grounding, parse_sse_event as gemini_parse_sse_event,
+    extract_inline_citations_from_grounding, mime_to_extension, parse_sse_event as gemini_parse_sse_event,
     string_to_thinking_config, supports_thinking as gemini_supports_thinking,
     ChatRequestConfig as GeminiChatRequestConfig, GeminiClient, GeminiStreamEvent,
 };
@@ -48,6 +50,7 @@ pub async fn send_chat_message_gemini(
         system_prompt,
         thinking_config,
         web_search_enabled,
+        code_execution_enabled: true, // Always enable code execution for Gemini
     };
     let body = client.build_chat_request(&config);
 
@@ -67,6 +70,7 @@ pub async fn send_chat_message_gemini(
     let mut full_response = String::new();
     let mut accumulated_text = String::new();
     let mut accumulated_thinking = String::new();
+    let mut generated_file_count: u32 = 0;
 
     loop {
         tokio::select! {
@@ -93,7 +97,11 @@ pub async fn send_chat_message_gemini(
                             buffer = buffer[line_end + 1..].to_string();
 
                             if let Some(data) = line.strip_prefix("data: ") {
-                                match gemini_parse_sse_event(data) {
+                                // parse_sse_event returns Vec since one SSE can have multiple parts
+                                let events = gemini_parse_sse_event(data);
+
+                                for event in events {
+                                match event {
                                     GeminiStreamEvent::TextDelta { text: t } => {
                                         // Gemini sends complete text in each chunk, need to diff
                                         let new_text = if t.starts_with(&accumulated_text) {
@@ -185,8 +193,100 @@ pub async fn send_chat_message_gemini(
                                         llm_logger::log_error("chat", &message);
                                         return Err(message);
                                     }
+                                    GeminiStreamEvent::ExecutableCode { code } => {
+                                        llm_logger::log_feature_used("chat", "Gemini Code Execution Started");
+                                        // Emit execution started with code
+                                        let delta = StreamDelta {
+                                            turn_id: turn_id.clone(),
+                                            text: String::new(),
+                                            citations: None,
+                                            inline_citations: None,
+                                            thinking: None,
+                                            execution: Some(ExecutionDelta {
+                                                tool_name: tool_names::GEMINI_CODE_EXECUTION.to_string(),
+                                                stdout: None,
+                                                stderr: None,
+                                                status: ExecutionStatus::Started,
+                                                code: Some(code),
+                                                files: None,
+                                            }),
+                                        };
+                                        if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                            eprintln!("Failed to emit execution started delta: {}", err);
+                                        }
+                                    }
+                                    GeminiStreamEvent::CodeExecutionResult { output } => {
+                                        // Emit execution output
+                                        let delta = StreamDelta {
+                                            turn_id: turn_id.clone(),
+                                            text: String::new(),
+                                            citations: None,
+                                            inline_citations: None,
+                                            thinking: None,
+                                            execution: Some(ExecutionDelta {
+                                                tool_name: tool_names::GEMINI_CODE_EXECUTION.to_string(),
+                                                stdout: Some(output),
+                                                stderr: None,
+                                                status: ExecutionStatus::Completed,
+                                                code: None,
+                                                files: None,
+                                            }),
+                                        };
+                                        if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                            eprintln!("Failed to emit execution result delta: {}", err);
+                                        }
+                                    }
+                                    GeminiStreamEvent::InlineData { mime_type, data } => {
+                                        let timestamp = SystemTime::now()
+                                            .duration_since(UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis();
+
+                                        let extension = mime_to_extension(&mime_type);
+                                        let file_id = format!("gemini-{}-{}", timestamp, generated_file_count);
+                                        let filename = format!("generated-{}.{}", timestamp, extension);
+                                        generated_file_count += 1;
+
+                                        // Create data URL for image preview (if it's an image)
+                                        let image_preview = if mime_type.starts_with("image/") {
+                                            Some(format!("data:{};base64,{}", mime_type, data))
+                                        } else {
+                                            None
+                                        };
+
+                                        let file = GeneratedFile {
+                                            file_id: file_id.clone(),
+                                            filename,
+                                            mime_type: Some(mime_type.clone()),
+                                            image_preview,
+                                            inline_data: Some(data),
+                                        };
+
+                                        llm_logger::log_feature_used("chat", &format!("Gemini File Generated: {}", mime_type));
+
+                                        // Emit file as it arrives
+                                        let delta = StreamDelta {
+                                            turn_id: turn_id.clone(),
+                                            text: String::new(),
+                                            citations: None,
+                                            inline_citations: None,
+                                            thinking: None,
+                                            execution: Some(ExecutionDelta {
+                                                tool_name: tool_names::GEMINI_CODE_EXECUTION.to_string(),
+                                                stdout: None,
+                                                stderr: None,
+                                                status: ExecutionStatus::Completed,
+                                                code: None,
+                                                files: Some(vec![file]),
+                                            }),
+                                        };
+                                        if let Err(err) = window.emit("chat-stream-delta", delta) {
+                                            eprintln!("Failed to emit generated file delta: {}", err);
+                                        }
+                                    }
                                     GeminiStreamEvent::Unknown => {}
                                 }
+                                } // end for event in events
                             }
                         }
                     }

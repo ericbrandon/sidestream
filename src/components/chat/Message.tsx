@@ -17,7 +17,7 @@ import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, isSandboxUrl, extractSandboxFilename } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -173,11 +173,13 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
   // Process content with inline citations
   const { processedContent, markdownComponents } = useMemo(() => {
     // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
-    const contentWithoutSandbox = stripSandboxUrls(message.content);
+    let strippedContent = stripSandboxUrls(message.content);
+    // Also strip Gemini local file references (files are shown via GeneratedImageCard/GeneratedFileCard)
+    strippedContent = stripGeminiLocalFileRefs(strippedContent);
 
     // Then extract ChatGPT-style parenthesized citations from content
     const { content: contentWithoutChatGPTCitations, citations: chatGPTCitations } =
-      extractChatGPTCitations(contentWithoutSandbox, showCitations);
+      extractChatGPTCitations(strippedContent, showCitations);
 
     // Get existing inline citations (from Claude/Gemini)
     const existingCitations = showCitations ? (message.inlineCitations || []) : [];
@@ -301,10 +303,23 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
               // Determine which API to use based on current model
               const currentModel = useSettingsStore.getState().frontierLLM.model;
               const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+              const isGemini = currentModel.startsWith('gemini');
 
               let result: { data: number[]; filename: string; mime_type?: string };
 
-              if (isOpenAI) {
+              if (isGemini && f.inline_data) {
+                // Gemini: data is already inline, decode base64
+                const binary = atob(f.inline_data);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                  bytes[i] = binary.charCodeAt(i);
+                }
+                result = {
+                  data: Array.from(bytes),
+                  filename: f.filename,
+                  mime_type: f.mime_type,
+                };
+              } else if (isOpenAI) {
                 // OpenAI requires container_id for file downloads
                 const containerId = useChatStore.getState().openaiContainerId;
                 if (!containerId) {
