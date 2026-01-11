@@ -2,6 +2,8 @@ import { memo, useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
+import { Image as TauriImage } from '@tauri-apps/api/image';
 import type { GeneratedFile } from '../../lib/types';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -164,6 +166,36 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
     }
   };
 
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!imageData) return;
+
+    try {
+      // Decode image to RGBA using canvas (works for all image formats)
+      const img = document.createElement('img');
+      img.src = imageData;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // Convert Uint8ClampedArray to Uint8Array for Tauri
+      const rgbaData = new Uint8Array(imageDataObj.data);
+
+      // Create Tauri Image from RGBA data
+      const image = await TauriImage.new(rgbaData, canvas.width, canvas.height);
+      await writeImage(image);
+    } catch (err) {
+      console.error('Failed to copy image:', err);
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -213,6 +245,17 @@ function GeneratedImageCardComponent({ file, messageId, onExpand }: GeneratedIma
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
+
+        {/* Copy button */}
+        <button
+          onClick={handleCopy}
+          className="p-2 rounded-full bg-white/20 hover:bg-white/40 transition-colors text-white"
+          title="Copy image"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
         </button>
 

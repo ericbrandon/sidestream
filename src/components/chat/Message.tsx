@@ -100,8 +100,114 @@ async function handleSandboxUrlClick(href: string): Promise<void> {
 }
 
 /**
- * Create markdown components that handle inline citations
+ * Map language identifiers to file extensions
  */
+const LANGUAGE_EXTENSIONS: Record<string, string> = {
+  javascript: 'js',
+  typescript: 'ts',
+  python: 'py',
+  ruby: 'rb',
+  rust: 'rs',
+  csharp: 'cs',
+  cpp: 'cpp',
+  c: 'c',
+  java: 'java',
+  go: 'go',
+  swift: 'swift',
+  kotlin: 'kt',
+  scala: 'scala',
+  php: 'php',
+  perl: 'pl',
+  r: 'r',
+  julia: 'jl',
+  lua: 'lua',
+  shell: 'sh',
+  bash: 'sh',
+  zsh: 'sh',
+  powershell: 'ps1',
+  sql: 'sql',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  sass: 'sass',
+  less: 'less',
+  json: 'json',
+  yaml: 'yaml',
+  yml: 'yml',
+  xml: 'xml',
+  markdown: 'md',
+  md: 'md',
+  toml: 'toml',
+  ini: 'ini',
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  cmake: 'cmake',
+  gradle: 'gradle',
+  groovy: 'groovy',
+  haskell: 'hs',
+  elixir: 'ex',
+  erlang: 'erl',
+  clojure: 'clj',
+  fsharp: 'fs',
+  ocaml: 'ml',
+  elm: 'elm',
+  vue: 'vue',
+  svelte: 'svelte',
+  jsx: 'jsx',
+  tsx: 'tsx',
+};
+
+/**
+ * Code block component with copy and download icons
+ */
+function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
+  const codeContent = String(children).replace(/\n$/, '');
+  const language = className?.replace('language-', '') || '';
+
+  const handleCopy = async () => {
+    await writeText(codeContent);
+  };
+
+  const handleDownload = async () => {
+    const extension = LANGUAGE_EXTENSIONS[language.toLowerCase()] || language || 'txt';
+    const savePath = await save({
+      defaultPath: `code.${extension}`,
+      title: 'Save Code',
+    });
+    if (savePath) {
+      await writeFile(savePath, new TextEncoder().encode(codeContent));
+    }
+  };
+
+  return (
+    <div className="relative group">
+      <pre className={className}>
+        <code className={className}>{children}</code>
+      </pre>
+      <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={handleCopy}
+          className="p-1.5 rounded bg-white/10 hover:bg-white/20 transition-colors text-stone-400 hover:text-stone-200"
+          title="Copy code"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
+        <button
+          onClick={handleDownload}
+          className="p-1.5 rounded bg-white/10 hover:bg-white/20 transition-colors text-stone-400 hover:text-stone-200"
+          title="Download code"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function createMarkdownComponents(
   citationMap: Map<number, InlineCitationType>
 ): Components {
@@ -156,6 +262,15 @@ function createMarkdownComponents(
         {processChildren(children)}
       </a>
     ),
+    // Code blocks with copy and download icons
+    pre: ({ children }) => {
+      // Extract code content and className from the code element
+      const codeChild = children as React.ReactElement<{ children: React.ReactNode; className?: string }>;
+      if (codeChild?.props) {
+        return <CodeBlock className={codeChild.props.className}>{codeChild.props.children}</CodeBlock>;
+      }
+      return <pre>{children}</pre>;
+    },
   };
 }
 

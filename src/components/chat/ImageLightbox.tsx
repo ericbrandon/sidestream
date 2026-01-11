@@ -2,6 +2,8 @@ import { memo, useEffect, useCallback } from 'react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
+import { writeImage } from '@tauri-apps/plugin-clipboard-manager';
+import { Image as TauriImage } from '@tauri-apps/api/image';
 import type { GeneratedFile } from '../../lib/types';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -73,6 +75,34 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
     }
   };
 
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      // Decode image to RGBA using canvas (works for all image formats)
+      const img = document.createElement('img');
+      img.src = imageData;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // Convert Uint8ClampedArray to Uint8Array for Tauri
+      const rgbaData = new Uint8Array(imageDataObj.data);
+
+      // Create Tauri Image from RGBA data
+      const image = await TauriImage.new(rgbaData, canvas.width, canvas.height);
+      await writeImage(image);
+    } catch (err) {
+      console.error('Failed to copy image:', err);
+    }
+  };
+
   const handleBackdropClick = (e: React.MouseEvent) => {
     // Only close if clicking directly on the backdrop, not the image
     if (e.target === e.currentTarget) {
@@ -95,6 +125,17 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        {/* Copy button */}
+        <button
+          onClick={handleCopy}
+          className="p-3 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-white/80 hover:text-white backdrop-blur-sm"
+          title="Copy"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
         </button>
 
