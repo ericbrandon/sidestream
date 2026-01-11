@@ -9,25 +9,6 @@ import { InlineCitation } from './InlineCitation';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
-/**
- * Split content into completed paragraphs and trailing incomplete content.
- * A paragraph is considered "complete" when followed by a double newline.
- * This allows us to cache rendered markdown for completed sections.
- */
-function splitContent(content: string): { completed: string; pending: string } {
-  // Find the last double newline - everything before it is "completed"
-  const lastDoubleNewline = content.lastIndexOf('\n\n');
-
-  if (lastDoubleNewline === -1) {
-    // No complete paragraphs yet
-    return { completed: '', pending: content };
-  }
-
-  return {
-    completed: content.slice(0, lastDoubleNewline + 2), // Include the double newline
-    pending: content.slice(lastDoubleNewline + 2),
-  };
-}
 
 /**
  * Render text with inline citations.
@@ -196,41 +177,23 @@ const CachedMarkdown = memo(function CachedMarkdown({
   );
 });
 
-/**
- * Simple plain text renderer for pending (incomplete) content.
- * This is much cheaper than markdown parsing and updates on every delta.
- */
-function PendingText({ content }: { content: string }) {
-  if (!content) return null;
-
-  // Strip sandbox URLs from pending content too
-  const cleanedContent = stripSandboxUrls(content);
-
-  // Render as simple text with whitespace preserved
-  return <span className="whitespace-pre-wrap">{cleanedContent}</span>;
-}
 
 export function StreamingMessage({ content, inlineCitations = [] }: StreamingMessageProps) {
   // Use ref to maintain stable citation map across renders
   const citationKeyMapRef = useRef<Map<string, number>>(new Map());
   const showCitations = useSettingsStore((state) => state.showCitations);
 
-  // Split content into completed paragraphs (cached) and pending text (simple render)
-  const { completed, pending } = useMemo(() => splitContent(content), [content]);
-
   return (
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] p-4">
         <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
-          {/* Cached rendered markdown for completed paragraphs */}
+          {/* Render all content as markdown - memoization handles caching */}
           <CachedMarkdown
-            content={completed}
+            content={content}
             inlineCitations={inlineCitations}
             showCitations={showCitations}
             citationKeyMapRef={citationKeyMapRef}
           />
-          {/* Simple text for pending (incomplete) paragraph */}
-          <PendingText content={pending} />
         </div>
         {/* Streaming indicator */}
         <div className="flex items-center gap-1 mt-2">
