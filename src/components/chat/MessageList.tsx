@@ -59,12 +59,15 @@ export function MessageList() {
     const lastMessage = messages[messages.length - 1];
     if (currentCount === prevCount + 1 && lastMessage?.role === 'user') {
       requestAnimationFrame(() => {
-        if (lastUserMessageRef.current) {
-          // Use scrollIntoView to position the message at the start of the viewport
-          lastUserMessageRef.current.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start'
-          });
+        if (lastUserMessageRef.current && containerRef.current) {
+          // Use manual scroll calculation instead of scrollIntoView to prevent
+          // scrollIntoView from affecting parent scroll containers (which causes
+          // the toolbar to scroll off screen)
+          const container = containerRef.current;
+          const message = lastUserMessageRef.current;
+          // Subtract container padding (p-4 = 16px) to align with top edge
+          const messageTop = Math.max(0, message.offsetTop - 16);
+          container.scrollTo({ top: messageTop, behavior: 'smooth' });
         }
       });
     }
@@ -100,7 +103,7 @@ export function MessageList() {
   const isWaitingForResponse = isStreaming && !streamingContent && !streamingThinking && !streamingExecutionCode;
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4">
+    <div ref={containerRef} className="relative flex-1 overflow-y-auto overflow-x-hidden p-4">
       {messages.map((message, index) => (
         <div
           key={message.id}
