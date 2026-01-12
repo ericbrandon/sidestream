@@ -4,6 +4,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+/// Set to true to enable detailed LLM request/response logging to files.
+/// Logs are written to the `logs/` directory with timestamped filenames.
+/// Useful for debugging but disabled by default to avoid disk usage.
+const LOGGING_ENABLED: bool = false;
+
 static CHAT_LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 static DISCOVERY_LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
@@ -47,6 +52,9 @@ fn format_json_pretty(value: &serde_json::Value) -> String {
 }
 
 pub fn log_request(module: &str, model: &str, body: &serde_json::Value) {
+    if !LOGGING_ENABLED {
+        return;
+    }
     let log_path = get_log_file_path(module);
 
     let timestamp = Local::now();
@@ -183,6 +191,9 @@ pub fn log_request(module: &str, model: &str, body: &serde_json::Value) {
 }
 
 pub fn log_response_complete(module: &str, content: &str) {
+    if !LOGGING_ENABLED {
+        return;
+    }
     let log_path = get_log_file_path(module);
 
     if let Ok(contents) = fs::read_to_string(log_path) {
@@ -219,6 +230,9 @@ pub fn log_response_complete(module: &str, content: &str) {
 }
 
 pub fn log_error(module: &str, error: &str) {
+    if !LOGGING_ENABLED {
+        return;
+    }
     let log_path = get_log_file_path(module);
 
     if let Ok(contents) = fs::read_to_string(log_path) {
@@ -247,6 +261,9 @@ pub fn log_error(module: &str, error: &str) {
 
 /// Log when a special feature is detected in the stream (extended thinking, web search)
 pub fn log_feature_used(module: &str, feature: &str) {
+    if !LOGGING_ENABLED {
+        return;
+    }
     let log_path = get_log_file_path(module);
 
     if let Ok(mut file) = OpenOptions::new().append(true).open(log_path) {
