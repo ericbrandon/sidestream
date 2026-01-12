@@ -377,7 +377,11 @@ export const ChatInput = memo(function ChatInput() {
         <textarea
           ref={textareaRef}
           value={localValue}
-          onChange={(e) => setLocalValue(e.target.value)}
+          onChange={(e) => {
+            setLocalValue(e.target.value);
+            // Keep store in sync so appendToInput works correctly when user edits text
+            setStoreInput(e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           onContextMenu={handleContextMenu}
           placeholder={

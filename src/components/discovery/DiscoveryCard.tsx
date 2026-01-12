@@ -22,6 +22,13 @@ function formatContent(item: DiscoveryItem, chatPrefix: string): string {
 ${stripCiteTags(item.fullSummary)}${sourceSection}`;
 }
 
+function formatContentForCopy(item: DiscoveryItem): string {
+  const sourceSection = item.sourceUrl ? `\n\nSource: ${item.sourceUrl}` : '';
+  return `"${stripCiteTags(item.title)}"
+
+${stripCiteTags(item.fullSummary)}${sourceSection}`;
+}
+
 export function DiscoveryCard({ item }: DiscoveryCardProps) {
   const { toggleExpanded, removeItem } = useDiscoveryStore();
   const { appendToInput, setInput } = useChatStore();
@@ -59,6 +66,11 @@ export function DiscoveryCard({ item }: DiscoveryCardProps) {
     // Fork the entire current session, then set the input to the discovery content
     await forkCurrentSession();
     setInput(formatContent(item, modeConfig.chatPrefix));
+  };
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    writeText(formatContentForCopy(item));
   };
 
   return (
@@ -130,6 +142,14 @@ export function DiscoveryCard({ item }: DiscoveryCardProps) {
                 title="Fork chat and add this discovery"
               >
                 +fork
+              </button>
+              {/* Copy to clipboard */}
+              <button
+                className="px-2 py-1 bg-blue-100 dark:bg-blue-900/50 rounded text-xs text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/50 flex items-center gap-1"
+                onClick={handleCopy}
+                title="Copy to clipboard"
+              >
+                copy
               </button>
             </div>
           </div>
