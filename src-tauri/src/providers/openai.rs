@@ -370,6 +370,8 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
         }
 
         // Text output complete (may contain citations and file references)
+        // Note: annotations may be empty here if sent via response.output_text.annotation.added
+        // In that case, response.content_part.done will have the complete annotations
         "response.output_text.done" => {
             let text = parsed["text"].as_str().unwrap_or("").to_string();
             let annotations = parse_url_citations(&parsed["annotations"]);
@@ -380,6 +382,23 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
                 file_citations = extract_sandbox_files(&text);
             }
             OpenAIStreamEvent::TextDone { text, annotations, file_citations }
+        }
+
+        // Content part done - contains accumulated annotations including file citations
+        // This fires after response.output_text.done and includes annotations that were
+        // sent incrementally via response.output_text.annotation.added
+        "response.content_part.done" => {
+            let part = &parsed["part"];
+            if part["type"].as_str() == Some("output_text") {
+                let text = part["text"].as_str().unwrap_or("").to_string();
+                let annotations = parse_url_citations(&part["annotations"]);
+                let file_citations = parse_container_file_citations(&part["annotations"], &None);
+                // Only emit if we have file citations (otherwise output_text.done already handled it)
+                if !file_citations.is_empty() {
+                    return OpenAIStreamEvent::TextDone { text, annotations, file_citations };
+                }
+            }
+            OpenAIStreamEvent::Unknown
         }
 
         // Output item added (web search, code interpreter, or reasoning)
