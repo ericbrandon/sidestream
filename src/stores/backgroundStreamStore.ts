@@ -11,6 +11,7 @@ import { useSettingsStore } from './settingsStore';
 interface BackgroundChatStream {
   sessionId: string;
   turnId: string;
+  model: string; // Model captured at stream start to avoid cross-session contamination
   streamingContent: string;
   streamingCitations: Citation[];
   streamingInlineCitations: InlineCitation[];
@@ -42,7 +43,7 @@ interface BackgroundStreamState {
   discoveryStreams: Map<string, BackgroundDiscoveryStream>;
 
   // Actions for chat streams
-  startChatStream: (sessionId: string, turnId: string) => void;
+  startChatStream: (sessionId: string, turnId: string, model: string) => void;
   appendChatDelta: (turnId: string, text: string) => void;
   addChatCitations: (turnId: string, citations: Citation[]) => void;
   addChatInlineCitations: (turnId: string, citations: InlineCitation[]) => void;
@@ -71,12 +72,13 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
   chatStreams: new Map(),
   discoveryStreams: new Map(),
 
-  startChatStream: (sessionId, turnId) => {
+  startChatStream: (sessionId, turnId, model) => {
     set((state) => {
       const newStreams = new Map(state.chatStreams);
       newStreams.set(turnId, {
         sessionId,
         turnId,
+        model,
         streamingContent: '',
         streamingCitations: [],
         streamingInlineCitations: [],
@@ -306,11 +308,14 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
 
         if (session) {
           const settingsStore = useSettingsStore.getState();
+          const settings = buildSessionSettings(settingsStore);
+          // Use the model captured at stream start, not the current global model
+          settings.frontierModel = stream.model;
           const updatedSession: ChatSession = {
             ...session,
             messages: [...session.messages, assistantMessage],
             updatedAt: new Date().toISOString(),
-            settings: buildSessionSettings(settingsStore),
+            settings,
           };
 
           await invoke('save_chat_session', { session: updatedSession });

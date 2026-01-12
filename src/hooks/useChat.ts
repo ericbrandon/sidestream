@@ -343,7 +343,8 @@ export function useChat() {
       }
 
       // Register with background stream store BEFORE anything else
-      useBackgroundStreamStore.getState().startChatStream(sessionId, turnId);
+      // Pass the model now so it's captured for this stream (prevents cross-session model contamination)
+      useBackgroundStreamStore.getState().startChatStream(sessionId, turnId, frontierLLM.model);
 
       // Store turnId for the assistant message (used by UI to show streaming state)
       setPendingTurnId(turnId);

@@ -113,7 +113,8 @@ pub async fn send_chat_message_openai(
 
                             for line in event.lines() {
                                 if let Some(data) = line.strip_prefix("data: ") {
-                                    match openai_parse_sse_event(data) {
+                                    let parsed_event = openai_parse_sse_event(data);
+                                    match parsed_event {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);
                                             if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
