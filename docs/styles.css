@@ -188,6 +188,7 @@ main {
 .carousel-slides .app-screenshot {
   flex-shrink: 0;
   width: 100%;
+  min-width: 100%;
   height: auto;
   border-radius: 0;
   box-shadow: none;
@@ -1000,11 +1001,23 @@ footer p {
 /* Responsive */
 @media (max-width: 768px) {
   nav {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .logo {
+    font-size: 1.1rem;
+  }
+
+  .logo-icon {
+    width: 28px;
+    height: 28px;
   }
 
   .nav-links {
-    gap: 1rem;
+    gap: 1.25rem;
+    font-size: 0.9rem;
   }
 
   .hero h1 {
