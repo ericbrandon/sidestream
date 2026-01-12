@@ -9,7 +9,7 @@ import type { DiscoveryModeId } from '../../lib/discoveryModes';
 import { groupMessagesIntoTurns, stripCiteTags } from '../../lib/chatUtils';
 import { getDiscoveryMode } from '../../lib/discoveryModes';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs } from '../chat/citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs } from '../chat/citationUtils';
 import { PrintableInlineCitation } from './PrintableInlineCitation';
 
 interface PrintableChatProps {
@@ -138,6 +138,8 @@ function processMessageWithCitations(
 ): { processedContent: string; markdownComponents: Components } {
   // First, strip OpenAI sandbox: URLs (files are shown via generated file sections)
   let strippedContent = stripSandboxUrls(message.content);
+  // Strip Anthropic /files/output/ URLs (files are shown via generated file sections)
+  strippedContent = stripAnthropicFileUrls(strippedContent);
   // Also strip Gemini local file references (files are shown via generated file sections)
   strippedContent = stripGeminiLocalFileRefs(strippedContent);
 

@@ -51,6 +51,29 @@ export function stripSandboxUrls(content: string): string {
 }
 
 /**
+ * Strip Anthropic /files/output/ URLs from markdown content.
+ * Claude's code execution outputs markdown image/link syntax referencing /files/output/...
+ * paths that are internal to Claude's sandbox. Since files are displayed via
+ * GeneratedFileCard/GeneratedImageCard using inline_data, we strip these references.
+ *
+ * Handles patterns like:
+ * - ![alt text](/files/output/hash/filename.ext) - markdown images
+ * - [link text](/files/output/hash/filename.ext) - markdown links
+ */
+export function stripAnthropicFileUrls(content: string): string {
+  // Strip markdown images with /files/output/ paths: ![alt](/files/output/...)
+  let result = content.replace(/!\[([^\]]*)\]\(\/files\/output\/[^)]+\)/g, '');
+
+  // Strip markdown links with /files/output/ paths: [text](/files/output/...)
+  result = result.replace(/\[([^\]]*)\]\(\/files\/output\/[^)]+\)/g, '');
+
+  // Clean up any resulting empty lines (multiple consecutive newlines -> double newline)
+  result = result.replace(/\n{3,}/g, '\n\n');
+
+  return result;
+}
+
+/**
  * Strip Gemini local file references from markdown content.
  * Gemini's code execution outputs markdown image/link syntax referencing local filenames
  * like ![Graph](graph.png) or [Download](data.csv) - these reference files in Gemini's

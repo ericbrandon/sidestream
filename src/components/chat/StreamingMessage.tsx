@@ -9,7 +9,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 
@@ -253,6 +253,8 @@ const CachedMarkdown = memo(function CachedMarkdown({
 
     // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
     let strippedContent = stripSandboxUrls(content);
+    // Strip Anthropic /files/output/ URLs (files are shown via GeneratedImageCard/GeneratedFileCard)
+    strippedContent = stripAnthropicFileUrls(strippedContent);
     // Also strip Gemini local file references (files are shown via GeneratedImageCard/GeneratedFileCard)
     strippedContent = stripGeminiLocalFileRefs(strippedContent);
 

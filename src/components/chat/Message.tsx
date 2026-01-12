@@ -17,7 +17,7 @@ import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -289,6 +289,8 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
   const { processedContent, markdownComponents } = useMemo(() => {
     // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
     let strippedContent = stripSandboxUrls(message.content);
+    // Strip Anthropic /files/output/ URLs (files are shown via GeneratedImageCard/GeneratedFileCard)
+    strippedContent = stripAnthropicFileUrls(strippedContent);
     // Also strip Gemini local file references (files are shown via GeneratedImageCard/GeneratedFileCard)
     strippedContent = stripGeminiLocalFileRefs(strippedContent);
 
