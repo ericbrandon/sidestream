@@ -161,19 +161,87 @@ main {
   padding: 2rem 0 1rem;
 }
 
-.preview-placeholder {
+/* Carousel */
+.carousel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.carousel-container {
+  flex: 1;
+  max-width: 900px;
+  overflow: hidden;
+  border-radius: 12px;
+  cursor: zoom-in;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+.carousel-slides {
+  display: flex;
+  transition: transform 0.4s ease-in-out;
+}
+
+.carousel-slides .app-screenshot {
+  flex-shrink: 0;
+  width: 100%;
+  height: auto;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+.carousel-btn {
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 1.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.carousel-btn:hover {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  border-color: var(--color-primary);
+}
+
+.carousel-dots {
   display: flex;
   justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
 }
 
-.screenshot-link {
-  display: block;
-  cursor: zoom-in;
-  transition: transform 0.2s;
+.carousel-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-border);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
 }
 
-.screenshot-link:hover {
-  transform: scale(1.02);
+.carousel-dot:hover {
+  background: var(--color-text-muted);
+}
+
+.carousel-dot.active {
+  background: var(--color-primary);
+  transform: scale(1.2);
 }
 
 .app-screenshot {
@@ -896,6 +964,39 @@ footer p {
   border-color: var(--color-primary);
 }
 
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--color-bg-dark);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 2rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+}
+
+.lightbox-nav:hover {
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  border-color: var(--color-primary);
+}
+
+.lightbox-prev {
+  left: 2rem;
+}
+
+.lightbox-next {
+  right: 2rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   nav {
@@ -930,5 +1031,29 @@ footer p {
 
   .insight {
     padding: 1rem 1.25rem;
+  }
+
+  .carousel {
+    gap: 0.5rem;
+  }
+
+  .carousel-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 1.25rem;
+  }
+
+  .lightbox-nav {
+    width: 44px;
+    height: 44px;
+    font-size: 1.5rem;
+  }
+
+  .lightbox-prev {
+    left: 0.5rem;
+  }
+
+  .lightbox-next {
+    right: 0.5rem;
   }
 }

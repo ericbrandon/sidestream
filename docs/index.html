@@ -12,16 +12,68 @@
 </head>
 <body>
   <script>
+    const screenshots = ['screenshot.png', 'screenshot_1.png', 'screenshot_2.png'];
+    let currentSlide = 0;
+
+    function showSlide(index) {
+      currentSlide = (index + screenshots.length) % screenshots.length;
+      const carousel = document.querySelector('.carousel-slides');
+      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
+      updateDots();
+    }
+
+    function nextSlide() {
+      showSlide(currentSlide + 1);
+    }
+
+    function prevSlide() {
+      showSlide(currentSlide - 1);
+    }
+
+    function updateDots() {
+      document.querySelectorAll('.carousel-dot').forEach((dot, i) => {
+        dot.classList.toggle('active', i === currentSlide);
+      });
+    }
+
     function openLightbox() {
       document.getElementById('lightbox').classList.add('active');
+      document.getElementById('lightbox-img').src = screenshots[currentSlide];
       document.body.style.overflow = 'hidden';
     }
+
     function closeLightbox() {
       document.getElementById('lightbox').classList.remove('active');
       document.body.style.overflow = '';
     }
+
+    function lightboxPrev(e) {
+      e.stopPropagation();
+      currentSlide = (currentSlide - 1 + screenshots.length) % screenshots.length;
+      document.getElementById('lightbox-img').src = screenshots[currentSlide];
+      updateDots();
+      const carousel = document.querySelector('.carousel-slides');
+      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
+    }
+
+    function lightboxNext(e) {
+      e.stopPropagation();
+      currentSlide = (currentSlide + 1) % screenshots.length;
+      document.getElementById('lightbox-img').src = screenshots[currentSlide];
+      updateDots();
+      const carousel = document.querySelector('.carousel-slides');
+      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
+    }
+
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeLightbox();
+      if (document.getElementById('lightbox').classList.contains('active')) {
+        if (e.key === 'ArrowLeft') lightboxPrev(e);
+        if (e.key === 'ArrowRight') lightboxNext(e);
+      } else {
+        if (e.key === 'ArrowLeft') prevSlide();
+        if (e.key === 'ArrowRight') nextSlide();
+      }
     });
   </script>
   <header>
@@ -52,21 +104,29 @@
     </section>
 
     <section class="app-preview">
-      <div class="preview-placeholder">
-        <a href="#" class="screenshot-link" onclick="openLightbox(); return false;">
-          <img
-            src="screenshot.png"
-            width="1512"
-            height="1012"
-            alt="Sidestream app screenshot"
-            class="app-screenshot">
-        </a>
+      <div class="carousel">
+        <button class="carousel-btn carousel-prev" onclick="prevSlide()" aria-label="Previous screenshot">&lsaquo;</button>
+        <div class="carousel-container" onclick="openLightbox()">
+          <div class="carousel-slides">
+            <img src="screenshot.png" width="1512" height="1012" alt="Sidestream app screenshot 1" class="app-screenshot">
+            <img src="screenshot_1.png" width="1512" height="1012" alt="Sidestream app screenshot 2" class="app-screenshot">
+            <img src="screenshot_2.png" width="1512" height="1012" alt="Sidestream app screenshot 3" class="app-screenshot">
+          </div>
+        </div>
+        <button class="carousel-btn carousel-next" onclick="nextSlide()" aria-label="Next screenshot">&rsaquo;</button>
+      </div>
+      <div class="carousel-dots">
+        <button class="carousel-dot active" onclick="showSlide(0)" aria-label="Go to screenshot 1"></button>
+        <button class="carousel-dot" onclick="showSlide(1)" aria-label="Go to screenshot 2"></button>
+        <button class="carousel-dot" onclick="showSlide(2)" aria-label="Go to screenshot 3"></button>
       </div>
     </section>
 
     <div id="lightbox" class="lightbox" onclick="closeLightbox()">
       <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close">&larr; Back</button>
-      <img src="screenshot.png" alt="Sidestream app screenshot">
+      <button class="lightbox-nav lightbox-prev" onclick="lightboxPrev(event)" aria-label="Previous">&lsaquo;</button>
+      <img id="lightbox-img" src="screenshot.png" alt="Sidestream app screenshot">
+      <button class="lightbox-nav lightbox-next" onclick="lightboxNext(event)" aria-label="Next">&rsaquo;</button>
     </div>
 
     <section class="why-different">
