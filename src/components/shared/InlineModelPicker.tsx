@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useSessionStore } from '../../stores/sessionStore';
-import { ALL_MODELS, PROVIDER_LABELS } from '../../lib/models';
+import { useChatStore } from '../../stores/chatStore';
+import { ALL_MODELS, PROVIDER_LABELS, getProviderFromModelId } from '../../lib/models';
 import type { LLMProvider, ModelDefinition } from '../../lib/types';
 
 interface InlineModelPickerProps {
@@ -13,11 +14,34 @@ interface InlineModelPickerProps {
 export function InlineModelPicker({ value, onChange, excludeModels = [] }: InlineModelPickerProps) {
   const { configuredProviders } = useSettingsStore();
   const markDirty = useSessionStore((state) => state.markDirty);
+  const anthropicContainerId = useChatStore((state) => state.anthropicContainerId);
+  const openaiContainerId = useChatStore((state) => state.openaiContainerId);
+  const messages = useChatStore((state) => state.messages);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Filter models to only show those with configured API keys, and exclude specified models
-  const availableModels = ALL_MODELS.filter((m) => configuredProviders[m.provider] && !excludeModels.includes(m.id));
+  // Determine if we're locked to a specific provider due to an active container or execution history
+  // - Anthropic/OpenAI: locked when container ID exists (persistent sandbox state)
+  // - Gemini: locked when any assistant message has code execution (no container, but context is stapled)
+  // Switching providers mid-chat would break execution context continuity
+  const currentProvider = getProviderFromModelId(value);
+  const hasGeminiExecution = currentProvider === 'google' &&
+    messages.some(m => m.role === 'assistant' && m.executionCode);
+  const lockedProvider: LLMProvider | null =
+    (currentProvider === 'anthropic' && anthropicContainerId) ? 'anthropic' :
+    (currentProvider === 'openai' && openaiContainerId) ? 'openai' :
+    hasGeminiExecution ? 'google' :
+    null;
+
+  // Filter models to only show those with configured API keys, exclude specified models,
+  // and respect container lock (only show same-provider models when locked)
+  const availableModels = ALL_MODELS.filter((m) => {
+    if (!configuredProviders[m.provider]) return false;
+    if (excludeModels.includes(m.id)) return false;
+    // When locked to a provider, only show that provider's models
+    if (lockedProvider && m.provider !== lockedProvider) return false;
+    return true;
+  });
 
   // Group by provider
   const groupedModels = availableModels.reduce(
