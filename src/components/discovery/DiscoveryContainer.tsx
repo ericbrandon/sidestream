@@ -174,6 +174,7 @@ export function DiscoveryContainer() {
           value={evaluatorLLM.model}
           onChange={(model) => setEvaluatorLLM({ model })}
           excludeModels={discoveryExcludedModels}
+          skipContainerLock
         />
 
         {/* Thinking/Reasoning Control - Provider-specific */}

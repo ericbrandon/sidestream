@@ -9,9 +9,11 @@ interface InlineModelPickerProps {
   value: string;
   onChange: (model: string) => void;
   excludeModels?: string[];
+  /** When true, skip the container/execution lock that restricts provider switching */
+  skipContainerLock?: boolean;
 }
 
-export function InlineModelPicker({ value, onChange, excludeModels = [] }: InlineModelPickerProps) {
+export function InlineModelPicker({ value, onChange, excludeModels = [], skipContainerLock = false }: InlineModelPickerProps) {
   const { configuredProviders } = useSettingsStore();
   const markDirty = useSessionStore((state) => state.markDirty);
   const anthropicContainerId = useChatStore((state) => state.anthropicContainerId);
@@ -24,10 +26,11 @@ export function InlineModelPicker({ value, onChange, excludeModels = [] }: Inlin
   // - Anthropic/OpenAI: locked when container ID exists (persistent sandbox state)
   // - Gemini: locked when any assistant message has code execution (no container, but context is stapled)
   // Switching providers mid-chat would break execution context continuity
+  // skipContainerLock bypasses this for contexts like the discovery pane that don't share chat execution state
   const currentProvider = getProviderFromModelId(value);
   const hasGeminiExecution = currentProvider === 'google' &&
     messages.some(m => m.role === 'assistant' && m.executionCode);
-  const lockedProvider: LLMProvider | null =
+  const lockedProvider: LLMProvider | null = skipContainerLock ? null :
     (currentProvider === 'anthropic' && anthropicContainerId) ? 'anthropic' :
     (currentProvider === 'openai' && openaiContainerId) ? 'openai' :
     hasGeminiExecution ? 'google' :
