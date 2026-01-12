@@ -6,9 +6,7 @@ import { logError } from './logger';
 
 interface ChatStoreState {
   messages: Message[];
-  isStreaming: boolean;
   inputValue: string;
-  clearStreamingContent: () => void;
   loadSession: (messages: Message[]) => void;
   setInput: (value: string) => void;
   clearAttachments: () => void;
@@ -60,11 +58,10 @@ export async function forkFromMessage(
 ): Promise<ForkResult | null> {
   const { chatStore, discoveryStore, settingsStore, sessionStore } = stores;
 
-  // If streaming is active, cancel it first
-  if (chatStore.isStreaming) {
-    await invoke('cancel_chat_stream');
-    chatStore.clearStreamingContent();
-  }
+  // Note: We intentionally do NOT cancel any active stream here.
+  // The original session's stream should continue in the background
+  // and complete naturally. The backgroundStreamStore handles this
+  // by tracking streams per-session via turnId.
 
   // Save current session first if dirty
   if (sessionStore.activeSessionId && chatStore.messages.length > 0 && sessionStore.isDirty) {
@@ -153,11 +150,10 @@ export async function forkCurrentSession(
 ): Promise<ForkResult | null> {
   const { chatStore, discoveryStore, settingsStore, sessionStore } = stores;
 
-  // If streaming is active, cancel it first
-  if (chatStore.isStreaming) {
-    await invoke('cancel_chat_stream');
-    chatStore.clearStreamingContent();
-  }
+  // Note: We intentionally do NOT cancel any active stream here.
+  // The original session's stream should continue in the background
+  // and complete naturally. The backgroundStreamStore handles this
+  // by tracking streams per-session via turnId.
 
   // Save current input to draftInputs before forking
   // This preserves any typed content when user clicks +fork without submitting
