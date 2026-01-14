@@ -259,6 +259,7 @@ export function getBaseExportStyles(): string {
       background: white !important;
       padding: 20px !important;
       font-family: Georgia, 'Times New Roman', serif !important;
+      font-size: 18px !important;
       line-height: 1.5 !important;
       color: #1f2937 !important;
     }
