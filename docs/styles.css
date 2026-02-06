@@ -308,6 +308,29 @@ main {
   align-self: center;
 }
 
+/* Carousel with Reaction */
+.carousel-with-reaction {
+  display: flex;
+  align-items: flex-start;
+  gap: 2rem;
+  width: 85%;
+}
+
+.carousel-with-reaction .composite-img-2nd {
+  flex: 0 0 65%;
+  width: 65%;
+  min-width: 0;
+}
+
+.carousel-reaction {
+  flex: 1 1 0;
+  color: #ef4444;
+  font-style: italic;
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-top: 25%;
+}
+
 /* Mini Carousel (2nd screenshot) */
 .mini-carousel {
   position: relative;

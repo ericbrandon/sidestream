@@ -86,20 +86,23 @@
             <tspan x="620" y="98">things you didn't ask about</tspan>
           </text>
         </svg>
-        <div class="mini-carousel composite-img-2nd">
-          <div class="mini-carousel-container">
-            <div class="mini-carousel-slides">
-              <img src="sidestream_screenshot_2a.png" alt="Discoveries - example 1" class="mini-carousel-img">
-              <img src="sidestream_screenshot_2b.png" alt="Discoveries - example 2" class="mini-carousel-img">
-              <img src="sidestream_screenshot_2c.png" alt="Discoveries - example 3" class="mini-carousel-img">
-              <img src="sidestream_screenshot_2d.png" alt="Discoveries - example 4" class="mini-carousel-img">
-              <img src="sidestream_screenshot_2e.png" alt="Discoveries - example 5" class="mini-carousel-img">
-              <img src="sidestream_screenshot_2f.png" alt="Discoveries - example 6" class="mini-carousel-img">
+        <div class="carousel-with-reaction">
+          <div class="mini-carousel composite-img-2nd">
+            <div class="mini-carousel-container">
+              <div class="mini-carousel-slides">
+                <img src="sidestream_screenshot_2a.png" alt="Discoveries - example 1" class="mini-carousel-img">
+                <img src="sidestream_screenshot_2b.png" alt="Discoveries - example 2" class="mini-carousel-img">
+                <img src="sidestream_screenshot_2c.png" alt="Discoveries - example 3" class="mini-carousel-img">
+                <img src="sidestream_screenshot_2d.png" alt="Discoveries - example 4" class="mini-carousel-img">
+                <img src="sidestream_screenshot_2e.png" alt="Discoveries - example 5" class="mini-carousel-img">
+                <img src="sidestream_screenshot_2f.png" alt="Discoveries - example 6" class="mini-carousel-img">
+              </div>
             </div>
+            <button class="mini-carousel-btn mini-prev" onclick="miniPrev()" aria-label="Previous">&#8249;</button>
+            <button class="mini-carousel-btn mini-next" onclick="miniNext()" aria-label="Next">&#8250;</button>
+            <div class="mini-carousel-dots"></div>
           </div>
-          <button class="mini-carousel-btn mini-prev" onclick="miniPrev()" aria-label="Previous">&#8249;</button>
-          <button class="mini-carousel-btn mini-next" onclick="miniNext()" aria-label="Next">&#8250;</button>
-          <div class="mini-carousel-dots"></div>
+          <div class="carousel-reaction" id="carousel-reaction">&ldquo;These look useful!&rdquo;</div>
         </div>
       </div>
     </section>
@@ -117,10 +120,21 @@
         miniDotsContainer.appendChild(dot);
       });
 
+      const reactions = [
+        '\u201CThese look useful!\u201D',
+        '\u201CWow. Good to know!\u201D',
+        '\u201CHa!\u201D',
+        '\u201CHuh, intriguing idea\u201D',
+        '\u201CThis seems important\u201D',
+        '\u201CGood catch!\u201D'
+      ];
+      const reactionEl = document.getElementById('carousel-reaction');
+
       function miniGo(i) {
         miniCurrent = ((i % miniSlides.length) + miniSlides.length) % miniSlides.length;
         miniTrack.style.transform = 'translateX(-' + (miniCurrent * 100) + '%)';
         document.querySelectorAll('.mini-dot').forEach((d, j) => d.classList.toggle('active', j === miniCurrent));
+        reactionEl.textContent = reactions[miniCurrent];
       }
       function miniNext() { miniGo(miniCurrent + 1); }
       function miniPrev() { miniGo(miniCurrent - 1); }
