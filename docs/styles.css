@@ -115,8 +115,15 @@ main {
   font-size: 1.25rem;
   color: var(--color-text);
   max-width: 850px;
-  margin: 0 auto 2rem;
+  margin: 0 auto 3rem;
   line-height: 1.8;
+}
+
+.hero-campfire {
+  max-width: 600px;
+  height: auto;
+  margin: 1rem auto -2rem;
+  display: block;
 }
 
 /* Buttons */
