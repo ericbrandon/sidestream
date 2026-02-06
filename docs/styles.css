@@ -1158,12 +1158,13 @@ footer p {
   right: 2rem;
 }
 
-/* Responsive - Tablet */
-@media (min-width: 769px) and (max-width: 1024px) {
+/* Responsive - Tablet (includes iPad mini at 768px) */
+@media (min-width: 481px) and (max-width: 1024px) {
   .carousel-with-reaction {
     align-items: center !important;
   }
   .carousel-reaction {
+    margin-top: 0;
     margin-left: 1rem;
   }
 }
