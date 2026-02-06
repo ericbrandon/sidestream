@@ -121,6 +121,7 @@ main {
 
 .hero-campfire {
   max-width: 600px;
+  width: 100%;
   height: auto;
   margin: 1rem auto -2rem;
   display: block;
@@ -311,24 +312,25 @@ main {
 /* Carousel with Reaction */
 .carousel-with-reaction {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: flex-start;
   gap: 2rem;
   width: 85%;
 }
 
-.carousel-with-reaction .composite-img-2nd {
+.carousel-with-reaction .mini-carousel {
   flex: 0 0 65%;
-  width: 65%;
-  min-width: 0;
+  max-width: 65%;
 }
 
 .carousel-reaction {
-  flex: 1 1 0;
   color: #ef4444;
   font-style: italic;
   font-size: 1.4rem;
   font-weight: 600;
   margin-top: 25%;
+  min-width: 0;
 }
 
 /* Mini Carousel (2nd screenshot) */
@@ -1226,6 +1228,11 @@ footer p {
 
   .lightbox-next {
     right: 0.5rem;
+  }
+
+  .carousel-reaction {
+    margin-top: 0;
+    font-size: 1.1rem;
   }
 
   .linux-matrix {
