@@ -11,7 +11,7 @@
 
 ## Why Sidestream?
 
-Human conversation is more rewarding than talking with an AI because people aren't "helpful assistants".
+Human conversation is better than AI conversation because people aren't "helpful assistants".
 
 - *They realize they know something you wouldn't even ask about, and eagerly tell you about it.*
 - *They're reminded of something interesting or amusing, and steer the conversation in a more exciting direction.*

@@ -6,6 +6,7 @@ import type {
   ApiKeysConfig,
   OpenAIReasoningLevel,
   GeminiThinkingLevel,
+  Opus46ThinkingLevel,
   ThemeMode,
   VoiceModel,
   VoiceMode,
@@ -68,10 +69,19 @@ function getSavedGeminiThinkingLevel(): GeminiThinkingLevel {
   return 'low';
 }
 
+// Load saved thinking level for Opus 4.6 (default 'high' - Claude almost always thinks)
+function getSavedOpus46ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('opus46ThinkingLevel');
+  if (saved && ['off', 'low', 'medium', 'high', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'high';
+}
+
 // Load saved frontier model from localStorage
 function getSavedFrontierModel(): string {
   const saved = localStorage.getItem('frontierModel');
-  return saved || 'claude-opus-4-5-20251101';
+  return saved || 'claude-opus-4-6';
 }
 
 // Load saved evaluator model from localStorage
@@ -105,6 +115,15 @@ function getSavedEvaluatorGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('evaluatorGeminiThinkingLevel');
   if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {
     return saved as GeminiThinkingLevel;
+  }
+  return 'low';
+}
+
+// Load saved evaluator thinking level for Opus 4.6 (default 'low' - lighter thinking for discovery)
+function getSavedEvaluatorOpus46ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('evaluatorOpus46ThinkingLevel');
+  if (saved && ['off', 'low', 'medium', 'high', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
   }
   return 'low';
 }
@@ -269,6 +288,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     extendedThinking: {
       enabled: getSavedExtendedThinking(),
       budgetTokens: 10000,
+      opus46Level: getSavedOpus46ThinkingLevel(),
     },
     reasoningLevel: getSavedReasoningLevel(),
     geminiThinkingLevel: getSavedGeminiThinkingLevel(),
@@ -280,6 +300,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     extendedThinking: {
       enabled: getSavedEvaluatorExtendedThinking(),
       budgetTokens: 10000,
+      opus46Level: getSavedEvaluatorOpus46ThinkingLevel(),
     },
     reasoningLevel: getSavedEvaluatorReasoningLevel(),
     geminiThinkingLevel: getSavedEvaluatorGeminiThinkingLevel(),
@@ -317,6 +338,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
     if (config.extendedThinking !== undefined) {
       localStorage.setItem('extendedThinkingEnabled', String(config.extendedThinking.enabled));
+      if (config.extendedThinking.opus46Level !== undefined) {
+        localStorage.setItem('opus46ThinkingLevel', config.extendedThinking.opus46Level);
+      }
     }
     if (config.reasoningLevel !== undefined) {
       localStorage.setItem('reasoningLevel', config.reasoningLevel);
@@ -339,6 +363,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
     if (config.extendedThinking !== undefined) {
       localStorage.setItem('evaluatorExtendedThinkingEnabled', String(config.extendedThinking.enabled));
+      if (config.extendedThinking.opus46Level !== undefined) {
+        localStorage.setItem('evaluatorOpus46ThinkingLevel', config.extendedThinking.opus46Level);
+      }
     }
     if (config.reasoningLevel !== undefined) {
       localStorage.setItem('evaluatorReasoningLevel', config.reasoningLevel);
@@ -414,6 +441,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         extendedThinking: {
           enabled: settings.extendedThinkingEnabled,
           budgetTokens: settings.extendedThinkingBudget,
+          opus46Level: settings.frontierOpus46ThinkingLevel ?? 'high',
         },
         webSearchEnabled: settings.webSearchEnabled,
         reasoningLevel: settings.frontierReasoningLevel ?? 'low',
@@ -425,6 +453,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         extendedThinking: {
           ...state.evaluatorLLM.extendedThinking,
           enabled: settings.evaluatorExtendedThinkingEnabled ?? false,
+          opus46Level: settings.evaluatorOpus46ThinkingLevel ?? 'low',
         },
         reasoningLevel: settings.evaluatorReasoningLevel ?? 'low',
         geminiThinkingLevel: settings.evaluatorGeminiThinkingLevel ?? 'low',
@@ -467,6 +496,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           extendedThinking: {
             ...state.evaluatorLLM.extendedThinking,
             enabled: bestModel.extendedThinkingEnabled,
+            opus46Level: bestModel.opus46ThinkingLevel ?? 'low',
           },
           reasoningLevel: bestModel.reasoningLevel,
           geminiThinkingLevel: bestModel.geminiThinkingLevel,
@@ -477,6 +507,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         localStorage.setItem('evaluatorExtendedThinkingEnabled', String(bestModel.extendedThinkingEnabled));
         localStorage.setItem('evaluatorReasoningLevel', bestModel.reasoningLevel);
         localStorage.setItem('evaluatorGeminiThinkingLevel', bestModel.geminiThinkingLevel);
+        localStorage.setItem('evaluatorOpus46ThinkingLevel', bestModel.opus46ThinkingLevel ?? 'low');
 
         set({ autoSelectDiscoveryModel: enabled, evaluatorLLM: newEvaluatorLLM });
         return;

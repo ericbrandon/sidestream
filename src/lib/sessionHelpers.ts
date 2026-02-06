@@ -25,9 +25,11 @@ export function buildSessionSettings(settingsStore: SettingsStoreState, chatStor
     discoveryMode: settingsStore.discoveryMode,
     frontierReasoningLevel: settingsStore.frontierLLM.reasoningLevel,
     frontierGeminiThinkingLevel: settingsStore.frontierLLM.geminiThinkingLevel,
+    frontierOpus46ThinkingLevel: settingsStore.frontierLLM.extendedThinking.opus46Level,
     evaluatorExtendedThinkingEnabled: settingsStore.evaluatorLLM.extendedThinking.enabled,
     evaluatorReasoningLevel: settingsStore.evaluatorLLM.reasoningLevel,
     evaluatorGeminiThinkingLevel: settingsStore.evaluatorLLM.geminiThinkingLevel,
+    evaluatorOpus46ThinkingLevel: settingsStore.evaluatorLLM.extendedThinking.opus46Level,
     anthropicContainerId: chatStore?.anthropicContainerId ?? undefined,
     openaiContainerId: chatStore?.openaiContainerId ?? undefined,
   };

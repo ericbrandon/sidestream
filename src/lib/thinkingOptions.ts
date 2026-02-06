@@ -1,4 +1,5 @@
-import type { OpenAIReasoningLevel, GeminiThinkingLevel } from './types';
+import type { OpenAIReasoningLevel, GeminiThinkingLevel, Opus46ThinkingLevel } from './types';
+import { isOpus46, supportsExtendedThinking } from './models';
 
 export interface ThinkingOption<T> {
   value: T;
@@ -114,5 +115,56 @@ export function getValidOpenAIReasoningLevel(
 export function getOpenAIReasoningLetter(level: OpenAIReasoningLevel, model: string): string {
   const opts = getOpenAIReasoningOptions(model, { allowExtraHigh: true });
   const option = opts.find((o) => o.value === level);
+  return option?.letter || '';
+}
+
+// =============================================================================
+// Anthropic Claude Thinking Options (Opus 4.6 vs Opus 4.5)
+// =============================================================================
+
+// Thinking options for Opus 4.6 (adaptive thinking + effort levels)
+export const OPUS_46_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] = [
+  { value: 'off', label: 'Off', letter: '' },
+  { value: 'low', label: 'Low', letter: 'L' },
+  { value: 'medium', label: 'Medium', letter: 'M' },
+  { value: 'high', label: 'High', letter: 'H' },
+  { value: 'max', label: 'Max', letter: 'X' },
+  { value: 'adaptive', label: 'Adaptive', letter: 'A' },
+];
+
+// Thinking options for Opus 4.5 (budget-based extended thinking)
+// Using Opus46ThinkingLevel type but only 'off' and 'high' (maps to enabled)
+export const OPUS_45_THINKING_OPTIONS: ThinkingOption<'off' | 'high'>[] = [
+  { value: 'off', label: 'Off', letter: '' },
+  { value: 'high', label: 'On', letter: '●' },
+];
+
+// Get thinking options based on Anthropic model
+export function getAnthropicThinkingOptions(model: string): ThinkingOption<Opus46ThinkingLevel | 'off' | 'high'>[] {
+  if (!supportsExtendedThinking(model)) {
+    return []; // Non-Opus models don't support extended thinking
+  }
+  if (isOpus46(model)) {
+    return OPUS_46_THINKING_OPTIONS;
+  }
+  // Opus 4.5 and other Opus models
+  return OPUS_45_THINKING_OPTIONS;
+}
+
+// Get a valid thinking level for the current Anthropic model (normalizes invalid values)
+export function getValidAnthropicThinkingLevel(
+  level: Opus46ThinkingLevel,
+  model: string
+): Opus46ThinkingLevel {
+  const options = getAnthropicThinkingOptions(model);
+  if (options.length === 0) return 'off';
+  const isValid = options.some((o) => o.value === level);
+  return isValid ? level : (options[0].value as Opus46ThinkingLevel);
+}
+
+// Helper to get display letter for current Anthropic thinking level
+export function getAnthropicThinkingLetter(level: Opus46ThinkingLevel, model: string): string {
+  const options = getAnthropicThinkingOptions(model);
+  const option = options.find((o) => o.value === level);
   return option?.letter || '';
 }

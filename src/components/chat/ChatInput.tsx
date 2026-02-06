@@ -9,13 +9,16 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { Tooltip } from '../shared/Tooltip';
 import { ContextMenu } from '../shared/ContextMenu';
 import { InlineModelPicker } from '../shared/InlineModelPicker';
-import { getProviderFromModelId } from '../../lib/models';
+import { getProviderFromModelId, supportsExtendedThinking } from '../../lib/models';
 import {
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
   getGeminiThinkingLetter,
   getOpenAIReasoningOptions,
   getValidOpenAIReasoningLevel,
+  getAnthropicThinkingOptions,
+  getValidAnthropicThinkingLevel,
+  getAnthropicThinkingLetter,
 } from '../../lib/thinkingOptions';
 export const ChatInput = memo(function ChatInput() {
   // Use local state for instant typing responsiveness
@@ -96,6 +99,26 @@ export const ChatInput = memo(function ChatInput() {
     [provider, frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled]
   );
 
+  // Get Anthropic thinking options based on model (Opus 4.6 vs 4.5)
+  const anthropicThinkingOptions = useMemo(
+    () => provider === 'anthropic' ? getAnthropicThinkingOptions(frontierLLM.model) : [],
+    [provider, frontierLLM.model]
+  );
+
+  // Normalize Anthropic thinking level to a valid value for the current model
+  const effectiveAnthropicThinkingLevel = useMemo(
+    () => provider === 'anthropic'
+      ? getValidAnthropicThinkingLevel(frontierLLM.extendedThinking.opus46Level, frontierLLM.model)
+      : frontierLLM.extendedThinking.opus46Level,
+    [provider, frontierLLM.extendedThinking.opus46Level, frontierLLM.model]
+  );
+
+  // Check if current Anthropic model supports extended thinking (Opus models)
+  const hasAnthropicThinking = useMemo(
+    () => provider === 'anthropic' && supportsExtendedThinking(frontierLLM.model),
+    [provider, frontierLLM.model]
+  );
+
   // Build list of models to exclude based on settings
   const excludedModels = useMemo(
     () => allowChatGPT5Pro ? [] : ['gpt-5-pro'],
@@ -127,15 +150,6 @@ export const ChatInput = memo(function ChatInput() {
   const closeThinkingMenu = useCallback(() => {
     setShowThinkingMenu(false);
   }, []);
-
-  const toggleExtendedThinking = useCallback(() => {
-    setFrontierLLM({
-      extendedThinking: {
-        ...frontierLLM.extendedThinking,
-        enabled: !frontierLLM.extendedThinking.enabled,
-      },
-    });
-  }, [setFrontierLLM, frontierLLM.extendedThinking]);
 
   const toggleWebSearch = useCallback(() => {
     setFrontierLLM({
@@ -300,43 +314,76 @@ export const ChatInput = memo(function ChatInput() {
               </>
             )}
           </div>
-        ) : (
-          /* Anthropic: Extended Thinking Toggle */
-          <Tooltip
-            content={
-              frontierLLM.extendedThinking.enabled
-                ? 'Extended thinking enabled'
-                : 'Enable extended thinking'
-            }
-          >
-            <button
-              onClick={toggleExtendedThinking}
-              className={`
-                p-2 rounded transition-colors
-                ${
-                  frontierLLM.extendedThinking.enabled
-                    ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
-                    : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
-                }
-              `}
-              aria-label="Toggle extended thinking"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+        ) : hasAnthropicThinking ? (
+          /* Anthropic: Thinking Level Dropdown (Opus 4.6 and 4.5) */
+          <div className="relative">
+            <Tooltip content={`Thinking: ${effectiveAnthropicThinkingLevel}`}>
+              <button
+                onClick={toggleThinkingMenu}
+                className={`
+                  p-2 rounded transition-colors flex items-center gap-1
+                  ${
+                    effectiveAnthropicThinkingLevel !== 'off'
+                      ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
+                      : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
+                  }
+                `}
+                aria-label="Set thinking level"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <span className="text-xs font-medium">
+                  {getAnthropicThinkingLetter(effectiveAnthropicThinkingLevel, frontierLLM.model)}
+                </span>
+              </button>
+            </Tooltip>
+            {showThinkingMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={closeThinkingMenu}
                 />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
+                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-stone-200 dark:border-gray-700 py-1 z-20 min-w-[100px]">
+                  {anthropicThinkingOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => {
+                        // For Opus 4.6: set opus46Level
+                        // For Opus 4.5: also set enabled based on option
+                        const isEnabled = option.value !== 'off';
+                        setFrontierLLM({
+                          extendedThinking: {
+                            ...frontierLLM.extendedThinking,
+                            enabled: isEnabled,
+                            opus46Level: option.value as 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive',
+                          },
+                        });
+                        closeThinkingMenu();
+                      }}
+                      className={`
+                        w-full px-3 py-1.5 text-left text-sm hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors
+                        ${effectiveAnthropicThinkingLevel === option.value ? 'text-purple-600 dark:text-purple-400 font-medium' : 'text-stone-700 dark:text-gray-200'}
+                      `}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
 
         {/* Web Search Toggle */}
         <Tooltip

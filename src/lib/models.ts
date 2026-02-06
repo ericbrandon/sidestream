@@ -2,6 +2,7 @@ import type { ModelDefinition, LLMProvider } from './types';
 
 export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
+  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
   { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', provider: 'anthropic' },
   { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'anthropic' },
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
@@ -41,7 +42,22 @@ export function getProviderFromModelId(modelId: string): LLMProvider {
 // Get default model for a provider (frontier pane uses top-tier models)
 export function getDefaultModelForProvider(provider: LLMProvider): string {
   const models = ALL_MODELS.filter((m) => m.provider === provider);
-  return models[0]?.id ?? 'claude-opus-4-5-20251101';
+  return models[0]?.id ?? 'claude-opus-4-6';
+}
+
+// Check if a model is Opus 4.6 (supports adaptive thinking + effort)
+export function isOpus46(modelId: string): boolean {
+  return modelId === 'claude-opus-4-6';
+}
+
+// Check if a model is Opus 4.5 (uses budget_tokens thinking)
+export function isOpus45(modelId: string): boolean {
+  return modelId === 'claude-opus-4-5-20251101';
+}
+
+// Check if a model supports extended thinking (Opus models)
+export function supportsExtendedThinking(modelId: string): boolean {
+  return modelId.includes('opus');
 }
 
 // Get default evaluator model for a provider (discovery pane uses lighter/faster models)

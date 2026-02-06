@@ -1,10 +1,11 @@
 import type { LLMConfig } from './types';
-import { getProviderFromModelId } from './models';
-import { getValidOpenAIReasoningLevel } from './thinkingOptions';
+import { getProviderFromModelId, isOpus46 } from './models';
+import { getValidOpenAIReasoningLevel, getValidAnthropicThinkingLevel } from './thinkingOptions';
 
 interface ProviderThinkingParams {
   extendedThinkingEnabled: boolean;
   thinkingBudget: number | null;
+  opus46ThinkingLevel: string | null;
   reasoningLevel: string | null;
   geminiThinkingLevel: string | null;
 }
@@ -22,13 +23,20 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     ? getValidOpenAIReasoningLevel(llm.reasoningLevel, llm.model, llm.webSearchEnabled)
     : null;
 
+  // For Anthropic Opus 4.6, get the effective thinking level
+  const effectiveOpus46Level = provider === 'anthropic' && isOpus46(llm.model)
+    ? getValidAnthropicThinkingLevel(llm.extendedThinking.opus46Level, llm.model)
+    : null;
+
   return {
-    // Anthropic: Extended thinking (must be boolean, not null - Rust expects bool)
+    // Anthropic: Extended thinking (for Opus 4.5 - must be boolean, not null - Rust expects bool)
     extendedThinkingEnabled: provider === 'anthropic' ? llm.extendedThinking.enabled : false,
     thinkingBudget:
-      provider === 'anthropic' && llm.extendedThinking.enabled
+      provider === 'anthropic' && llm.extendedThinking.enabled && !isOpus46(llm.model)
         ? llm.extendedThinking.budgetTokens
         : null,
+    // Anthropic: Opus 4.6 thinking level (off, low, medium, high, max, adaptive)
+    opus46ThinkingLevel: effectiveOpus46Level,
     // OpenAI: Reasoning level (normalized for model)
     reasoningLevel: effectiveReasoningLevel,
     // Google Gemini: Thinking level

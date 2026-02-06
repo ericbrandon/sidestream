@@ -25,8 +25,10 @@ pub struct ChatRequestConfig {
 }
 
 /// Configuration for extended thinking
+/// Supports both Opus 4.5 (budget_tokens) and Opus 4.6 (adaptive + effort)
 pub struct ThinkingConfig {
-    pub budget_tokens: u32,
+    pub budget_tokens: Option<u32>,  // For Opus 4.5 (budget-based thinking)
+    pub opus46_level: Option<String>,  // For Opus 4.6: "off", "low", "medium", "high", "max", "adaptive"
 }
 
 /// Configuration for a discovery request
@@ -123,10 +125,27 @@ impl AnthropicClient {
 
         // Add extended thinking if enabled
         if let Some(thinking) = &config.extended_thinking {
-            body["thinking"] = serde_json::json!({
-                "type": "enabled",
-                "budget_tokens": thinking.budget_tokens
-            });
+            // Check if this is Opus 4.6 (adaptive thinking with effort levels)
+            if let Some(opus46_level) = &thinking.opus46_level {
+                if opus46_level != "off" {
+                    // Opus 4.6: Use adaptive thinking
+                    body["thinking"] = serde_json::json!({
+                        "type": "adaptive"
+                    });
+                    // Add effort level unless "adaptive" (let Claude decide)
+                    if opus46_level != "adaptive" {
+                        body["output_config"] = serde_json::json!({
+                            "effort": opus46_level
+                        });
+                    }
+                }
+            } else if let Some(budget_tokens) = thinking.budget_tokens {
+                // Opus 4.5: Use budget-based thinking
+                body["thinking"] = serde_json::json!({
+                    "type": "enabled",
+                    "budget_tokens": budget_tokens
+                });
+            }
         }
 
         // Build tools array based on enabled features
@@ -197,13 +216,26 @@ impl AnthropicClient {
 
         // Add extended thinking if enabled
         if config.extended_thinking_enabled.unwrap_or(false) {
-            let budget = config.thinking_budget.unwrap_or(10000);
-            body["thinking"] = serde_json::json!({
-                "type": "enabled",
-                "budget_tokens": budget
-            });
-            // Extended thinking requires higher max_tokens
-            body["max_tokens"] = serde_json::json!(16000);
+            // Check if this is Opus 4.6 model for discovery
+            if config.model.starts_with("claude-opus-4-6") {
+                // Opus 4.6: Use adaptive thinking with low effort for discovery
+                body["thinking"] = serde_json::json!({
+                    "type": "adaptive"
+                });
+                body["output_config"] = serde_json::json!({
+                    "effort": "low"
+                });
+                body["max_tokens"] = serde_json::json!(16000);
+            } else {
+                // Opus 4.5: Use budget-based thinking
+                let budget = config.thinking_budget.unwrap_or(10000);
+                body["thinking"] = serde_json::json!({
+                    "type": "enabled",
+                    "budget_tokens": budget
+                });
+                // Extended thinking requires higher max_tokens
+                body["max_tokens"] = serde_json::json!(16000);
+            }
         }
 
         body
@@ -466,10 +498,26 @@ pub fn add_cache_control_to_last_message(messages: &mut Vec<serde_json::Value>) 
     }
 }
 
-/// Calculate max_tokens based on extended thinking settings
-/// Base output is 8192 tokens, plus thinking budget if extended thinking is enabled
-pub fn calculate_max_tokens(extended_thinking_enabled: bool, thinking_budget: Option<u32>) -> u32 {
-    if extended_thinking_enabled {
+/// Calculate max_tokens based on model and extended thinking settings
+/// Opus 4.6: Base 16384 tokens (can go up to 128K)
+/// Opus 4.5: Base 8192 tokens, plus thinking budget if extended thinking is enabled
+pub fn calculate_max_tokens(
+    model: &str,
+    extended_thinking_enabled: bool,
+    thinking_budget: Option<u32>,
+    opus46_level: Option<&str>,
+) -> u32 {
+    // Opus 4.6 has higher base tokens and doesn't use budget
+    if model.starts_with("claude-opus-4-6") {
+        let level = opus46_level.unwrap_or("off");
+        if level != "off" {
+            // With thinking enabled, use higher max_tokens
+            16384
+        } else {
+            8192
+        }
+    } else if extended_thinking_enabled {
+        // Opus 4.5: base + budget
         8192 + thinking_budget.unwrap_or(10000)
     } else {
         8192

@@ -377,6 +377,7 @@ export function getAllDiscoveryModes(): DiscoveryModeConfig[] {
 
 // Model IDs for auto-selection
 const MODEL_IDS = {
+  opus46: 'claude-opus-4-6',
   opus45: 'claude-opus-4-5-20251101',
   gemini3Pro: 'gemini-3-pro-preview',
   gemini25Pro: 'gemini-2.5-pro',
@@ -387,6 +388,7 @@ const MODEL_IDS = {
 // Thinking configuration types for auto-selection
 interface ThinkingConfig {
   anthropicExtended?: boolean;
+  anthropicOpus46Level?: 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
   openaiReasoning?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   geminiThinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'on';
 }
@@ -401,32 +403,32 @@ interface ModelChoice {
 // Each mode has a prioritized list of model choices with their thinking configurations
 const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoice[]> = {
   'useful-informative': [
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'low' } },
   ],
   'obscure-interesting': [
     { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'low' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'low' } },
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
   ],
   'amusing-entertaining': [
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'medium' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
   ],
   'lateral-thinking': [
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt51, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
   'skeptical-critical': [
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'high' } },
     { model: MODEL_IDS.gemini25Pro, provider: 'google', thinking: { geminiThinking: 'on' } },
   ],
   'fact-checker': [
-    { model: MODEL_IDS.opus45, provider: 'anthropic', thinking: { anthropicExtended: true } },
+    { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt51, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
@@ -435,6 +437,7 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
 export interface AutoSelectedModel {
   model: string;
   extendedThinkingEnabled: boolean;
+  opus46ThinkingLevel: 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
   reasoningLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   geminiThinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'on';
 }
@@ -458,9 +461,15 @@ export function getBestModelForMode(
   // Find the first choice where the provider is configured
   for (const choice of priorities) {
     if (configuredProviders[choice.provider]) {
+      // For Anthropic models, determine if extended thinking is enabled based on opus46 level
+      const isAnthropicThinkingEnabled = choice.thinking.anthropicOpus46Level
+        ? choice.thinking.anthropicOpus46Level !== 'off'
+        : (choice.thinking.anthropicExtended ?? false);
+
       return {
         model: choice.model,
-        extendedThinkingEnabled: choice.thinking.anthropicExtended ?? false,
+        extendedThinkingEnabled: isAnthropicThinkingEnabled,
+        opus46ThinkingLevel: choice.thinking.anthropicOpus46Level ?? 'low',
         reasoningLevel: choice.thinking.openaiReasoning ?? 'low',
         geminiThinkingLevel: choice.thinking.geminiThinking ?? 'low',
       };

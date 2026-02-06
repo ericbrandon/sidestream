@@ -69,10 +69,17 @@ export interface DiscoveryItem {
   modeId?: import('./discoveryModes').DiscoveryModeId; // Which mode generated this chip (optional for backward compat)
 }
 
+// Opus 4.6 thinking levels (combines adaptive thinking + effort)
+// - off: no thinking
+// - low/medium/high/max: adaptive thinking with explicit effort level
+// - adaptive: adaptive thinking where Claude decides effort level
+export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
+
 // Extended thinking configuration (for Anthropic Claude models)
 export interface ExtendedThinkingConfig {
   enabled: boolean;
-  budgetTokens: number; // 1024-32000
+  budgetTokens: number; // 1024-32000 (for Opus 4.5)
+  opus46Level: Opus46ThinkingLevel; // For Opus 4.6
 }
 
 // Reasoning level options for OpenAI models
@@ -236,10 +243,12 @@ export interface ChatSessionSettings {
   // Frontier/chat model thinking settings (optional for backward compatibility)
   frontierReasoningLevel?: OpenAIReasoningLevel;
   frontierGeminiThinkingLevel?: GeminiThinkingLevel;
+  frontierOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.6
   // Evaluator/discovery pane thinking settings (optional for backward compatibility)
   evaluatorExtendedThinkingEnabled?: boolean;
   evaluatorReasoningLevel?: OpenAIReasoningLevel;
   evaluatorGeminiThinkingLevel?: GeminiThinkingLevel;
+  evaluatorOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.6
   // Claude code execution container ID (persists sandbox state across requests)
   anthropicContainerId?: string;
   // OpenAI code interpreter container ID (persists file access across requests)
