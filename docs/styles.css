@@ -1160,8 +1160,10 @@ footer p {
 
 /* Responsive - Tablet */
 @media (min-width: 769px) and (max-width: 1024px) {
+  .carousel-with-reaction {
+    align-items: center !important;
+  }
   .carousel-reaction {
-    margin-top: 120px;
     margin-left: 1rem;
   }
 }
