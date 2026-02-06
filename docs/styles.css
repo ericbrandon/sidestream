@@ -1158,7 +1158,15 @@ footer p {
   right: 2rem;
 }
 
-/* Responsive */
+/* Responsive - Tablet */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .carousel-reaction {
+    margin-top: 20%;
+    margin-left: 1rem;
+  }
+}
+
+/* Responsive - Mobile */
 @media (max-width: 768px) {
   nav {
     padding: 0.75rem 1rem;
