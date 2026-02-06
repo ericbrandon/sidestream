@@ -258,6 +258,122 @@ main {
   transform: translateZ(0);
 }
 
+/* Screenshot Composite */
+.screenshot-composite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.composite-img {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+.composite-img-1st {
+  cursor: zoom-in;
+}
+
+.composite-img-2nd {
+  width: 65%;
+}
+
+.composite-arrow {
+  width: 90%;
+  height: auto;
+  margin: 0.5rem 0;
+  align-self: center;
+}
+
+/* Mini Carousel (2nd screenshot) */
+.mini-carousel {
+  position: relative;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+.mini-carousel-container {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.mini-carousel-slides {
+  display: flex;
+  transition: transform 0.4s ease-in-out;
+}
+
+.mini-carousel-img {
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.mini-carousel-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--color-primary);
+  color: var(--color-bg-dark);
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  line-height: 1;
+  padding: 0;
+  text-indent: -1px;
+}
+
+.mini-carousel-btn:hover {
+  background: var(--color-primary-hover);
+  color: var(--color-bg-dark);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.mini-prev { left: -3rem; }
+.mini-next { right: -3rem; }
+
+.mini-carousel-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.mini-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.mini-dot:hover {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mini-dot.active {
+  background: var(--color-primary);
+  transform: scale(1.2);
+}
+
 /* API Key Callout */
 .api-key-callout {
   text-align: center;

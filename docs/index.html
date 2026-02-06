@@ -11,71 +11,6 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <script>
-    const screenshots = ['screenshot.png', 'screenshot_1.png', 'screenshot_2.png'];
-    let currentSlide = 0;
-
-    function showSlide(index) {
-      currentSlide = (index + screenshots.length) % screenshots.length;
-      const carousel = document.querySelector('.carousel-slides');
-      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
-      updateDots();
-    }
-
-    function nextSlide() {
-      showSlide(currentSlide + 1);
-    }
-
-    function prevSlide() {
-      showSlide(currentSlide - 1);
-    }
-
-    function updateDots() {
-      document.querySelectorAll('.carousel-dot').forEach((dot, i) => {
-        dot.classList.toggle('active', i === currentSlide);
-      });
-    }
-
-    function openLightbox() {
-      document.getElementById('lightbox').classList.add('active');
-      document.getElementById('lightbox-img').src = screenshots[currentSlide];
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeLightbox() {
-      document.getElementById('lightbox').classList.remove('active');
-      document.body.style.overflow = '';
-    }
-
-    function lightboxPrev(e) {
-      e.stopPropagation();
-      currentSlide = (currentSlide - 1 + screenshots.length) % screenshots.length;
-      document.getElementById('lightbox-img').src = screenshots[currentSlide];
-      updateDots();
-      const carousel = document.querySelector('.carousel-slides');
-      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
-    }
-
-    function lightboxNext(e) {
-      e.stopPropagation();
-      currentSlide = (currentSlide + 1) % screenshots.length;
-      document.getElementById('lightbox-img').src = screenshots[currentSlide];
-      updateDots();
-      const carousel = document.querySelector('.carousel-slides');
-      carousel.style.transform = `translateX(-${currentSlide * 100}%)`;
-    }
-
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeLightbox();
-      if (document.getElementById('lightbox').classList.contains('active')) {
-        if (e.key === 'ArrowLeft') lightboxPrev(e);
-        if (e.key === 'ArrowRight') lightboxNext(e);
-      } else {
-        if (e.key === 'ArrowLeft') prevSlide();
-        if (e.key === 'ArrowRight') nextSlide();
-      }
-    });
-  </script>
   <header>
     <nav>
       <div class="logo">
@@ -96,7 +31,7 @@
       <h1>Sidestream</h1>
       <p class="subtitle">A chat app with a side of insights</p>
       <p class="tagline">
-        A free, open-source, cross-platform, cross-model, AI chat app that adds useful, interesting, amusing, and critical information you wouldn't have known about otherwise.
+        A uniquely powerful AI chat app that adds useful, interesting, amusing, and critical information you won't find in any other app.
       </p>
       <div class="cta-buttons">
         <a href="download.html" class="btn btn-primary">Download</a>
@@ -104,29 +39,56 @@
     </section>
 
     <section class="app-preview">
-      <div class="carousel">
-        <button class="carousel-btn carousel-prev" onclick="prevSlide()" aria-label="Previous screenshot">&#8249;</button>
-        <div class="carousel-container" onclick="openLightbox()">
-          <div class="carousel-slides">
-            <img src="screenshot.png" width="1512" height="1012" alt="Sidestream app screenshot 1" class="app-screenshot">
-            <img src="screenshot_1.png" width="1512" height="1012" alt="Sidestream app screenshot 2" class="app-screenshot">
-            <img src="screenshot_2.png" width="1512" height="1012" alt="Sidestream app screenshot 3" class="app-screenshot">
+      <div class="screenshot-composite">
+        <img src="sidestream_screenshot_1st.png" alt="Sidestream app - chat view" class="composite-img composite-img-1st" onclick="document.getElementById('lightbox').classList.add('active'); document.body.style.overflow='hidden'">
+        <svg class="composite-arrow" viewBox="0 0 800 110" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 550 8 C 540 55, 440 80, 400 98" stroke="#ef4444" stroke-width="5" fill="none" stroke-linecap="round" />
+          <path d="M 422 80 L 400 98 L 425 96" stroke="#ef4444" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          <text x="680" y="55" text-anchor="middle" fill="#ef4444" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="600">The Discoveries Sidebar</text>
+        </svg>
+        <div class="mini-carousel composite-img-2nd">
+          <div class="mini-carousel-container">
+            <div class="mini-carousel-slides">
+              <img src="sidestream_screenshot_2a.png" alt="Discoveries - example 1" class="mini-carousel-img">
+              <img src="sidestream_screenshot_2b.png" alt="Discoveries - example 2" class="mini-carousel-img">
+              <img src="sidestream_screenshot_2c.png" alt="Discoveries - example 3" class="mini-carousel-img">
+              <img src="sidestream_screenshot_2d.png" alt="Discoveries - example 4" class="mini-carousel-img">
+              <img src="sidestream_screenshot_2e.png" alt="Discoveries - example 5" class="mini-carousel-img">
+              <img src="sidestream_screenshot_2f.png" alt="Discoveries - example 6" class="mini-carousel-img">
+            </div>
           </div>
+          <button class="mini-carousel-btn mini-prev" onclick="miniPrev()" aria-label="Previous">&#8249;</button>
+          <button class="mini-carousel-btn mini-next" onclick="miniNext()" aria-label="Next">&#8250;</button>
+          <div class="mini-carousel-dots"></div>
         </div>
-        <button class="carousel-btn carousel-next" onclick="nextSlide()" aria-label="Next screenshot">&#8250;</button>
-      </div>
-      <div class="carousel-dots">
-        <button class="carousel-dot active" onclick="showSlide(0)" aria-label="Go to screenshot 1"></button>
-        <button class="carousel-dot" onclick="showSlide(1)" aria-label="Go to screenshot 2"></button>
-        <button class="carousel-dot" onclick="showSlide(2)" aria-label="Go to screenshot 3"></button>
       </div>
     </section>
 
-    <div id="lightbox" class="lightbox" onclick="closeLightbox()">
-      <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close">&larr; Back</button>
-      <button class="lightbox-nav lightbox-prev" onclick="lightboxPrev(event)" aria-label="Previous">&#8249;</button>
-      <img id="lightbox-img" src="screenshot.png" alt="Sidestream app screenshot">
-      <button class="lightbox-nav lightbox-next" onclick="lightboxNext(event)" aria-label="Next">&#8250;</button>
+    <script>
+      const miniSlides = document.querySelectorAll('.mini-carousel-img');
+      const miniTrack = document.querySelector('.mini-carousel-slides');
+      const miniDotsContainer = document.querySelector('.mini-carousel-dots');
+      let miniCurrent = 0;
+
+      miniSlides.forEach((_, i) => {
+        const dot = document.createElement('button');
+        dot.className = 'mini-dot' + (i === 0 ? ' active' : '');
+        dot.onclick = () => miniGo(i);
+        miniDotsContainer.appendChild(dot);
+      });
+
+      function miniGo(i) {
+        miniCurrent = ((i % miniSlides.length) + miniSlides.length) % miniSlides.length;
+        miniTrack.style.transform = 'translateX(-' + (miniCurrent * 100) + '%)';
+        document.querySelectorAll('.mini-dot').forEach((d, j) => d.classList.toggle('active', j === miniCurrent));
+      }
+      function miniNext() { miniGo(miniCurrent + 1); }
+      function miniPrev() { miniGo(miniCurrent - 1); }
+    </script>
+
+    <div id="lightbox" class="lightbox" onclick="this.classList.remove('active'); document.body.style.overflow=''">
+      <button class="lightbox-close" onclick="document.getElementById('lightbox').classList.remove('active'); document.body.style.overflow=''" aria-label="Close">&larr; Back</button>
+      <img src="sidestream_screenshot_1st.png" alt="Sidestream app screenshot">
     </div>
 
     <section class="why-different">
@@ -200,19 +162,19 @@
           <div class="feature-item">
             <span class="feature-number">07</span>
             <div class="feature-content">
-              <strong>Searchable chat history</strong>
+              <strong>Export any chat to easily shareable HTML files</strong>
             </div>
           </div>
           <div class="feature-item">
             <span class="feature-number">08</span>
             <div class="feature-content">
-              <strong>Export any chat to easily shareable HTML files</strong>
+              <strong>Completely free & open source</strong>
             </div>
           </div>
           <div class="feature-item">
             <span class="feature-number">09</span>
             <div class="feature-content">
-              <strong>Light and Dark modes</strong>
+              <strong>Mac, Windows, and Linux versions</strong>
             </div>
           </div>
         </div>
