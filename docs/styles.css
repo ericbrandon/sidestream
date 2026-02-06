@@ -1158,14 +1158,6 @@ footer p {
   right: 2rem;
 }
 
-/* Responsive - Tablet (includes iPad mini at 768px) */
-@media (min-width: 481px) and (max-width: 1024px) {
-  .carousel-reaction {
-    margin-top: 15%;
-    margin-left: 1rem;
-  }
-}
-
 /* Responsive - Mobile */
 @media (max-width: 768px) {
   nav {
@@ -1266,5 +1258,13 @@ footer p {
   .matrix-download {
     padding: 0.4rem 0.6rem;
     font-size: 0.75rem;
+  }
+}
+
+/* Responsive - Tablet (after mobile so it overrides for iPads) */
+@media (min-width: 481px) and (max-width: 1024px) {
+  .carousel-reaction {
+    margin-top: 15%;
+    margin-left: 1rem;
   }
 }
