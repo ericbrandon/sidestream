@@ -534,7 +534,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
               <>
                 <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
                   <ReactMarkdown
-                    remarkPlugins={[remarkGfm, remarkMath]}
+                    remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                     rehypePlugins={[rehypeKatex]}
                     components={markdownComponents}
                   >
@@ -545,7 +545,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                 {afterExec && (
                   <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable mt-4">
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm, remarkMath]}
+                      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                       rehypePlugins={[rehypeKatex]}
                       components={markdownComponents}
                     >
@@ -564,7 +564,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
             <>
               <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
+                  remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeKatex]}
                   components={markdownComponents}
                 >

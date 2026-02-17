@@ -293,7 +293,7 @@ const CachedMarkdown = memo(function CachedMarkdown({
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
+      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
       rehypePlugins={[rehypeKatex]}
       components={markdownComponents}
     >

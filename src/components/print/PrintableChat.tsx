@@ -181,7 +181,7 @@ function PrintableMessage({ message, showCitations }: { message: Message; showCi
   return (
     <>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >
