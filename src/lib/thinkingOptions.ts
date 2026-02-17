@@ -1,5 +1,5 @@
 import type { OpenAIReasoningLevel, GeminiThinkingLevel, Opus46ThinkingLevel } from './types';
-import { isOpus46, supportsExtendedThinking } from './models';
+import { usesAdaptiveThinking, supportsExtendedThinking } from './models';
 
 export interface ThinkingOption<T> {
   value: T;
@@ -119,10 +119,10 @@ export function getOpenAIReasoningLetter(level: OpenAIReasoningLevel, model: str
 }
 
 // =============================================================================
-// Anthropic Claude Thinking Options (Opus 4.6 vs Opus 4.5)
+// Anthropic Claude Thinking Options (Opus 4.6 / Sonnet 4.6 vs Opus 4.5)
 // =============================================================================
 
-// Thinking options for Opus 4.6 (adaptive thinking + effort levels)
+// Thinking options for Opus 4.6 and Sonnet 4.6 (adaptive thinking + effort levels)
 export const OPUS_46_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] = [
   { value: 'off', label: 'Off', letter: '' },
   { value: 'low', label: 'Low', letter: 'L' },
@@ -142,12 +142,12 @@ export const OPUS_45_THINKING_OPTIONS: ThinkingOption<'off' | 'high'>[] = [
 // Get thinking options based on Anthropic model
 export function getAnthropicThinkingOptions(model: string): ThinkingOption<Opus46ThinkingLevel | 'off' | 'high'>[] {
   if (!supportsExtendedThinking(model)) {
-    return []; // Non-Opus models don't support extended thinking
+    return []; // Models without thinking support
   }
-  if (isOpus46(model)) {
+  if (usesAdaptiveThinking(model)) {
     return OPUS_46_THINKING_OPTIONS;
   }
-  // Opus 4.5 and other Opus models
+  // Opus 4.5 and other models with budget-based thinking
   return OPUS_45_THINKING_OPTIONS;
 }
 

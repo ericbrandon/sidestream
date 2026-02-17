@@ -25,10 +25,10 @@ pub struct ChatRequestConfig {
 }
 
 /// Configuration for extended thinking
-/// Supports both Opus 4.5 (budget_tokens) and Opus 4.6 (adaptive + effort)
+/// Supports both Opus 4.5 (budget_tokens) and Opus 4.6 / Sonnet 4.6 (adaptive + effort)
 pub struct ThinkingConfig {
     pub budget_tokens: Option<u32>,  // For Opus 4.5 (budget-based thinking)
-    pub opus46_level: Option<String>,  // For Opus 4.6: "off", "low", "medium", "high", "max", "adaptive"
+    pub opus46_level: Option<String>,  // For Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "max", "adaptive"
 }
 
 /// Configuration for a discovery request
@@ -125,10 +125,10 @@ impl AnthropicClient {
 
         // Add extended thinking if enabled
         if let Some(thinking) = &config.extended_thinking {
-            // Check if this is Opus 4.6 (adaptive thinking with effort levels)
+            // Check if this uses adaptive thinking (Opus 4.6, Sonnet 4.6)
             if let Some(opus46_level) = &thinking.opus46_level {
                 if opus46_level != "off" {
-                    // Opus 4.6: Use adaptive thinking
+                    // Adaptive thinking (Opus 4.6 / Sonnet 4.6)
                     body["thinking"] = serde_json::json!({
                         "type": "adaptive"
                     });
@@ -216,9 +216,9 @@ impl AnthropicClient {
 
         // Add extended thinking if enabled
         if config.extended_thinking_enabled.unwrap_or(false) {
-            // Check if this is Opus 4.6 model for discovery
-            if config.model.starts_with("claude-opus-4-6") {
-                // Opus 4.6: Use adaptive thinking with low effort for discovery
+            // Check if this model uses adaptive thinking for discovery
+            if config.model.starts_with("claude-opus-4-6") || config.model.starts_with("claude-sonnet-4-6") {
+                // Adaptive thinking (Opus 4.6 / Sonnet 4.6): Use with low effort for discovery
                 body["thinking"] = serde_json::json!({
                     "type": "adaptive"
                 });
@@ -499,7 +499,7 @@ pub fn add_cache_control_to_last_message(messages: &mut Vec<serde_json::Value>) 
 }
 
 /// Calculate max_tokens based on model and extended thinking settings
-/// Opus 4.6: Base 16384 tokens (can go up to 128K)
+/// Opus 4.6 / Sonnet 4.6: Base 16384 tokens (can go up to 128K)
 /// Opus 4.5: Base 8192 tokens, plus thinking budget if extended thinking is enabled
 pub fn calculate_max_tokens(
     model: &str,
@@ -507,8 +507,8 @@ pub fn calculate_max_tokens(
     thinking_budget: Option<u32>,
     opus46_level: Option<&str>,
 ) -> u32 {
-    // Opus 4.6 has higher base tokens and doesn't use budget
-    if model.starts_with("claude-opus-4-6") {
+    // Adaptive thinking models have higher base tokens and don't use budget
+    if model.starts_with("claude-opus-4-6") || model.starts_with("claude-sonnet-4-6") {
         let level = opus46_level.unwrap_or("off");
         if level != "off" {
             // With thinking enabled, use higher max_tokens

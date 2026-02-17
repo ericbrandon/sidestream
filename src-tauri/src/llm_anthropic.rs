@@ -23,7 +23,7 @@ pub async fn send_chat_message_anthropic(
     system_prompt: Option<String>,
     extended_thinking_enabled: bool,
     thinking_budget: Option<u32>,
-    opus46_thinking_level: Option<String>,  // For Opus 4.6: "off", "low", "medium", "high", "max", "adaptive"
+    opus46_thinking_level: Option<String>,  // For Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "max", "adaptive"
     web_search_enabled: bool,
     code_execution_enabled: bool,
     turn_id: String,
@@ -46,12 +46,12 @@ pub async fn send_chat_message_anthropic(
 
     // Build request using provider
     // Determine if thinking is enabled based on model and parameters
-    let is_opus46 = model.starts_with("claude-opus-4-6");
-    let thinking_enabled = if is_opus46 {
-        // Opus 4.6: check opus46_thinking_level
+    let uses_adaptive = model.starts_with("claude-opus-4-6") || model.starts_with("claude-sonnet-4-6");
+    let thinking_enabled = if uses_adaptive {
+        // Adaptive thinking (Opus 4.6 / Sonnet 4.6): check opus46_thinking_level
         opus46_thinking_level.as_ref().map(|l| l != "off").unwrap_or(false)
     } else {
-        // Opus 4.5: check extended_thinking_enabled
+        // Budget-based thinking (Opus 4.5): check extended_thinking_enabled
         extended_thinking_enabled
     };
 
@@ -69,8 +69,8 @@ pub async fn send_chat_message_anthropic(
         max_tokens,
         extended_thinking: if thinking_enabled {
             Some(ThinkingConfig {
-                budget_tokens: if is_opus46 { None } else { thinking_budget },
-                opus46_level: if is_opus46 { opus46_thinking_level.clone() } else { None },
+                budget_tokens: if uses_adaptive { None } else { thinking_budget },
+                opus46_level: if uses_adaptive { opus46_thinking_level.clone() } else { None },
             })
         } else {
             None

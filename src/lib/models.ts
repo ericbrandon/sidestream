@@ -4,7 +4,7 @@ export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
   { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
   { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', provider: 'anthropic' },
-  { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'anthropic' },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
   // OpenAI Models
@@ -55,9 +55,19 @@ export function isOpus45(modelId: string): boolean {
   return modelId === 'claude-opus-4-5-20251101';
 }
 
-// Check if a model supports extended thinking (Opus models)
+// Check if a model is Sonnet 4.6 (supports adaptive thinking + effort, same as Opus 4.6)
+export function isSonnet46(modelId: string): boolean {
+  return modelId === 'claude-sonnet-4-6';
+}
+
+// Check if a model uses adaptive thinking (Opus 4.6 and Sonnet 4.6)
+export function usesAdaptiveThinking(modelId: string): boolean {
+  return isOpus46(modelId) || isSonnet46(modelId);
+}
+
+// Check if a model supports extended thinking (Opus models and Sonnet 4.6)
 export function supportsExtendedThinking(modelId: string): boolean {
-  return modelId.includes('opus');
+  return modelId.includes('opus') || modelId === 'claude-sonnet-4-6';
 }
 
 // Get default evaluator model for a provider (discovery pane uses lighter/faster models)

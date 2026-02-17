@@ -9,7 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useDiscovery } from '../../hooks/useDiscovery';
 import { getAllDiscoveryModes, getDiscoveryMode, getBestModelForMode } from '../../lib/discoveryModes';
-import { getProviderFromModelId } from '../../lib/models';
+import { getProviderFromModelId, usesAdaptiveThinking } from '../../lib/models';
 import {
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
@@ -83,6 +83,7 @@ export function DiscoveryContainer() {
           extendedThinking: {
             ...evaluatorLLM.extendedThinking,
             enabled: bestModel.extendedThinkingEnabled,
+            opus46Level: bestModel.opus46ThinkingLevel,
           },
           reasoningLevel: bestModel.reasoningLevel,
           geminiThinkingLevel: bestModel.geminiThinkingLevel,
@@ -298,8 +299,57 @@ export function DiscoveryContainer() {
               </>
             )}
           </div>
+        ) : usesAdaptiveThinking(evaluatorLLM.model) ? (
+          /* Anthropic Opus 4.6 / Sonnet 4.6: Adaptive Thinking Toggle (off / adaptive) */
+          <Tooltip
+            content={
+              evaluatorLLM.extendedThinking.opus46Level !== 'off'
+                ? 'Thinking: Auto'
+                : 'Enable thinking'
+            }
+          >
+            <button
+              onClick={() => {
+                const isCurrentlyOn = evaluatorLLM.extendedThinking.opus46Level !== 'off';
+                const newLevel = isCurrentlyOn ? 'off' : 'adaptive';
+                setEvaluatorLLM({
+                  extendedThinking: {
+                    ...evaluatorLLM.extendedThinking,
+                    opus46Level: newLevel,
+                    enabled: !isCurrentlyOn,
+                  },
+                });
+              }}
+              className={`
+                p-1.5 rounded transition-colors flex items-center gap-0.5
+                ${
+                  evaluatorLLM.extendedThinking.opus46Level !== 'off'
+                    ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
+                    : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
+                }
+              `}
+              aria-label="Toggle adaptive thinking"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span className="text-xs font-medium">
+                {evaluatorLLM.extendedThinking.opus46Level !== 'off' ? 'A' : ''}
+              </span>
+            </button>
+          </Tooltip>
         ) : (
-          /* Anthropic: Extended Thinking Toggle */
+          /* Anthropic Opus 4.5: Extended Thinking Toggle (on/off) */
           <Tooltip
             content={
               evaluatorLLM.extendedThinking.enabled
