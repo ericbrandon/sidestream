@@ -503,12 +503,26 @@ async fn discover_resources_gemini(
     system_prompt: String,
     gemini_thinking_level: Option<String>,
 ) -> Result<(), String> {
+    // TEMPORARY: Gemini 3.1 Pro Preview has a bug where google_search + structured JSON output
+    // returns broken/empty JSON. Swap to gemini-3-pro-preview for discovery until this is fixed.
+    let model = if model == "gemini-3.1-pro-preview" {
+        "gemini-3-pro-preview".to_string()
+    } else {
+        model
+    };
+
+    // // Uncomment for debugging Gemini discovery issues:
+    // eprintln!("[DISCOVERY-GEMINI] === Starting discovery for model: {} ===", model);
+    // eprintln!("[DISCOVERY-GEMINI] Thinking level param: {:?}", gemini_thinking_level);
+
     let api_key = get_api_key_async(app, "google").await?;
     let client = GeminiClient::new(api_key);
 
     // Build request using provider - use provided thinking level or default to "low"
     let thinking_level = gemini_thinking_level.as_deref().unwrap_or("low");
     let thinking_config = string_to_thinking_config(thinking_level, &model);
+    // eprintln!("[DISCOVERY-GEMINI] Resolved thinking level: {:?}, config is_some: {}", thinking_level, thinking_config.is_some());
+
     let config = GeminiDiscoveryRequestConfig {
         system_prompt,
         conversation,
@@ -516,12 +530,18 @@ async fn discover_resources_gemini(
     };
     let body = client.build_discovery_request(&config);
 
+    // // Uncomment to log full request body:
+    // let body_str = serde_json::to_string_pretty(&body).unwrap_or_default();
+    // eprintln!("[DISCOVERY-GEMINI] Full request body:\n{}", body_str);
+
     llm_logger::log_request("discovery", &model, &body);
 
+    // eprintln!("[DISCOVERY-GEMINI] Sending streaming request...");
     let response = client
         .send_streaming_request(&model, &body)
         .await
         .map_err(|e| {
+            // eprintln!("[DISCOVERY-GEMINI] *** HTTP ERROR: {} ***", e);
             llm_logger::log_error("discovery", &e);
             window
                 .emit(
@@ -535,18 +555,25 @@ async fn discover_resources_gemini(
             e
         })?;
 
+    // eprintln!("[DISCOVERY-GEMINI] Got streaming response, starting to read chunks...");
+
     // Stream the response
     let mut stream = response.bytes_stream();
     let mut sse_buffer = String::new();
     let mut full_response = String::new();
     let mut parse_state = JsonParseState::new();
     let mut accumulated_text = String::new();
+    // let mut chunk_count: u32 = 0;
+    // let mut sse_event_count: u32 = 0;
+    // let mut text_delta_count: u32 = 0;
+    // let mut items_found: u32 = 0;
 
     while let Some(chunk) = stream.next().await {
         let chunk = match chunk {
             Ok(c) => c,
             Err(e) => {
                 let error_msg = e.to_string();
+                // eprintln!("[DISCOVERY-GEMINI] *** STREAM CHUNK ERROR: {} ***", error_msg);
                 llm_logger::log_error("discovery", &error_msg);
                 if let Err(err) = window.emit(
                     "discovery-error",
@@ -561,8 +588,13 @@ async fn discover_resources_gemini(
             }
         };
 
+        // chunk_count += 1;
         let text = String::from_utf8_lossy(&chunk);
         sse_buffer.push_str(&text);
+
+        // if chunk_count <= 3 {
+        //     eprintln!("[DISCOVERY-GEMINI] Raw chunk #{} ({} bytes): {}", chunk_count, chunk.len(), &text[..text.len().min(300)]);
+        // }
 
         // Parse SSE events - Gemini uses single newline delimiters, not double
         while let Some(line_end) = sse_buffer.find('\n') {
@@ -570,10 +602,37 @@ async fn discover_resources_gemini(
             sse_buffer = sse_buffer[line_end + 1..].to_string();
 
             if let Some(data) = line.strip_prefix("data: ") {
+                // sse_event_count += 1;
+                // if sse_event_count <= 5 {
+                //     eprintln!("[DISCOVERY-GEMINI] SSE event #{} (first 300 chars): {}", sse_event_count, &data[..data.len().min(300)]);
+                // }
+
                 // parse_sse_event returns Vec since one SSE can have multiple parts
-                for event in gemini_parse_sse_event(data) {
+                let events = gemini_parse_sse_event(data);
+                // for event in &events {
+                //     match event {
+                //         GeminiStreamEvent::ResponseComplete => eprintln!("[DISCOVERY-GEMINI] Event: ResponseComplete"),
+                //         GeminiStreamEvent::TextDelta { text } => eprintln!("[DISCOVERY-GEMINI] Event: TextDelta ({} chars)", text.len()),
+                //         GeminiStreamEvent::ThinkingDelta { text } => eprintln!("[DISCOVERY-GEMINI] Event: ThinkingDelta ({} chars)", text.len()),
+                //         GeminiStreamEvent::Error { message } => eprintln!("[DISCOVERY-GEMINI] Event: Error({})", message),
+                //         GeminiStreamEvent::GroundingMetadata { .. } => eprintln!("[DISCOVERY-GEMINI] Event: GroundingMetadata"),
+                //         GeminiStreamEvent::ExecutableCode { .. } => eprintln!("[DISCOVERY-GEMINI] Event: ExecutableCode"),
+                //         GeminiStreamEvent::CodeExecutionResult { .. } => eprintln!("[DISCOVERY-GEMINI] Event: CodeExecutionResult"),
+                //         GeminiStreamEvent::InlineData { .. } => eprintln!("[DISCOVERY-GEMINI] Event: InlineData"),
+                //         GeminiStreamEvent::Unknown => eprintln!("[DISCOVERY-GEMINI] Event: Unknown"),
+                //     }
+                // }
+
+                for event in events {
                 match event {
                     GeminiStreamEvent::ResponseComplete => {
+                        // eprintln!("[DISCOVERY-GEMINI] === COMPLETE === chunks:{}, sse_events:{}, text_deltas:{}, items:{}", chunk_count, sse_event_count, text_delta_count, items_found);
+                        // eprintln!("[DISCOVERY-GEMINI] Full response length: {} chars", full_response.len());
+                        // if full_response.len() <= 1000 {
+                        //     eprintln!("[DISCOVERY-GEMINI] Full response:\n{}", full_response);
+                        // } else {
+                        //     eprintln!("[DISCOVERY-GEMINI] Full response (first 500 + last 500):\n{}...\n...{}", &full_response[..500], &full_response[full_response.len()-500..]);
+                        // }
                         llm_logger::log_response_complete("discovery", &full_response);
                         if let Err(err) = window.emit(
                             "discovery-done",
@@ -586,6 +645,7 @@ async fn discover_resources_gemini(
                         return Ok(());
                     }
                     GeminiStreamEvent::TextDelta { text: delta_text } => {
+                        // text_delta_count += 1;
                         // Gemini sends complete text in each chunk, need to diff
                         let new_text = if delta_text.starts_with(&accumulated_text) {
                             delta_text[accumulated_text.len()..].to_string()
@@ -602,6 +662,11 @@ async fn discover_resources_gemini(
                             // Extract complete items from the delta
                             let items = extract_items_from_buffer(&new_text, &mut parse_state);
 
+                            // if !items.is_empty() {
+                            //     items_found += items.len() as u32;
+                            //     eprintln!("[DISCOVERY-GEMINI] Extracted {} items (total: {})", items.len(), items_found);
+                            // }
+
                             for item in items {
                                 if let Err(err) = window.emit(
                                     "discovery-item",
@@ -616,6 +681,7 @@ async fn discover_resources_gemini(
                         }
                     }
                     GeminiStreamEvent::Error { message } => {
+                        // eprintln!("[DISCOVERY-GEMINI] *** STREAM ERROR EVENT: {} ***", message);
                         llm_logger::log_error("discovery", &message);
                         if let Err(err) = window.emit(
                             "discovery-error",
@@ -634,6 +700,15 @@ async fn discover_resources_gemini(
             }
         }
     }
+
+    // eprintln!("[DISCOVERY-GEMINI] === STREAM ENDED (no ResponseComplete) === chunks:{}, sse_events:{}, text_deltas:{}, items:{}", chunk_count, sse_event_count, text_delta_count, items_found);
+    // eprintln!("[DISCOVERY-GEMINI] Full response length: {} chars", full_response.len());
+    // if !full_response.is_empty() && full_response.len() <= 1000 {
+    //     eprintln!("[DISCOVERY-GEMINI] Full response:\n{}", full_response);
+    // }
+    // if !sse_buffer.is_empty() {
+    //     eprintln!("[DISCOVERY-GEMINI] Remaining SSE buffer ({} chars): {}", sse_buffer.len(), &sse_buffer[..sse_buffer.len().min(300)]);
+    // }
 
     llm_logger::log_response_complete("discovery", &full_response);
     if let Err(err) = window.emit(
