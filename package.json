@@ -1,7 +1,7 @@
 {
   "name": "sidestream",
   "private": false,
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "description": "A cross-platform AI chat client",
   "author": "Eric Brandon",
