@@ -19,18 +19,18 @@ pub struct ChatRequestConfig {
 
 /// Configuration for thinking/reasoning
 /// Gemini 2.5 uses thinkingBudget (0-32768 tokens)
-/// Gemini 3 uses thinkingLevel ("LOW" or "HIGH" for Pro; "minimal"/"low"/"medium"/"high" for Flash)
+/// Gemini 3.x uses thinkingLevel ("LOW" or "HIGH" for Pro; "minimal"/"low"/"medium"/"high" for Flash)
 #[derive(Clone)]
 pub enum ThinkingConfig {
     Budget(u32),          // For Gemini 2.5 models
-    Level(ThinkingLevel), // For Gemini 3 models
+    Level(ThinkingLevel), // For Gemini 3.x models
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum ThinkingLevel {
-    Minimal, // Gemini 3 Flash only
+    Minimal, // Gemini 3.x Flash only
     Low,
-    Medium, // Gemini 3 Flash only
+    Medium, // Gemini 3.x Flash only
     High,
 }
 
@@ -234,7 +234,7 @@ impl GeminiClient {
         }
 
         // Add thinking configuration if enabled
-        // Both Gemini 2.5 and 3 use nested thinkingConfig structure
+        // Both Gemini 2.5 and 3.x use nested thinkingConfig structure
         // Include includeThoughts: true to receive thinking summaries in the response
         if let Some(thinking) = &config.thinking_config {
             let thinking_config = match thinking {
@@ -245,7 +245,7 @@ impl GeminiClient {
                         "includeThoughts": true
                     })
                 }
-                // Gemini 3: uses thinkingLevel ("LOW", "HIGH", etc.)
+                // Gemini 3.x: uses thinkingLevel ("LOW", "HIGH", etc.)
                 ThinkingConfig::Level(level) => {
                     serde_json::json!({
                         "thinkingLevel": level.as_str(),
@@ -295,7 +295,7 @@ impl GeminiClient {
         });
 
         // Add thinking configuration if enabled
-        // Both Gemini 2.5 and 3 use nested thinkingConfig structure
+        // Both Gemini 2.5 and 3.x use nested thinkingConfig structure
         // Note: We don't include thinking summaries for discovery since it's internal
         if let Some(thinking) = &config.thinking_config {
             let thinking_config = match thinking {
@@ -303,7 +303,7 @@ impl GeminiClient {
                 ThinkingConfig::Budget(budget) => {
                     serde_json::json!({"thinkingBudget": budget})
                 }
-                // Gemini 3: uses thinkingLevel ("LOW", "HIGH", etc.)
+                // Gemini 3.x: uses thinkingLevel ("LOW", "HIGH", etc.)
                 ThinkingConfig::Level(level) => {
                     serde_json::json!({"thinkingLevel": level.as_str()})
                 }
@@ -799,7 +799,7 @@ fn byte_offset_to_char_offset(text: &str, byte_offset: usize) -> usize {
 }
 
 /// Convert a thinking level string from the frontend to ThinkingConfig
-/// Frontend sends: "off", "on" (Gemini 2.5), "minimal", "low", "medium", "high" (Gemini 3)
+/// Frontend sends: "off", "on" (Gemini 2.5), "minimal", "low", "medium", "high" (Gemini 3.x)
 pub fn string_to_thinking_config(level: &str, model: &str) -> Option<ThinkingConfig> {
     match level.to_lowercase().as_str() {
         "off" | "none" => None,
@@ -836,18 +836,18 @@ pub fn string_to_thinking_config(level: &str, model: &str) -> Option<ThinkingCon
     }
 }
 
-/// Check if model is a Gemini 3 model (uses thinkingLevel)
+/// Check if model is a Gemini 3.x model (uses thinkingLevel)
 pub fn is_gemini_3_model(model: &str) -> bool {
     model.contains("gemini-3") || model.contains("gemini3")
 }
 
-/// Check if model is Gemini 3 Flash (supports all thinking levels)
+/// Check if model is Gemini 3.x Flash (supports all thinking levels)
 pub fn is_gemini_3_flash_model(model: &str) -> bool {
     (model.contains("gemini-3") || model.contains("gemini3")) && model.contains("flash")
 }
 
 /// Check if model supports thinking/reasoning
 pub fn supports_thinking(model: &str) -> bool {
-    // Gemini 2.5+ and Gemini 3 support thinking
+    // Gemini 2.5+ and Gemini 3.x support thinking
     model.contains("2.5") || model.contains("gemini-3") || model.contains("gemini3")
 }

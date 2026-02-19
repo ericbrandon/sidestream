@@ -22,7 +22,7 @@ export const GPT5_PRO_REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] 
   { value: 'high', label: 'High', letter: 'H' },
 ];
 
-// Thinking level options for Gemini 3 Pro (only LOW and HIGH - thinking cannot be disabled)
+// Thinking level options for Gemini 3.1 Pro (only LOW and HIGH - thinking cannot be disabled)
 export const GEMINI_3_PRO_OPTIONS: ThinkingOption<GeminiThinkingLevel>[] = [
   { value: 'low', label: 'Low', letter: 'L' },
   { value: 'high', label: 'High', letter: 'H' },

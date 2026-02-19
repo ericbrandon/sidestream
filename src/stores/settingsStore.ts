@@ -60,7 +60,7 @@ function getSavedReasoningLevel(): OpenAIReasoningLevel {
   return 'low';
 }
 
-// Load saved thinking level for Gemini models (default 'low' - gemini-3-pro-preview can't turn thinking off)
+// Load saved thinking level for Gemini models (default 'low' - gemini-3.1-pro-preview can't turn thinking off)
 function getSavedGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('geminiThinkingLevel');
   if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {

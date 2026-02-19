@@ -379,7 +379,7 @@ export function getAllDiscoveryModes(): DiscoveryModeConfig[] {
 const MODEL_IDS = {
   opus46: 'claude-opus-4-6',
   opus45: 'claude-opus-4-5-20251101',
-  gemini3Pro: 'gemini-3-pro-preview',
+  gemini3Pro: 'gemini-3.1-pro-preview',
   gemini25Pro: 'gemini-2.5-pro',
   gpt52: 'gpt-5.2',
   gpt51: 'gpt-5.1',
