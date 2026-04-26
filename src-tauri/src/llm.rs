@@ -141,7 +141,7 @@ pub async fn send_chat_message(
     model: String,
     messages: Vec<ChatMessage>,
     system_prompt: Option<String>,
-    opus46_thinking_level: Option<String>,  // For Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "max", "adaptive"
+    opus46_thinking_level: Option<String>,  // Adaptive thinking effort for Opus 4.7 / Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "xhigh", "max", "adaptive". (Param name kept for serde compat with the JS-side `opus46ThinkingLevel`.)
     web_search_enabled: bool,
     code_execution_enabled: bool,           // For Anthropic/OpenAI code execution
     reasoning_level: Option<String>,        // For OpenAI: "off", "low", "medium", "high"

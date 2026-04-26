@@ -69,16 +69,18 @@ export interface DiscoveryItem {
   modeId?: import('./discoveryModes').DiscoveryModeId; // Which mode generated this chip (optional for backward compat)
 }
 
-// Opus 4.6 thinking levels (combines adaptive thinking + effort)
+// Adaptive thinking levels for Anthropic models that support effort
+// (Opus 4.7, Opus 4.6, Sonnet 4.6).
 // - off: no thinking
-// - low/medium/high/max: adaptive thinking with explicit effort level
+// - low/medium/high/xhigh/max: adaptive thinking with explicit effort level
 // - adaptive: adaptive thinking where Claude decides effort level
-export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
+// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.7.
+export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'adaptive';
 
 // Extended thinking configuration (for Anthropic Claude models)
 export interface ExtendedThinkingConfig {
   enabled: boolean;
-  opus46Level: Opus46ThinkingLevel; // For Opus 4.6 / Sonnet 4.6
+  opus46Level: Opus46ThinkingLevel; // For Opus 4.7 / Opus 4.6 / Sonnet 4.6
 }
 
 // Reasoning level options for OpenAI models

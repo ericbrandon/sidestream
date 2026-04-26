@@ -24,9 +24,9 @@ pub struct ChatRequestConfig {
     pub container_id: Option<String>,
 }
 
-/// Configuration for adaptive extended thinking (Opus 4.6 / Sonnet 4.6)
+/// Configuration for adaptive extended thinking (Opus 4.7 / Opus 4.6 / Sonnet 4.6)
 pub struct ThinkingConfig {
-    pub opus46_level: String,  // "off", "low", "medium", "high", "max", "adaptive"
+    pub effort_level: String,  // "off", "low", "medium", "high", "xhigh", "max", "adaptive"
 }
 
 /// Configuration for a discovery request
@@ -120,13 +120,19 @@ impl AnthropicClient {
             body["container"] = serde_json::json!(container_id);
         }
 
-        // Add adaptive extended thinking if enabled (Opus 4.6 / Sonnet 4.6)
+        // Add adaptive extended thinking if enabled (Opus 4.7 / Opus 4.6 / Sonnet 4.6).
+        // display: "summarized" is required on Opus 4.7 to receive thinking text in the
+        // stream (default there is "omitted"); it is the existing default on 4.6/Sonnet 4.6
+        // so setting it explicitly is a no-op for those.
         if let Some(thinking) = &config.extended_thinking {
-            if thinking.opus46_level != "off" {
-                body["thinking"] = serde_json::json!({"type": "adaptive"});
+            if thinking.effort_level != "off" {
+                body["thinking"] = serde_json::json!({
+                    "type": "adaptive",
+                    "display": "summarized",
+                });
                 // Add effort level unless "adaptive" (let Claude decide)
-                if thinking.opus46_level != "adaptive" {
-                    body["output_config"] = serde_json::json!({"effort": &thinking.opus46_level});
+                if thinking.effort_level != "adaptive" {
+                    body["output_config"] = serde_json::json!({"effort": &thinking.effort_level});
                 }
             }
         }
@@ -197,11 +203,22 @@ impl AnthropicClient {
             ]
         });
 
-        // Add adaptive extended thinking if enabled (Opus 4.6 / Sonnet 4.6)
-        // Use low effort for discovery to keep costs/latency reasonable.
+        // Add adaptive extended thinking if enabled (Opus 4.7 / Opus 4.6 / Sonnet 4.6).
+        // Discovery uses a low/medium effort to keep cost and latency reasonable.
+        // Opus 4.7 gets "medium" because it honors low effort more strictly than 4.6
+        // (per the Opus 4.7 migration guide), and discovery benefits from a bit more
+        // reasoning headroom. Other Anthropic models stay at "low".
+        // We do NOT set thinking.display here: discovery discards thinking deltas, so
+        // leaving 4.7's default of "omitted" avoids paying for summary tokens we'd
+        // throw away.
         if config.extended_thinking_enabled.unwrap_or(false) {
+            let effort = if config.model.starts_with("claude-opus-4-7") {
+                "medium"
+            } else {
+                "low"
+            };
             body["thinking"] = serde_json::json!({"type": "adaptive"});
-            body["output_config"] = serde_json::json!({"effort": "low"});
+            body["output_config"] = serde_json::json!({"effort": effort});
             body["max_tokens"] = serde_json::json!(16000);
         }
 
@@ -466,10 +483,23 @@ pub fn add_cache_control_to_last_message(messages: &mut Vec<serde_json::Value>) 
 }
 
 /// Calculate max_tokens based on model and extended thinking settings.
-/// Opus 4.6 / Sonnet 4.6 with thinking on: 16384, otherwise: 8192.
-pub fn calculate_max_tokens(model: &str, opus46_level: Option<&str>) -> u32 {
-    if model.starts_with("claude-opus-4-6") || model.starts_with("claude-sonnet-4-6") {
-        match opus46_level.unwrap_or("off") {
+///
+/// Opus 4.7 needs more headroom than 4.6:
+/// - Its tokenizer is ~1.0–1.35× more verbose than 4.6's, so identical text counts higher.
+/// - The migration guide explicitly recommends ≥ 64k max_tokens at `xhigh` or `max`
+///   effort to give the model room to think across subagents and tool calls.
+/// All Anthropic models hit a 128k output ceiling, so these caps are conservative.
+pub fn calculate_max_tokens(model: &str, effort_level: Option<&str>) -> u32 {
+    let level = effort_level.unwrap_or("off");
+
+    if model.starts_with("claude-opus-4-7") {
+        match level {
+            "off" => 8192,
+            "xhigh" | "max" => 64000,
+            _ => 32000,
+        }
+    } else if model.starts_with("claude-opus-4-6") || model.starts_with("claude-sonnet-4-6") {
+        match level {
             "off" => 8192,
             _ => 16384,
         }
