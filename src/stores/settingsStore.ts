@@ -292,7 +292,7 @@ interface SettingsState {
   voiceMode: VoiceMode; // User-configurable
   customSystemPrompt: string; // User's personalized system prompt
   allowChatGPTExtraHighThinking: boolean; // Allow extra-high thinking for OpenAI models
-  allowChatGPT5Pro: boolean; // Allow GPT-5 Pro model
+  allowChatGPT5Pro: boolean; // Allow GPT-5.5 Pro model
   updateInfo: UpdateInfo | null; // Available update info
   showUpdateModal: boolean; // Whether to show the update modal
 
@@ -614,11 +614,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAllowChatGPT5Pro: (enabled) => {
     localStorage.setItem('allowChatGPT5Pro', String(enabled));
 
-    // If disabling GPT-5 Pro and it's currently selected, switch to GPT-5.2
+    // If disabling GPT-5.5 Pro and it's currently selected, switch to GPT-5.4
     if (!enabled) {
       const state = useSettingsStore.getState();
-      if (state.frontierLLM.model === 'gpt-5-pro') {
-        const newModel = 'gpt-5.2';
+      if (state.frontierLLM.model === 'gpt-5.5-pro') {
+        const newModel = 'gpt-5.4';
         localStorage.setItem('frontierModel', newModel);
         set({
           allowChatGPT5Pro: enabled,

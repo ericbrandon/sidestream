@@ -214,7 +214,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
               <hr className="border-stone-200 dark:border-gray-700" />
 
-              {/* Allow ChatGPT 5 Pro */}
+              {/* Allow ChatGPT 5.5 Pro */}
               <section>
                 <div className="flex items-center gap-3">
                   <input
@@ -225,11 +225,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     className="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-0 focus:ring-offset-0 dark:border-gray-500 dark:bg-gray-500 dark:checked:bg-blue-600 cursor-pointer"
                   />
                   <label htmlFor="allowChatGPT5Pro" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
-                    Allow ChatGPT 5 Pro
+                    Allow ChatGPT 5.5 Pro
                   </label>
                 </div>
                 <p className="mt-1 ml-7 text-xs text-gray-500 dark:text-gray-400">
-                  This model is very slow, and extremely expensive - 12 times the cost of regular ChatGPT 5. We recommend leaving this option off.
+                  This model is very slow, and extremely expensive - 12 times the cost of ChatGPT 5.4. We recommend leaving this option off.
                 </p>
               </section>
 

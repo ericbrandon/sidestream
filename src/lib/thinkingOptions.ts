@@ -17,7 +17,7 @@ export const REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
   { value: 'xhigh', label: 'Extra High', letter: 'X' },
 ];
 
-// Reasoning level options for GPT-5 Pro (only supports 'high')
+// Reasoning level options for GPT-5.5 Pro (only supports 'high')
 export const GPT5_PRO_REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
   { value: 'high', label: 'High', letter: 'H' },
 ];
@@ -79,7 +79,7 @@ export function getOpenAIReasoningOptions(
 ): ThinkingOption<OpenAIReasoningLevel>[] {
   const { allowExtraHigh = false, webSearchEnabled = false } = options;
 
-  if (model === 'gpt-5-pro') {
+  if (model === 'gpt-5.5-pro') {
     return GPT5_PRO_REASONING_OPTIONS;
   }
 

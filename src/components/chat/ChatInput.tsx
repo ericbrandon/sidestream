@@ -121,7 +121,7 @@ export const ChatInput = memo(function ChatInput() {
 
   // Build list of models to exclude based on settings
   const excludedModels = useMemo(
-    () => allowChatGPT5Pro ? [] : ['gpt-5-pro'],
+    () => allowChatGPT5Pro ? [] : ['gpt-5.5-pro'],
     [allowChatGPT5Pro]
   );
 

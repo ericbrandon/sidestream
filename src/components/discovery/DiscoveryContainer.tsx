@@ -48,7 +48,7 @@ export function DiscoveryContainer() {
     ? getValidGeminiThinkingLevel(evaluatorLLM.geminiThinkingLevel, evaluatorLLM.model)
     : evaluatorLLM.geminiThinkingLevel;
 
-  // Discovery pane never shows xhigh thinking or GPT-5 Pro (regardless of user settings)
+  // Discovery pane never shows xhigh thinking or GPT-5.5 Pro (regardless of user settings)
   // Also respect web search constraints (off/minimal not available when web search is on)
   const discoveryReasoningOptions = provider === 'openai'
     ? getOpenAIReasoningOptions(evaluatorLLM.model, {
@@ -60,7 +60,7 @@ export function DiscoveryContainer() {
   const effectiveDiscoveryReasoningLevel = provider === 'openai'
     ? getValidOpenAIReasoningLevel(evaluatorLLM.reasoningLevel, evaluatorLLM.model, evaluatorLLM.webSearchEnabled)
     : evaluatorLLM.reasoningLevel;
-  const discoveryExcludedModels = ['gpt-5-pro'];
+  const discoveryExcludedModels = ['gpt-5.5-pro'];
 
   // Close dropdown when clicking outside
   useEffect(() => {

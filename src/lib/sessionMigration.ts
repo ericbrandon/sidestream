@@ -3,9 +3,19 @@ import type { ChatSessionSettings } from './types';
 const LEGACY_OPUS_45_ID = 'claude-opus-4-5-20251101';
 const REPLACEMENT_OPUS_ID = 'claude-opus-4-6';
 
-// Rewrite a legacy Opus 4.5 model ID to its Opus 4.6 replacement. Idempotent.
+// Map of retired OpenAI GPT-5.x IDs to their replacement.
+// 5.2 and 5.1 both collapse to 5.4 (5.5 is 2x the price for marginal gains).
+const LEGACY_GPT_IDS: Record<string, string> = {
+  'gpt-5.2': 'gpt-5.4',
+  'gpt-5.1': 'gpt-5.4',
+  'gpt-5-mini': 'gpt-5.4-mini',
+  'gpt-5-pro': 'gpt-5.5-pro',
+};
+
+// Rewrite a legacy model ID to its current replacement. Idempotent.
 export function migrateLegacyModelId(modelId: string | undefined | null): string {
   if (modelId === LEGACY_OPUS_45_ID) return REPLACEMENT_OPUS_ID;
+  if (modelId && modelId in LEGACY_GPT_IDS) return LEGACY_GPT_IDS[modelId];
   return modelId ?? REPLACEMENT_OPUS_ID;
 }
 

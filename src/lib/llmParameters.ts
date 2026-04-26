@@ -17,7 +17,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
   const provider = getProviderFromModelId(llm.model);
 
   // For OpenAI, normalize reasoning level based on model capabilities and web search
-  // (e.g., GPT-5 Pro only supports 'high', web search requires at least 'low')
+  // (e.g., GPT-5.5 Pro only supports 'high', web search requires at least 'low')
   const effectiveReasoningLevel = provider === 'openai'
     ? getValidOpenAIReasoningLevel(llm.reasoningLevel, llm.model, llm.webSearchEnabled)
     : null;

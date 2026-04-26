@@ -21,7 +21,7 @@ pub struct ChatRequestConfig {
 }
 
 /// Reasoning effort levels for OpenAI reasoning models
-/// - GPT-5 series supports: none, minimal, low, medium, high, xhigh (5.2 only for xhigh)
+/// - GPT-5 series supports: none, minimal, low, medium, high, xhigh
 /// - o-series (o3, o4-mini) supports: low, medium, high only
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ReasoningEffort {
@@ -30,7 +30,7 @@ pub enum ReasoningEffort {
     Low,
     Medium,
     High,
-    XHigh,   // GPT-5.2 only - extra high reasoning
+    XHigh,   // GPT-5 only - extra high reasoning
 }
 
 impl ReasoningEffort {

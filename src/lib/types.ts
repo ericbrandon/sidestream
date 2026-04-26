@@ -84,7 +84,7 @@ export interface ExtendedThinkingConfig {
 }
 
 // Reasoning level options for OpenAI models
-// GPT-5 series supports: off (none), minimal, low, medium, high, xhigh (5.2 only)
+// GPT-5 series supports: off (none), minimal, low, medium, high, xhigh
 export type OpenAIReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 // Thinking level options for Google Gemini models

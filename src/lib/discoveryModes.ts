@@ -380,8 +380,7 @@ const MODEL_IDS = {
   opus46: 'claude-opus-4-6',
   gemini3Pro: 'gemini-3.1-pro-preview',
   gemini25Pro: 'gemini-2.5-pro',
-  gpt52: 'gpt-5.2',
-  gpt51: 'gpt-5.1',
+  gpt54: 'gpt-5.4',
 } as const;
 
 // Thinking configuration types for auto-selection
@@ -404,32 +403,32 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
   'useful-informative': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'low' } },
-    { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'low' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'low' } },
   ],
   'obscure-interesting': [
-    { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'low' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'low' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
   ],
   'amusing-entertaining': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'medium' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
   ],
   'lateral-thinking': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt51, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
   'skeptical-critical': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
-    { model: MODEL_IDS.gpt52, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
     { model: MODEL_IDS.gemini25Pro, provider: 'google', thinking: { geminiThinking: 'on' } },
   ],
   'fact-checker': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt51, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
 };
 

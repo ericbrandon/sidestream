@@ -8,10 +8,10 @@ export const ALL_MODELS: ModelDefinition[] = [
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
   // OpenAI Models
-  { id: 'gpt-5.2', name: 'GPT-5.2', provider: 'openai' },
-  { id: 'gpt-5.1', name: 'GPT-5.1', provider: 'openai' },
-  { id: 'gpt-5-mini', name: 'GPT-5 Mini', provider: 'openai' },
-  { id: 'gpt-5-pro', name: 'GPT-5 Pro', provider: 'openai' },
+  { id: 'gpt-5.5', name: 'GPT-5.5', provider: 'openai' },
+  { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai' },
+  { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', provider: 'openai' },
+  { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', provider: 'openai' },
 
   // Google Gemini Models
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', provider: 'google' },
@@ -41,6 +41,9 @@ export function getProviderFromModelId(modelId: string): LLMProvider {
 
 // Get default model for a provider (frontier pane uses top-tier models)
 export function getDefaultModelForProvider(provider: LLMProvider): string {
+  // OpenAI defaults to 5.4 rather than the top-listed 5.5: 5.5 is 2x the cost
+  // of 5.4 for marginal capability gains, so 5.4 is the better starting point.
+  if (provider === 'openai') return 'gpt-5.4';
   const models = ALL_MODELS.filter((m) => m.provider === provider);
   return models[0]?.id ?? 'claude-opus-4-7';
 }
@@ -76,7 +79,7 @@ export function getDefaultEvaluatorModelForProvider(provider: LLMProvider): stri
     case 'anthropic':
       return 'claude-haiku-4-5-20251001';
     case 'openai':
-      return 'gpt-5-mini';
+      return 'gpt-5.4-mini';
     case 'google':
       return 'gemini-3-flash-preview';
     default:
