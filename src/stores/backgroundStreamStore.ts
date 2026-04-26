@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile } from '../lib/types';
 import { buildSessionSettings } from '../lib/sessionHelpers';
+import { migrateLegacyModelId } from '../lib/sessionMigration';
 import { deduplicateCitations } from '../lib/citationHelpers';
 import { logError } from '../lib/logger';
 import { useChatStore } from './chatStore';
@@ -310,7 +311,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
           const settingsStore = useSettingsStore.getState();
           const settings = buildSessionSettings(settingsStore);
           // Use the model captured at stream start, not the current global model
-          settings.frontierModel = stream.model;
+          settings.frontierModel = migrateLegacyModelId(stream.model);
           const updatedSession: ChatSession = {
             ...session,
             messages: [...session.messages, assistantMessage],

@@ -16,6 +16,7 @@ import type { UpdateInfo } from '../lib/updateChecker';
 export type SettingsTab = 'api-keys' | 'preferences' | 'personalize' | 'saved-chats' | 'about';
 import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode } from '../lib/discoveryModes';
 import { getProviderFromModelId, getDefaultModelForProvider, getDefaultEvaluatorModelForProvider, usesAdaptiveThinking } from '../lib/models';
+import { migrateLegacyModelId } from '../lib/sessionMigration';
 import { useSessionStore } from './sessionStore';
 import { useChatStore } from './chatStore';
 import type { LLMProvider } from '../lib/types';
@@ -97,13 +98,22 @@ function getSavedAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
 // Load saved frontier model from localStorage
 function getSavedFrontierModel(): string {
   const saved = localStorage.getItem('frontierModel');
-  return saved || 'claude-opus-4-6';
+  const migrated = migrateLegacyModelId(saved);
+  if (saved && migrated !== saved) {
+    localStorage.setItem('frontierModel', migrated);
+  }
+  return migrated;
 }
 
 // Load saved evaluator model from localStorage
 function getSavedEvaluatorModel(): string {
   const saved = localStorage.getItem('evaluatorModel');
-  return saved || 'claude-haiku-4-5-20251001';
+  if (!saved) return 'claude-haiku-4-5-20251001';
+  const migrated = migrateLegacyModelId(saved);
+  if (migrated !== saved) {
+    localStorage.setItem('evaluatorModel', migrated);
+  }
+  return migrated;
 }
 
 // Load saved evaluator web search setting from localStorage (default true for first launch)
@@ -319,7 +329,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     apiKeyConfigured: false,
     extendedThinking: {
       enabled: getSavedExtendedThinking(),
-      budgetTokens: 10000,
       opus46Level: getSavedAdaptiveThinkingLevel(getSavedFrontierModel()),
     },
     reasoningLevel: getSavedReasoningLevel(),
@@ -331,7 +340,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     apiKeyConfigured: false,
     extendedThinking: {
       enabled: getSavedEvaluatorExtendedThinking(),
-      budgetTokens: 10000,
       opus46Level: getSavedEvaluatorAdaptiveThinkingLevel(getSavedEvaluatorModel()),
     },
     reasoningLevel: getSavedEvaluatorReasoningLevel(),
@@ -502,7 +510,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         model: settings.frontierModel,
         extendedThinking: {
           enabled: settings.extendedThinkingEnabled,
-          budgetTokens: settings.extendedThinkingBudget,
           opus46Level: settings.frontierOpus46ThinkingLevel ?? 'high',
         },
         webSearchEnabled: settings.webSearchEnabled,

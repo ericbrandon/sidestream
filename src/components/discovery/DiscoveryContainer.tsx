@@ -9,7 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useDiscovery } from '../../hooks/useDiscovery';
 import { getAllDiscoveryModes, getDiscoveryMode, getBestModelForMode } from '../../lib/discoveryModes';
-import { getProviderFromModelId, usesAdaptiveThinking } from '../../lib/models';
+import { getProviderFromModelId, supportsExtendedThinking } from '../../lib/models';
 import {
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
@@ -299,7 +299,7 @@ export function DiscoveryContainer() {
               </>
             )}
           </div>
-        ) : usesAdaptiveThinking(evaluatorLLM.model) ? (
+        ) : supportsExtendedThinking(evaluatorLLM.model) ? (
           /* Anthropic Opus 4.6 / Sonnet 4.6: Adaptive Thinking Toggle (off / adaptive) */
           <Tooltip
             content={
@@ -348,50 +348,7 @@ export function DiscoveryContainer() {
               </span>
             </button>
           </Tooltip>
-        ) : (
-          /* Anthropic Opus 4.5: Extended Thinking Toggle (on/off) */
-          <Tooltip
-            content={
-              evaluatorLLM.extendedThinking.enabled
-                ? 'Extended thinking enabled'
-                : 'Enable extended thinking'
-            }
-          >
-            <button
-              onClick={() =>
-                setEvaluatorLLM({
-                  extendedThinking: {
-                    ...evaluatorLLM.extendedThinking,
-                    enabled: !evaluatorLLM.extendedThinking.enabled,
-                  },
-                })
-              }
-              className={`
-                p-1.5 rounded transition-colors
-                ${
-                  evaluatorLLM.extendedThinking.enabled
-                    ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
-                    : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
-                }
-              `}
-              aria-label="Toggle extended thinking"
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-            </button>
-          </Tooltip>
-        )}
+        ) : null}
       </div>
     </div>
   );

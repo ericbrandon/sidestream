@@ -5,6 +5,7 @@ import type {
   ChatSessionMeta,
 } from '../lib/types';
 import { buildSessionSettings, generateChatTitle, serializeMessage, serializeDiscoveryItem } from '../lib/sessionHelpers';
+import { migrateChatSessionSettings } from '../lib/sessionMigration';
 import { filterSessionMetas } from '../lib/sessionSearch';
 import { forkFromMessage as forkFromMessageImpl, forkCurrentSession as forkCurrentSessionImpl, type ForkStores } from '../lib/sessionFork';
 import { logError } from '../lib/logger';
@@ -215,7 +216,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         }
 
         // Restore settings
-        useSettingsStore.getState().loadSettings(session.settings);
+        useSettingsStore.getState().loadSettings(migrateChatSessionSettings(session.settings));
 
         // Restore draft input if any was saved for this session
         const draftInput = get().draftInputs.get(sessionId);

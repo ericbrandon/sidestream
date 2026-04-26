@@ -7,6 +7,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useDiscoveryStore } from '../../stores/discoveryStore';
 import { logError } from '../../lib/logger';
+import { migrateChatSessionSettings } from '../../lib/sessionMigration';
 import type { ChatSession, ChatExportData, DiscoveryItem, Message } from '../../lib/types';
 
 export function SavedChatsSection() {
@@ -165,6 +166,12 @@ export function SavedChatsSection() {
             })),
           };
         }
+
+        // Migrate legacy model IDs (Opus 4.5 → Opus 4.6) before saving
+        sessionToSave = {
+          ...sessionToSave,
+          settings: migrateChatSessionSettings(sessionToSave.settings),
+        };
 
         // Save the session
         await invoke('save_chat_session', { session: sessionToSave });

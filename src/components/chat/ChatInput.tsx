@@ -99,7 +99,7 @@ export const ChatInput = memo(function ChatInput() {
     [provider, frontierLLM.reasoningLevel, frontierLLM.model, frontierLLM.webSearchEnabled]
   );
 
-  // Get Anthropic thinking options based on model (Opus 4.6 vs 4.5)
+  // Get Anthropic thinking options based on model
   const anthropicThinkingOptions = useMemo(
     () => provider === 'anthropic' ? getAnthropicThinkingOptions(frontierLLM.model) : [],
     [provider, frontierLLM.model]
@@ -315,7 +315,7 @@ export const ChatInput = memo(function ChatInput() {
             )}
           </div>
         ) : hasAnthropicThinking ? (
-          /* Anthropic: Thinking Level Dropdown (Opus 4.6 and 4.5) */
+          /* Anthropic: Thinking Level Dropdown (Opus 4.6 / Sonnet 4.6) */
           <div className="relative">
             <Tooltip content={`Thinking: ${effectiveAnthropicThinkingLevel}`}>
               <button
@@ -359,14 +359,11 @@ export const ChatInput = memo(function ChatInput() {
                     <button
                       key={option.value}
                       onClick={() => {
-                        // For Opus 4.6: set opus46Level
-                        // For Opus 4.5: also set enabled based on option
-                        const isEnabled = option.value !== 'off';
                         setFrontierLLM({
                           extendedThinking: {
                             ...frontierLLM.extendedThinking,
-                            enabled: isEnabled,
-                            opus46Level: option.value as 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive',
+                            enabled: option.value !== 'off',
+                            opus46Level: option.value,
                           },
                         });
                         closeThinkingMenu();

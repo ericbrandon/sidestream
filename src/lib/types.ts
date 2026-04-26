@@ -78,8 +78,7 @@ export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'max' | 'a
 // Extended thinking configuration (for Anthropic Claude models)
 export interface ExtendedThinkingConfig {
   enabled: boolean;
-  budgetTokens: number; // 1024-32000 (for Opus 4.5)
-  opus46Level: Opus46ThinkingLevel; // For Opus 4.6
+  opus46Level: Opus46ThinkingLevel; // For Opus 4.6 / Sonnet 4.6
 }
 
 // Reasoning level options for OpenAI models
@@ -237,7 +236,6 @@ export interface ChatSessionSettings {
   frontierModel: string;
   evaluatorModel: string;
   extendedThinkingEnabled: boolean;
-  extendedThinkingBudget: number;
   webSearchEnabled: boolean;
   discoveryMode?: import('./discoveryModes').DiscoveryModeId;
   // Frontier/chat model thinking settings (optional for backward compatibility)

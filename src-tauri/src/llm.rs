@@ -141,9 +141,7 @@ pub async fn send_chat_message(
     model: String,
     messages: Vec<ChatMessage>,
     system_prompt: Option<String>,
-    extended_thinking_enabled: bool,
-    thinking_budget: Option<u32>,
-    opus46_thinking_level: Option<String>,  // For Opus 4.6: "off", "low", "medium", "high", "max", "adaptive"
+    opus46_thinking_level: Option<String>,  // For Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "max", "adaptive"
     web_search_enabled: bool,
     code_execution_enabled: bool,           // For Anthropic/OpenAI code execution
     reasoning_level: Option<String>,        // For OpenAI: "off", "low", "medium", "high"
@@ -203,8 +201,6 @@ pub async fn send_chat_message(
                 model,
                 messages,
                 system_prompt,
-                extended_thinking_enabled,
-                thinking_budget,
                 opus46_thinking_level,
                 web_search_enabled,
                 code_execution_enabled,

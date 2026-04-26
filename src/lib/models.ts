@@ -3,7 +3,6 @@ import type { ModelDefinition, LLMProvider } from './types';
 export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
   { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
-  { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5', provider: 'anthropic' },
   { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
@@ -48,11 +47,6 @@ export function getDefaultModelForProvider(provider: LLMProvider): string {
 // Check if a model is Opus 4.6 (supports adaptive thinking + effort)
 export function isOpus46(modelId: string): boolean {
   return modelId === 'claude-opus-4-6';
-}
-
-// Check if a model is Opus 4.5 (uses budget_tokens thinking)
-export function isOpus45(modelId: string): boolean {
-  return modelId === 'claude-opus-4-5-20251101';
 }
 
 // Check if a model is Sonnet 4.6 (supports adaptive thinking + effort, same as Opus 4.6)

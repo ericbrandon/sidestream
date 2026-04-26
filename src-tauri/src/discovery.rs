@@ -205,7 +205,6 @@ pub async fn discover_resources(
     _max_results: u32,
     // Provider-specific thinking parameters
     extended_thinking_enabled: Option<bool>,
-    thinking_budget: Option<u32>,
     reasoning_level: Option<String>,
     gemini_thinking_level: Option<String>,
 ) -> Result<(), String> {
@@ -222,7 +221,7 @@ pub async fn discover_resources(
                 .await
         }
         "anthropic" | _ => {
-            discover_resources_anthropic(&app, &window, turn_id, model, conversation, system_prompt, extended_thinking_enabled, thinking_budget)
+            discover_resources_anthropic(&app, &window, turn_id, model, conversation, system_prompt, extended_thinking_enabled)
                 .await
         }
     }
@@ -237,7 +236,6 @@ async fn discover_resources_anthropic(
     conversation: String,
     system_prompt: String,
     extended_thinking_enabled: Option<bool>,
-    thinking_budget: Option<u32>,
 ) -> Result<(), String> {
     let api_key = get_api_key_async(app, "anthropic").await?;
     let client = AnthropicClient::new(api_key);
@@ -248,7 +246,6 @@ async fn discover_resources_anthropic(
         system_prompt,
         conversation,
         extended_thinking_enabled,
-        thinking_budget,
     };
     let body = client.build_discovery_request(&config);
 

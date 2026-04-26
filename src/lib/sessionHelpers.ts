@@ -20,7 +20,6 @@ export function buildSessionSettings(settingsStore: SettingsStoreState, chatStor
     frontierModel: settingsStore.frontierLLM.model,
     evaluatorModel: settingsStore.evaluatorLLM.model,
     extendedThinkingEnabled: settingsStore.frontierLLM.extendedThinking.enabled,
-    extendedThinkingBudget: settingsStore.frontierLLM.extendedThinking.budgetTokens,
     webSearchEnabled: settingsStore.frontierLLM.webSearchEnabled,
     discoveryMode: settingsStore.discoveryMode,
     frontierReasoningLevel: settingsStore.frontierLLM.reasoningLevel,
