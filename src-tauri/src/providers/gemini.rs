@@ -2,6 +2,22 @@ use serde::{Deserialize, Serialize};
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
+/// Appended to the system instruction whenever code execution is enabled.
+///
+/// Gemini 3.x, left to its own devices, tends to render charts as ASCII art or
+/// hand-encode a matplotlib figure to a base64 string — both of which land in the
+/// text/codeExecutionResult output, so no `inlineData` image is ever emitted. The
+/// sandbox only auto-captures a figure as an inline image when the code calls
+/// `plt.show()`. (Note this is the opposite of Anthropic/OpenAI, whose sandboxes
+/// capture figures via `savefig` — hence this guidance is Gemini-specific.)
+const GEMINI_CODE_EXEC_VISUAL_GUIDANCE: &str =
+    " When the user asks for a chart, graph, plot, diagram, or any data \
+visualization, write and run Python code that uses matplotlib and render the \
+figure by calling plt.show() so the sandbox returns it as an inline image. \
+Never draw charts as ASCII art, text tables, or printed characters, and never \
+manually encode the figure to base64 or save it to a buffer instead of calling \
+plt.show().";
+
 /// Google Gemini API client (Google AI Studio)
 pub struct GeminiClient {
     client: reqwest::Client,
@@ -219,10 +235,16 @@ impl GeminiClient {
             "contents": contents
         });
 
-        // Add system instruction if provided
-        if let Some(system) = &config.system_prompt {
+        // Add system instruction. When code execution is enabled, append guidance
+        // that forces matplotlib + plt.show() for visualizations; otherwise Gemini
+        // 3.x prints ASCII charts (text) and never returns an inline image.
+        let mut system_text = config.system_prompt.clone().unwrap_or_default();
+        if config.code_execution_enabled {
+            system_text.push_str(GEMINI_CODE_EXEC_VISUAL_GUIDANCE);
+        }
+        if !system_text.is_empty() {
             body["systemInstruction"] = serde_json::json!({
-                "parts": [{"text": system}]
+                "parts": [{"text": system_text}]
             });
         }
 
