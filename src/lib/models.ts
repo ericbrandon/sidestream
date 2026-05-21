@@ -15,7 +15,7 @@ export const ALL_MODELS: ModelDefinition[] = [
 
   // Google Gemini Models
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', provider: 'google' },
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', provider: 'google' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'google' },
   { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'google' },
 ];
@@ -81,7 +81,7 @@ export function getDefaultEvaluatorModelForProvider(provider: LLMProvider): stri
     case 'openai':
       return 'gpt-5.4-mini';
     case 'google':
-      return 'gemini-3-flash-preview';
+      return 'gemini-3.5-flash';
     default:
       return 'claude-haiku-4-5-20251001';
   }

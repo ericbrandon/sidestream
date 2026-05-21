@@ -28,7 +28,7 @@ export const GEMINI_3_PRO_OPTIONS: ThinkingOption<GeminiThinkingLevel>[] = [
   { value: 'high', label: 'High', letter: 'H' },
 ];
 
-// Thinking level options for Gemini 3 Flash (minimal is closest to "off" but doesn't guarantee no thinking)
+// Thinking level options for Gemini 3.x Flash (minimal is closest to "off" but doesn't guarantee no thinking)
 export const GEMINI_3_FLASH_OPTIONS: ThinkingOption<GeminiThinkingLevel>[] = [
   { value: 'minimal', label: 'Minimal', letter: 'm' },
   { value: 'low', label: 'Low', letter: 'L' },

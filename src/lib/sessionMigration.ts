@@ -12,10 +12,17 @@ const LEGACY_GPT_IDS: Record<string, string> = {
   'gpt-5-pro': 'gpt-5.5-pro',
 };
 
+// Map of retired Gemini IDs to their replacement.
+// Gemini 3 Flash Preview is superseded by the GA Gemini 3.5 Flash.
+const LEGACY_GEMINI_IDS: Record<string, string> = {
+  'gemini-3-flash-preview': 'gemini-3.5-flash',
+};
+
 // Rewrite a legacy model ID to its current replacement. Idempotent.
 export function migrateLegacyModelId(modelId: string | undefined | null): string {
   if (modelId === LEGACY_OPUS_45_ID) return REPLACEMENT_OPUS_ID;
   if (modelId && modelId in LEGACY_GPT_IDS) return LEGACY_GPT_IDS[modelId];
+  if (modelId && modelId in LEGACY_GEMINI_IDS) return LEGACY_GEMINI_IDS[modelId];
   return modelId ?? REPLACEMENT_OPUS_ID;
 }
 

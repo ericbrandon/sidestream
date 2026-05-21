@@ -61,13 +61,14 @@ function getSavedReasoningLevel(): OpenAIReasoningLevel {
   return 'low';
 }
 
-// Load saved thinking level for Gemini models (default 'low' - gemini-3.1-pro-preview can't turn thinking off)
+// Load saved thinking level for Gemini models (default 'medium' - Google's recommended
+// sweet spot for 3.x Flash; normalized per-model at use, so Pro falls back to 'low' and 2.5 to 'off')
 function getSavedGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('geminiThinkingLevel');
   if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {
     return saved as GeminiThinkingLevel;
   }
-  return 'low';
+  return 'medium';
 }
 
 // Load saved thinking level for Opus 4.6 (default 'high' - Claude almost always thinks)
@@ -142,7 +143,7 @@ function getSavedEvaluatorGeminiThinkingLevel(): GeminiThinkingLevel {
   if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {
     return saved as GeminiThinkingLevel;
   }
-  return 'low';
+  return 'medium';
 }
 
 // Load saved evaluator thinking level for Opus 4.6 (default 'low' - lighter thinking for discovery)
@@ -514,7 +515,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         },
         webSearchEnabled: settings.webSearchEnabled,
         reasoningLevel: settings.frontierReasoningLevel ?? 'low',
-        geminiThinkingLevel: settings.frontierGeminiThinkingLevel ?? 'low',
+        geminiThinkingLevel: settings.frontierGeminiThinkingLevel ?? 'medium',
       },
       evaluatorLLM: {
         ...state.evaluatorLLM,
@@ -525,7 +526,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           opus46Level: settings.evaluatorOpus46ThinkingLevel ?? 'low',
         },
         reasoningLevel: settings.evaluatorReasoningLevel ?? 'low',
-        geminiThinkingLevel: settings.evaluatorGeminiThinkingLevel ?? 'low',
+        geminiThinkingLevel: settings.evaluatorGeminiThinkingLevel ?? 'medium',
       },
       discoveryMode: settings.discoveryMode ?? DEFAULT_DISCOVERY_MODE,
     })),

@@ -1,6 +1,10 @@
 import type { LLMConfig } from './types';
 import { getProviderFromModelId, usesAdaptiveThinking } from './models';
-import { getValidOpenAIReasoningLevel, getValidAnthropicThinkingLevel } from './thinkingOptions';
+import {
+  getValidOpenAIReasoningLevel,
+  getValidAnthropicThinkingLevel,
+  getValidGeminiThinkingLevel,
+} from './thinkingOptions';
 
 interface ProviderThinkingParams {
   extendedThinkingEnabled: boolean;
@@ -27,13 +31,21 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     ? getValidAnthropicThinkingLevel(llm.extendedThinking.opus46Level, llm.model)
     : null;
 
+  // For Gemini, normalize the thinking level to one the model actually supports
+  // (e.g. 'medium' is valid for 3.x Flash but not 3.1 Pro, which falls back to 'low').
+  // Without this the raw value reaches the backend and 'medium' on a Pro model would
+  // be misrouted to a thinkingBudget instead of thinkingLevel.
+  const effectiveGeminiThinkingLevel = provider === 'google'
+    ? getValidGeminiThinkingLevel(llm.geminiThinkingLevel, llm.model)
+    : null;
+
   return {
     extendedThinkingEnabled: provider === 'anthropic' ? llm.extendedThinking.enabled : false,
     // Anthropic: Adaptive thinking level for Opus 4.6 / Sonnet 4.6 (off, low, medium, high, max, adaptive)
     opus46ThinkingLevel: effectiveOpus46Level,
     // OpenAI: Reasoning level (normalized for model)
     reasoningLevel: effectiveReasoningLevel,
-    // Google Gemini: Thinking level
-    geminiThinkingLevel: provider === 'google' ? llm.geminiThinkingLevel : null,
+    // Google Gemini: Thinking level (normalized for model)
+    geminiThinkingLevel: effectiveGeminiThinkingLevel,
   };
 }

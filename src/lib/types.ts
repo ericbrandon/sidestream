@@ -89,7 +89,7 @@ export type OpenAIReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high'
 
 // Thinking level options for Google Gemini models
 // Gemini 3.1 Pro: off, low, high
-// Gemini 3 Flash: off, minimal, low, medium, high
+// Gemini 3.5 Flash: off, minimal, low, medium, high
 // Gemini 2.5: off, on (maps to thinkingBudget of 10000)
 export type GeminiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'on';
 

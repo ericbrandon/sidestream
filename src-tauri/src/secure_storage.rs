@@ -18,16 +18,25 @@ static DERIVED_KEY: OnceLock<[u8; 32]> = OnceLock::new();
 /// Cached decrypted API keys - loaded once on first use, updated when keys change
 static KEYS_CACHE: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 
-/// Get a stable machine identifier that persists across app restarts.
-fn get_machine_id() -> String {
+/// Build a machine identifier from stable, per-machine components.
+///
+/// `include_hostname` exists only for backward compatibility. Older builds folded
+/// the hostname into this string, but on macOS `gethostname()` is a *transient*
+/// value that changes with the network when `scutil --get HostName` is unset,
+/// which silently rotated the derived key and made stored keys undecryptable.
+/// New keys are derived WITHOUT the hostname; the hostname-inclusive form is
+/// reconstructed only to migrate keys written by older builds.
+fn build_machine_id(include_hostname: bool) -> String {
     let mut components = Vec::new();
 
-    // Get hostname
-    if let Ok(hostname) = hostname::get() {
-        components.push(hostname.to_string_lossy().to_string());
+    // Legacy only: hostname is unreliable on macOS (see doc comment above).
+    if include_hostname {
+        if let Ok(hostname) = hostname::get() {
+            components.push(hostname.to_string_lossy().to_string());
+        }
     }
 
-    // Get username
+    // Username (stable per account)
     if let Ok(user) = std::env::var("USER").or_else(|_| std::env::var("USERNAME")) {
         components.push(user);
     }
@@ -91,15 +100,23 @@ fn get_machine_id() -> String {
     components.join("::")
 }
 
-/// Derive a 32-byte encryption key from the machine ID using SHA-256.
-/// Cached after first computation.
+/// SHA-256 a machine-id string into a 32-byte key.
+fn sha256_key(machine_id: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(machine_id.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Derive the current 32-byte encryption key from the stable (hostname-independent)
+/// machine ID. Cached after first computation.
 fn derive_key() -> [u8; 32] {
-    *DERIVED_KEY.get_or_init(|| {
-        let machine_id = get_machine_id();
-        let mut hasher = Sha256::new();
-        hasher.update(machine_id.as_bytes());
-        hasher.finalize().into()
-    })
+    *DERIVED_KEY.get_or_init(|| sha256_key(&build_machine_id(false)))
+}
+
+/// Derive the legacy (hostname-inclusive) key used by older builds. Not cached;
+/// only used to migrate an existing keys file to the current scheme.
+fn derive_legacy_key() -> [u8; 32] {
+    sha256_key(&build_machine_id(true))
 }
 
 /// Get the path to the encrypted keys file
@@ -148,8 +165,9 @@ fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Load all API keys from the encrypted file (internal, bypasses cache).
-/// If decryption fails (e.g., keys from a different machine), returns empty map
-/// and deletes the corrupted file so the user can re-enter their keys.
+/// If decryption fails (e.g., keys from a different machine), returns an empty map.
+/// The file is never deleted on failure: a transient mismatch must not destroy the
+/// user's keys. Keys written by older (hostname-based) builds are migrated in place.
 fn load_keys_from_disk(app: &tauri::AppHandle) -> Result<HashMap<String, String>, String> {
     let path = get_keys_path(app)?;
 
@@ -167,25 +185,34 @@ fn load_keys_from_disk(app: &tauri::AppHandle) -> Result<HashMap<String, String>
 
     let key = derive_key();
 
-    // If decryption fails (wrong machine, corrupted file), delete and start fresh
+    // Decrypt with the current (stable) key. If that fails, try the legacy
+    // hostname-based key and, on success, transparently re-encrypt with the new
+    // key. We never delete the file on failure: a transient mismatch must not
+    // destroy the user's keys (re-entering a key overwrites the file anyway).
     let decrypted = match decrypt(&key, &encrypted) {
         Ok(data) => data,
-        Err(e) => {
-            eprintln!(
-                "[SecureStorage] Decryption failed (keys may be from another machine): {}",
-                e
-            );
-            // Delete the unreadable file so user can re-enter keys
-            let _ = fs::remove_file(&path);
-            return Ok(HashMap::new());
-        }
+        Err(_) => match decrypt(&derive_legacy_key(), &encrypted) {
+            Ok(data) => {
+                eprintln!("[SecureStorage] Migrating keys to hostname-independent encryption");
+                if let Ok(reencrypted) = encrypt(&key, &data) {
+                    let _ = fs::write(&path, reencrypted);
+                }
+                data
+            }
+            Err(e) => {
+                eprintln!(
+                    "[SecureStorage] Decryption failed (keys may be from another machine): {}",
+                    e
+                );
+                return Ok(HashMap::new());
+            }
+        },
     };
 
     let json_str = match String::from_utf8(decrypted) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[SecureStorage] Invalid UTF-8 in keys: {}", e);
-            let _ = fs::remove_file(&path);
             return Ok(HashMap::new());
         }
     };
@@ -194,7 +221,6 @@ fn load_keys_from_disk(app: &tauri::AppHandle) -> Result<HashMap<String, String>
         Ok(keys) => Ok(keys),
         Err(e) => {
             eprintln!("[SecureStorage] Failed to parse keys: {}", e);
-            let _ = fs::remove_file(&path);
             Ok(HashMap::new())
         }
     }
