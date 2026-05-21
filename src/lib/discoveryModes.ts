@@ -379,7 +379,6 @@ export function getAllDiscoveryModes(): DiscoveryModeConfig[] {
 const MODEL_IDS = {
   opus46: 'claude-opus-4-6',
   gemini3Pro: 'gemini-3.1-pro-preview',
-  gemini25Pro: 'gemini-2.5-pro',
   gpt54: 'gpt-5.4',
 } as const;
 
@@ -388,7 +387,7 @@ interface ThinkingConfig {
   anthropicExtended?: boolean;
   anthropicOpus46Level?: 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
   openaiReasoning?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  geminiThinking?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'on';
+  geminiThinking?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 interface ModelChoice {
@@ -423,7 +422,7 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
   'skeptical-critical': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
-    { model: MODEL_IDS.gemini25Pro, provider: 'google', thinking: { geminiThinking: 'on' } },
+    { model: MODEL_IDS.gemini3Pro, provider: 'google', thinking: { geminiThinking: 'high' } },
   ],
   'fact-checker': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
@@ -437,7 +436,7 @@ export interface AutoSelectedModel {
   extendedThinkingEnabled: boolean;
   opus46ThinkingLevel: 'off' | 'low' | 'medium' | 'high' | 'max' | 'adaptive';
   reasoningLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-  geminiThinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'on';
+  geminiThinkingLevel: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 /**

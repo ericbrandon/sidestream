@@ -33,8 +33,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
 
   // For Gemini, normalize the thinking level to one the model actually supports
   // (e.g. 'medium' is valid for 3.x Flash but not 3.1 Pro, which falls back to 'low').
-  // Without this the raw value reaches the backend and 'medium' on a Pro model would
-  // be misrouted to a thinkingBudget instead of thinkingLevel.
+  // Without this a level the model doesn't accept could reach the API unchanged.
   const effectiveGeminiThinkingLevel = provider === 'google'
     ? getValidGeminiThinkingLevel(llm.geminiThinkingLevel, llm.model)
     : null;

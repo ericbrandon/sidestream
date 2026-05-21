@@ -36,22 +36,10 @@ export const GEMINI_3_FLASH_OPTIONS: ThinkingOption<GeminiThinkingLevel>[] = [
   { value: 'high', label: 'High', letter: 'H' },
 ];
 
-// Thinking level options for Gemini 2.5 (just off/on)
-export const GEMINI_25_OPTIONS: ThinkingOption<GeminiThinkingLevel>[] = [
-  { value: 'off', label: 'Off', letter: '' },
-  { value: 'on', label: 'On', letter: '●' },
-];
-
-// Helper to get the right Gemini options based on model
+// Helper to get the right Gemini options based on model.
+// All supported Gemini models are 3.x: Flash exposes more levels than Pro.
 export function getGeminiThinkingOptions(model: string): ThinkingOption<GeminiThinkingLevel>[] {
-  if (model.includes('gemini-3') || model.includes('gemini3')) {
-    if (model.includes('flash')) {
-      return GEMINI_3_FLASH_OPTIONS;
-    }
-    return GEMINI_3_PRO_OPTIONS;
-  }
-  // Gemini 2.5
-  return GEMINI_25_OPTIONS;
+  return model.includes('flash') ? GEMINI_3_FLASH_OPTIONS : GEMINI_3_PRO_OPTIONS;
 }
 
 // Get a valid thinking level for the current model (normalizes invalid values)

@@ -62,10 +62,10 @@ function getSavedReasoningLevel(): OpenAIReasoningLevel {
 }
 
 // Load saved thinking level for Gemini models (default 'medium' - Google's recommended
-// sweet spot for 3.x Flash; normalized per-model at use, so Pro falls back to 'low' and 2.5 to 'off')
+// sweet spot for 3.x Flash; normalized per-model at use, so 3.1 Pro falls back to 'low')
 function getSavedGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('geminiThinkingLevel');
-  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {
+  if (saved && ['minimal', 'low', 'medium', 'high'].includes(saved)) {
     return saved as GeminiThinkingLevel;
   }
   return 'medium';
@@ -140,7 +140,7 @@ function getSavedEvaluatorReasoningLevel(): OpenAIReasoningLevel {
 // Load saved evaluator thinking level for Gemini models (default 'low')
 function getSavedEvaluatorGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('evaluatorGeminiThinkingLevel');
-  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'on'].includes(saved)) {
+  if (saved && ['minimal', 'low', 'medium', 'high'].includes(saved)) {
     return saved as GeminiThinkingLevel;
   }
   return 'medium';

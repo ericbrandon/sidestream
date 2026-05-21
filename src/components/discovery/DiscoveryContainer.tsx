@@ -247,11 +247,7 @@ export function DiscoveryContainer() {
                 onClick={() => setShowThinkingMenu(!showThinkingMenu)}
                 className={`
                   p-1.5 rounded transition-colors flex items-center gap-0.5
-                  ${
-                    effectiveGeminiThinkingLevel !== 'off'
-                      ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
-                      : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
-                  }
+                  text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70
                 `}
                 aria-label="Set thinking level"
               >

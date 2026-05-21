@@ -13,9 +13,12 @@ const LEGACY_GPT_IDS: Record<string, string> = {
 };
 
 // Map of retired Gemini IDs to their replacement.
-// Gemini 3 Flash Preview is superseded by the GA Gemini 3.5 Flash.
+// - Gemini 3 Flash Preview is superseded by the GA Gemini 3.5 Flash.
+// - Gemini 2.5 models were removed; Pro -> 3.1 Pro, Flash -> 3.5 Flash.
 const LEGACY_GEMINI_IDS: Record<string, string> = {
   'gemini-3-flash-preview': 'gemini-3.5-flash',
+  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+  'gemini-2.5-flash': 'gemini-3.5-flash',
 };
 
 // Rewrite a legacy model ID to its current replacement. Idempotent.

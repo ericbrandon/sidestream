@@ -12,20 +12,13 @@ pub struct GeminiClient {
 pub struct ChatRequestConfig {
     pub messages: Vec<serde_json::Value>,
     pub system_prompt: Option<String>,
-    pub thinking_config: Option<ThinkingConfig>,
+    pub thinking_config: Option<ThinkingLevel>,
     pub web_search_enabled: bool,
     pub code_execution_enabled: bool,
 }
 
-/// Configuration for thinking/reasoning
-/// Gemini 2.5 uses thinkingBudget (0-32768 tokens)
-/// Gemini 3.x uses thinkingLevel ("LOW" or "HIGH" for Pro; "minimal"/"low"/"medium"/"high" for Flash)
-#[derive(Clone)]
-pub enum ThinkingConfig {
-    Budget(u32),          // For Gemini 2.5 models
-    Level(ThinkingLevel), // For Gemini 3.x models
-}
-
+/// Thinking level for Gemini 3.x models (serialized as `thinkingLevel`).
+/// 3.1 Pro supports Low/High; 3.5 Flash also supports Minimal/Medium.
 #[derive(Clone, Copy, Debug)]
 pub enum ThinkingLevel {
     Minimal, // Gemini 3.x Flash only
@@ -49,7 +42,7 @@ impl ThinkingLevel {
 pub struct DiscoveryRequestConfig {
     pub system_prompt: String,
     pub conversation: String,
-    pub thinking_config: Option<ThinkingConfig>,
+    pub thinking_config: Option<ThinkingLevel>,
 }
 
 /// Configuration for a voice chat request (native multimodal audio)
@@ -57,7 +50,7 @@ pub struct VoiceChatRequestConfig {
     pub messages: Vec<serde_json::Value>,
     pub audio_base64: String,
     pub system_prompt: Option<String>,
-    pub thinking_config: Option<ThinkingConfig>,
+    pub thinking_config: Option<ThinkingLevel>,
     pub web_search_enabled: bool,
 }
 
@@ -233,28 +226,14 @@ impl GeminiClient {
             });
         }
 
-        // Add thinking configuration if enabled
-        // Both Gemini 2.5 and 3.x use nested thinkingConfig structure
-        // Include includeThoughts: true to receive thinking summaries in the response
-        if let Some(thinking) = &config.thinking_config {
-            let thinking_config = match thinking {
-                // Gemini 2.5: uses thinkingBudget (token count)
-                ThinkingConfig::Budget(budget) => {
-                    serde_json::json!({
-                        "thinkingBudget": budget,
-                        "includeThoughts": true
-                    })
-                }
-                // Gemini 3.x: uses thinkingLevel ("LOW", "HIGH", etc.)
-                ThinkingConfig::Level(level) => {
-                    serde_json::json!({
-                        "thinkingLevel": level.as_str(),
-                        "includeThoughts": true
-                    })
-                }
-            };
+        // Add thinking configuration if enabled.
+        // Gemini 3.x uses thinkingLevel; includeThoughts returns thinking summaries.
+        if let Some(level) = &config.thinking_config {
             body["generationConfig"] = serde_json::json!({
-                "thinkingConfig": thinking_config
+                "thinkingConfig": {
+                    "thinkingLevel": level.as_str(),
+                    "includeThoughts": true
+                }
             });
         }
 
@@ -294,22 +273,11 @@ impl GeminiClient {
             }]
         });
 
-        // Add thinking configuration if enabled
-        // Both Gemini 2.5 and 3.x use nested thinkingConfig structure
-        // Note: We don't include thinking summaries for discovery since it's internal
-        if let Some(thinking) = &config.thinking_config {
-            let thinking_config = match thinking {
-                // Gemini 2.5: uses thinkingBudget (token count)
-                ThinkingConfig::Budget(budget) => {
-                    serde_json::json!({"thinkingBudget": budget})
-                }
-                // Gemini 3.x: uses thinkingLevel ("LOW", "HIGH", etc.)
-                ThinkingConfig::Level(level) => {
-                    serde_json::json!({"thinkingLevel": level.as_str()})
-                }
-            };
+        // Add thinking configuration if enabled.
+        // Gemini 3.x uses thinkingLevel; no thinking summaries for internal discovery.
+        if let Some(level) = &config.thinking_config {
             body["generationConfig"] = serde_json::json!({
-                "thinkingConfig": thinking_config
+                "thinkingConfig": {"thinkingLevel": level.as_str()}
             });
         }
 
@@ -403,25 +371,14 @@ impl GeminiClient {
             }
         });
 
-        // Add thinking configuration if enabled
-        // Include thinking summaries for voice chat (user-facing)
-        if let Some(thinking) = &config.thinking_config {
-            let thinking_config = match thinking {
-                ThinkingConfig::Budget(budget) => {
-                    serde_json::json!({
-                        "thinkingBudget": budget,
-                        "includeThoughts": true
-                    })
-                }
-                ThinkingConfig::Level(level) => {
-                    serde_json::json!({
-                        "thinkingLevel": level.as_str(),
-                        "includeThoughts": true
-                    })
-                }
-            };
+        // Add thinking configuration if enabled.
+        // Include thinking summaries for voice chat (user-facing).
+        if let Some(level) = &config.thinking_config {
             body["generationConfig"] = serde_json::json!({
-                "thinkingConfig": thinking_config
+                "thinkingConfig": {
+                    "thinkingLevel": level.as_str(),
+                    "includeThoughts": true
+                }
             });
         }
 
@@ -798,47 +755,24 @@ fn byte_offset_to_char_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].chars().count()
 }
 
-/// Convert a thinking level string from the frontend to ThinkingConfig
-/// Frontend sends: "off", "on" (Gemini 2.5), "minimal", "low", "medium", "high" (Gemini 3.x)
-pub fn string_to_thinking_config(level: &str, model: &str) -> Option<ThinkingConfig> {
+/// Convert a thinking level string from the frontend to a [`ThinkingLevel`].
+/// Frontend sends "minimal", "low", "medium", or "high" (Gemini 3.x). Anything
+/// else ("off"/"none"/unknown) disables thinking.
+pub fn string_to_thinking_config(level: &str, model: &str) -> Option<ThinkingLevel> {
     match level.to_lowercase().as_str() {
-        "off" | "none" => None,
-        "on" => {
-            // Gemini 2.5: "on" maps to a thinking budget of 10000
-            Some(ThinkingConfig::Budget(10000))
-        }
-        "minimal" => Some(ThinkingConfig::Level(ThinkingLevel::Minimal)),
-        "low" => {
-            if is_gemini_3_model(model) {
-                Some(ThinkingConfig::Level(ThinkingLevel::Low))
-            } else {
-                // Gemini 2.5 fallback
-                Some(ThinkingConfig::Budget(5000))
-            }
-        }
+        "minimal" => Some(ThinkingLevel::Minimal),
+        "low" => Some(ThinkingLevel::Low),
+        // Only 3.x Flash supports medium; 3.1 Pro falls back to low.
         "medium" => {
             if is_gemini_3_flash_model(model) {
-                Some(ThinkingConfig::Level(ThinkingLevel::Medium))
+                Some(ThinkingLevel::Medium)
             } else {
-                // Gemini 2.5 fallback
-                Some(ThinkingConfig::Budget(15000))
+                Some(ThinkingLevel::Low)
             }
         }
-        "high" => {
-            if is_gemini_3_model(model) {
-                Some(ThinkingConfig::Level(ThinkingLevel::High))
-            } else {
-                // Gemini 2.5 fallback
-                Some(ThinkingConfig::Budget(25000))
-            }
-        }
-        _ => None, // Unknown level, don't enable thinking
+        "high" => Some(ThinkingLevel::High),
+        _ => None,
     }
-}
-
-/// Check if model is a Gemini 3.x model (uses thinkingLevel)
-pub fn is_gemini_3_model(model: &str) -> bool {
-    model.contains("gemini-3") || model.contains("gemini3")
 }
 
 /// Check if model is Gemini 3.x Flash (supports all thinking levels)
@@ -848,6 +782,6 @@ pub fn is_gemini_3_flash_model(model: &str) -> bool {
 
 /// Check if model supports thinking/reasoning
 pub fn supports_thinking(model: &str) -> bool {
-    // Gemini 2.5+ and Gemini 3.x support thinking
-    model.contains("2.5") || model.contains("gemini-3") || model.contains("gemini3")
+    // Gemini 3.x models support thinking
+    model.contains("gemini-3") || model.contains("gemini3")
 }
