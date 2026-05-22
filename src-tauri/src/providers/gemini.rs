@@ -4,19 +4,24 @@ const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/m
 
 /// Appended to the system instruction whenever code execution is enabled.
 ///
-/// Gemini 3.x, left to its own devices, tends to render charts as ASCII art or
-/// hand-encode a matplotlib figure to a base64 string — both of which land in the
-/// text/codeExecutionResult output, so no `inlineData` image is ever emitted. The
-/// sandbox only auto-captures a figure as an inline image when the code calls
-/// `plt.show()`. (Note this is the opposite of Anthropic/OpenAI, whose sandboxes
-/// capture figures via `savefig` — hence this guidance is Gemini-specific.)
-const GEMINI_CODE_EXEC_VISUAL_GUIDANCE: &str =
-    " When the user asks for a chart, graph, plot, diagram, or any data \
-visualization, write and run Python code that uses matplotlib and render the \
-figure by calling plt.show() so the sandbox returns it as an inline image. \
-Never draw charts as ASCII art, text tables, or printed characters, and never \
-manually encode the figure to base64 or save it to a buffer instead of calling \
-plt.show().";
+/// Without this, Gemini 3.x answers visual/file requests as ASCII art or by
+/// printing raw contents as text — it doesn't know the host app can render images
+/// and serve downloads. The Gemini sandbox returns ANY file the executed code
+/// writes to the working directory as a `part.inlineData` part (verified live for
+/// PNG via PIL and matplotlib, CSV, and PDF on both 3.5 Flash and 3.1 Pro), so the
+/// guidance describes the app's capabilities and the hand-off mechanism — save a
+/// file — rather than prescribing a single library. This is Gemini-specific: it's
+/// appended only in this builder, never to the shared cross-provider prompt.
+const GEMINI_CODE_EXEC_FILE_GUIDANCE: &str =
+    " This application can display images inline and lets the user download files \
+you create. When a visual or a file would serve the user better than plain text — \
+for example a plot, diagram, map, image, spreadsheet, document, or PDF — \
+use the code execution tool to generate it and save it to a file in the working \
+directory. Any file you save there is delivered to the user automatically: images \
+are shown inline and other files become downloads, so you never need to print file \
+contents or base64-encode them as text. Prefer producing a real saved file over \
+drawing ASCII art or pasting raw data as text. Only generate a file when it \
+genuinely helps; answer ordinary questions with plain text.";
 
 /// Google Gemini API client (Google AI Studio)
 pub struct GeminiClient {
@@ -236,11 +241,12 @@ impl GeminiClient {
         });
 
         // Add system instruction. When code execution is enabled, append guidance
-        // that forces matplotlib + plt.show() for visualizations; otherwise Gemini
-        // 3.x prints ASCII charts (text) and never returns an inline image.
+        // telling Gemini the app can render images / serve file downloads and that
+        // saving a file to the working directory hands it off; otherwise Gemini 3.x
+        // answers visual/file requests as ASCII or text and returns no inlineData.
         let mut system_text = config.system_prompt.clone().unwrap_or_default();
         if config.code_execution_enabled {
-            system_text.push_str(GEMINI_CODE_EXEC_VISUAL_GUIDANCE);
+            system_text.push_str(GEMINI_CODE_EXEC_FILE_GUIDANCE);
         }
         if !system_text.is_empty() {
             body["systemInstruction"] = serde_json::json!({
