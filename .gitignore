@@ -43,3 +43,6 @@ notes/
 # ===========================================
 linux-binaries/
 Documentation/
+
+# Python venv for dmgbuild (styled DMG creation)
+.dmgbuild-venv/
