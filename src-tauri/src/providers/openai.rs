@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::llm::GeneratedFile;
+
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/responses";
 
 /// OpenAI API client (using Responses API)
@@ -589,6 +591,88 @@ fn extract_sandbox_files(text: &str) -> Vec<ContainerFileCitation> {
     files
 }
 
+/// Merge a freshly parsed generated file into the per-turn buffer, keeping one
+/// entry per filename.
+///
+/// OpenAI surfaces the same code-interpreter file more than once: a `sandbox:`
+/// placeholder extracted from `response.output_text.done` (whose annotations are
+/// often still empty), and the real `container_file_citation` from
+/// `response.content_part.done`. Emitting per-event produced duplicate download
+/// chips, half of them dead (the placeholder has no real file id, so its content
+/// fetch fails and it has no `inline_data`). We collapse by filename and keep the
+/// better copy: one whose bytes were actually fetched (`inline_data`), tie-broken
+/// toward a real (non-`sandbox:`) file id.
+pub fn merge_generated_file(buffer: &mut Vec<GeneratedFile>, candidate: GeneratedFile) {
+    if let Some(existing) = buffer.iter_mut().find(|f| f.filename == candidate.filename) {
+        if generated_file_is_better(existing, &candidate) {
+            *existing = candidate;
+        }
+    } else {
+        buffer.push(candidate);
+    }
+}
+
+/// True if `candidate` is a better copy to keep than the `existing` one for the
+/// same filename. Prefers a file with fetched bytes; on a tie, prefers a real
+/// file id over a `sandbox:` placeholder. See [`merge_generated_file`].
+fn generated_file_is_better(existing: &GeneratedFile, candidate: &GeneratedFile) -> bool {
+    let existing_has_bytes = existing.inline_data.is_some();
+    let candidate_has_bytes = candidate.inline_data.is_some();
+    if candidate_has_bytes != existing_has_bytes {
+        return candidate_has_bytes;
+    }
+    let existing_placeholder = existing.file_id.starts_with("sandbox:");
+    let candidate_placeholder = candidate.file_id.starts_with("sandbox:");
+    existing_placeholder && !candidate_placeholder
+}
+
+const IMAGE_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+
+/// Whether a generated file is an image (by MIME, falling back to extension).
+fn is_image_generated_file(f: &GeneratedFile) -> bool {
+    if let Some(mime) = &f.mime_type {
+        if mime.starts_with("image/") {
+            return true;
+        }
+    }
+    let lower = f.filename.to_lowercase();
+    IMAGE_EXTS.iter().any(|ext| lower.ends_with(&format!(".{}", ext)))
+}
+
+/// Collapse redundant image renders from an OpenAI code-interpreter turn.
+///
+/// A model that both saves a chart (`plt.savefig('foo.png')`) and displays it
+/// (`plt.show()`) produces two image artifacts of the same figure with different
+/// identities, so [`merge_generated_file`]'s filename dedup can't merge them and
+/// the user sees the chart twice. We keep image files whose filename the model
+/// actually references in its final answer text (the saved, user-facing file) and
+/// drop unreferenced ones (the anonymous `plt.show()` display render). If no image
+/// is referenced anywhere (e.g. a `plt.show()`-only turn), we keep them all so the
+/// chart still shows. Non-image files are always kept (already deduped by name).
+pub fn select_displayable_files(files: Vec<GeneratedFile>, final_text: &str) -> Vec<GeneratedFile> {
+    let final_lower = final_text.to_lowercase();
+    let referenced = |f: &GeneratedFile| {
+        !f.filename.is_empty() && final_lower.contains(&f.filename.to_lowercase())
+    };
+    let any_image_referenced = files
+        .iter()
+        .any(|f| is_image_generated_file(f) && referenced(f));
+
+    files
+        .into_iter()
+        .filter(|f| {
+            if !is_image_generated_file(f) {
+                return true; // keep all non-image files
+            }
+            if any_image_referenced {
+                referenced(f) // keep only the referenced (saved, user-facing) image(s)
+            } else {
+                true // nothing referenced → keep all images (e.g. plt.show()-only)
+            }
+        })
+        .collect()
+}
+
 /// Convert a reasoning level string from the frontend to ReasoningEffort
 /// Frontend sends: "off", "minimal", "low", "medium", "high", "xhigh" for GPT-5
 ///                 "low", "medium", "high" for o-series
@@ -640,5 +724,168 @@ pub async fn fetch_file_content_base64(api_key: &str, container_id: &str, file_i
 
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A real code-interpreter file: a `cfile_*` id and fetched bytes.
+    fn real_file(filename: &str) -> GeneratedFile {
+        GeneratedFile {
+            file_id: format!("cfile_{}", filename),
+            filename: filename.to_string(),
+            mime_type: Some("text/html".to_string()),
+            image_preview: None,
+            inline_data: Some("ZmFrZQ==".to_string()),
+        }
+    }
+
+    /// A `sandbox:` placeholder: bogus id, no bytes (its content fetch failed).
+    fn placeholder_file(filename: &str) -> GeneratedFile {
+        GeneratedFile {
+            file_id: format!("sandbox:/mnt/data/{}", filename),
+            filename: filename.to_string(),
+            mime_type: None,
+            image_preview: None,
+            inline_data: None,
+        }
+    }
+
+    #[test]
+    fn extract_sandbox_files_yields_basename_placeholders() {
+        let text = "Here you go: [map](sandbox:/mnt/data/canada_density_map.html) and \
+                    [values](sandbox:/mnt/data/canada_density_values.csv).";
+        let files = extract_sandbox_files(text);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].filename, "canada_density_map.html");
+        assert_eq!(files[0].file_id, "sandbox:/mnt/data/canada_density_map.html");
+        assert!(files[0].container_id.is_empty());
+        assert_eq!(files[1].filename, "canada_density_values.csv");
+    }
+
+    #[test]
+    fn merge_keeps_distinct_filenames() {
+        let mut buf = Vec::new();
+        merge_generated_file(&mut buf, real_file("a.html"));
+        merge_generated_file(&mut buf, real_file("b.csv"));
+        assert_eq!(buf.len(), 2);
+    }
+
+    #[test]
+    fn merge_collapses_duplicate_filename() {
+        let mut buf = Vec::new();
+        merge_generated_file(&mut buf, real_file("a.html"));
+        merge_generated_file(&mut buf, real_file("a.html"));
+        assert_eq!(buf.len(), 1);
+    }
+
+    #[test]
+    fn merge_prefers_real_over_placeholder_when_placeholder_first() {
+        // This is the live ordering: output_text.done (placeholder) precedes
+        // content_part.done (real).
+        let mut buf = Vec::new();
+        merge_generated_file(&mut buf, placeholder_file("a.html"));
+        merge_generated_file(&mut buf, real_file("a.html"));
+        assert_eq!(buf.len(), 1);
+        assert!(buf[0].inline_data.is_some());
+        assert!(buf[0].file_id.starts_with("cfile_"));
+    }
+
+    #[test]
+    fn merge_does_not_downgrade_real_to_placeholder() {
+        let mut buf = Vec::new();
+        merge_generated_file(&mut buf, real_file("a.html"));
+        merge_generated_file(&mut buf, placeholder_file("a.html"));
+        assert_eq!(buf.len(), 1);
+        assert!(buf[0].inline_data.is_some());
+        assert!(buf[0].file_id.starts_with("cfile_"));
+    }
+
+    #[test]
+    fn merge_full_canada_scenario_yields_two_working_files() {
+        // Two files, each surfaced once as a placeholder then once for real:
+        // exactly the "4 chips, top 2 dead" bug. After merge: 2 working files.
+        let mut buf = Vec::new();
+        merge_generated_file(&mut buf, placeholder_file("canada_density_map.html"));
+        merge_generated_file(&mut buf, placeholder_file("canada_density_values.csv"));
+        merge_generated_file(&mut buf, real_file("canada_density_map.html"));
+        merge_generated_file(&mut buf, real_file("canada_density_values.csv"));
+        assert_eq!(buf.len(), 2);
+        assert!(buf.iter().all(|f| f.inline_data.is_some()));
+        assert!(buf.iter().all(|f| !f.file_id.starts_with("sandbox:")));
+    }
+
+    fn image_file(filename: &str, file_id: &str) -> GeneratedFile {
+        GeneratedFile {
+            file_id: file_id.to_string(),
+            filename: filename.to_string(),
+            mime_type: Some("image/png".to_string()),
+            image_preview: Some("data:image/png;base64,ZmFrZQ==".to_string()),
+            inline_data: Some("ZmFrZQ==".to_string()),
+        }
+    }
+
+    #[test]
+    fn select_drops_unreferenced_display_render() {
+        // savefig (named, referenced in text) + plt.show (anonymous, not referenced).
+        let files = vec![
+            image_file("canada_population_1980_2024.png", "cfile_saved"),
+            image_file("", "cfile_display"),
+        ];
+        let text = "Graph: [chart](sandbox:/mnt/data/canada_population_1980_2024.png)";
+        let kept = select_displayable_files(files, text);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].file_id, "cfile_saved");
+    }
+
+    #[test]
+    fn select_drops_unreferenced_named_display_render() {
+        // The display render can carry a generic name that isn't in the text.
+        let files = vec![
+            image_file("canada_population_1980_2024.png", "cfile_saved"),
+            image_file("image.png", "cfile_display"),
+        ];
+        let text = "Here is the chart: sandbox:/mnt/data/canada_population_1980_2024.png";
+        let kept = select_displayable_files(files, text);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].file_id, "cfile_saved");
+    }
+
+    #[test]
+    fn select_keeps_all_images_when_none_referenced() {
+        // plt.show()-only: no saved file referenced in text → keep the chart.
+        let files = vec![image_file("image.png", "cfile_display")];
+        let kept = select_displayable_files(files, "Here's your chart.");
+        assert_eq!(kept.len(), 1);
+    }
+
+    #[test]
+    fn select_always_keeps_non_image_files() {
+        let files = vec![
+            GeneratedFile {
+                file_id: "cfile_csv".to_string(),
+                filename: "data.csv".to_string(),
+                mime_type: Some("text/csv".to_string()),
+                image_preview: None,
+                inline_data: Some("ZmFrZQ==".to_string()),
+            },
+            image_file("chart.png", "cfile_img"),
+        ];
+        let text = "Chart: sandbox:/mnt/data/chart.png"; // csv not mentioned
+        let kept = select_displayable_files(files, text);
+        assert_eq!(kept.len(), 2); // csv kept despite not being referenced
+    }
+
+    #[test]
+    fn select_keeps_multiple_referenced_images() {
+        let files = vec![
+            image_file("a.png", "cfile_a"),
+            image_file("b.png", "cfile_b"),
+        ];
+        let text = "See sandbox:/mnt/data/a.png and sandbox:/mnt/data/b.png";
+        let kept = select_displayable_files(files, text);
+        assert_eq!(kept.len(), 2);
+    }
 }
 

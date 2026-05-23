@@ -27,28 +27,27 @@ export function extractSandboxFilename(url: string): string | null {
 }
 
 /**
- * Strip OpenAI sandbox: URLs from markdown content.
- * These are file references from OpenAI's code interpreter that link to sandbox:/mnt/data/...
- * Since files are displayed via GeneratedFileCard/GeneratedImageCard, we strip these links
- * to avoid showing non-functional download links in the markdown.
+ * Strip OpenAI sandbox: markdown IMAGES from content (![alt](sandbox:/mnt/data/...)).
+ * The image is shown via GeneratedImageCard, so an inline <img> pointing at a sandbox
+ * path would render broken (the webview can't load the sandbox: scheme) or duplicate.
  *
- * Handles patterns like:
- * - [Download filename](sandbox:/mnt/data/filename.ext)
- * - [filename](sandbox:/mnt/data/filename.ext)
- * - Standalone sandbox:/mnt/data/filename.ext URLs
+ * Markdown LINKS ([text](sandbox:/mnt/data/...)) are intentionally LEFT INTACT — the
+ * message's link renderer resolves them into a working download against the turn's
+ * generated files (preferring persisted inline bytes), falling back to the live
+ * container by filename. This mirrors how Gemini local-file links are handled, so the
+ * model's "Download the CSV" links stay visible and clickable instead of vanishing
+ * (and leaving empty list bullets). See findReferencedGeneratedFile /
+ * handleSandboxUrlClick in Message.tsx.
+ *
+ * Note: a bare, non-markdown-link sandbox URL is left as-is (rare; the model almost
+ * always emits a markdown link). We avoid a blanket URL strip because it would also
+ * gut the href inside the links we now want to keep.
  */
 export function stripSandboxUrls(content: string): string {
-  // Strip markdown links with sandbox URLs: [text](sandbox:/mnt/data/...)
-  // This removes the entire link including the link text
-  let result = content.replace(/\[([^\]]*)\]\(sandbox:\/mnt\/data\/[^)]+\)/g, '');
-
-  // Strip standalone sandbox URLs (not in markdown link format)
-  result = result.replace(/sandbox:\/mnt\/data\/\S+/g, '');
-
-  // Clean up any resulting empty lines (multiple consecutive newlines -> double newline)
-  result = result.replace(/\n{3,}/g, '\n\n');
-
-  return result;
+  // Strip markdown images only; links are kept for the resolver.
+  return content
+    .replace(/!\[([^\]]*)\]\(sandbox:\/mnt\/data\/[^)]+\)/g, '')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 /**

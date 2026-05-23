@@ -90,6 +90,13 @@ pub async fn send_chat_message_openai(
     // State tracking for code interpreter
     let mut pending_code = String::new();
 
+    // Buffer generated files and emit one deduped set at stream end. OpenAI
+    // surfaces the same code-interpreter file twice — a `sandbox:` placeholder via
+    // `response.output_text.done` and the real `container_file_citation` via
+    // `response.content_part.done` — so emitting per-event produced duplicate,
+    // half-dead download chips. See providers::openai::merge_generated_file.
+    let mut buffered_files: Vec<GeneratedFile> = Vec::new();
+
     loop {
         tokio::select! {
             // Check for cancellation
@@ -117,6 +124,9 @@ pub async fn send_chat_message_openai(
                                     match parsed_event {
                                         OpenAIStreamEvent::Done | OpenAIStreamEvent::ResponseCompleted => {
                                             llm_logger::log_response_complete("chat", &full_response);
+                                            // Emit the deduped files before done so the frontend
+                                            // includes them when it finalizes the message.
+                                            emit_generated_files(window, &turn_id, std::mem::take(&mut buffered_files), &full_response);
                                             if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
@@ -236,23 +246,14 @@ pub async fn send_chat_message_openai(
                                                     });
                                                 }
 
-                                                let delta = StreamDelta {
-                                                    turn_id: turn_id.clone(),
-                                                    text: String::new(),
-                                                    citations: None,
-                                                    inline_citations: None,
-                                                    thinking: None,
-                                                    execution: Some(ExecutionDelta {
-                                                        tool_name: tool_names::CODE_INTERPRETER.to_string(),
-                                                        stdout: None,
-                                                        stderr: None,
-                                                        status: ExecutionStatus::Completed,
-                                                        code: None,
-                                                        files: Some(generated_files),
-                                                    }),
-                                                };
-                                                if let Err(err) = window.emit("chat-stream-delta", delta) {
-                                                    eprintln!("Failed to emit file citations delta: {}", err);
+                                                // Buffer rather than emit: the same files arrive again via
+                                                // response.content_part.done, and output_text.done usually
+                                                // only has sandbox placeholders. Dedupe and emit once at end.
+                                                for f in generated_files {
+                                                    crate::providers::openai::merge_generated_file(
+                                                        &mut buffered_files,
+                                                        f,
+                                                    );
                                                 }
                                             }
                                         }
@@ -345,6 +346,15 @@ pub async fn send_chat_message_openai(
                                                 });
                                             }
 
+                                            // Buffer files; they're emitted deduped at stream end alongside
+                                            // the ones referenced in the final message text.
+                                            for f in generated_files {
+                                                crate::providers::openai::merge_generated_file(
+                                                    &mut buffered_files,
+                                                    f,
+                                                );
+                                            }
+
                                             // Determine status based on stderr
                                             let status = if stderr.is_some() {
                                                 ExecutionStatus::Failed {
@@ -366,11 +376,8 @@ pub async fn send_chat_message_openai(
                                                     stderr,
                                                     status,
                                                     code: None,
-                                                    files: if generated_files.is_empty() {
-                                                        None
-                                                    } else {
-                                                        Some(generated_files)
-                                                    },
+                                                    // Files were buffered above; emitted deduped at stream end.
+                                                    files: None,
                                                 }),
                                             };
                                             if let Err(err) = window.emit("chat-stream-delta", delta) {
@@ -395,8 +402,43 @@ pub async fn send_chat_message_openai(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
+    emit_generated_files(window, &turn_id, std::mem::take(&mut buffered_files), &full_response);
     if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())
+}
+
+/// Emit the deduped, display-selected set of generated files as a single
+/// execution-completed delta. Must be called before `chat-stream-done` so the
+/// frontend includes the files when it finalizes the streaming message.
+/// No-op when there are no files.
+fn emit_generated_files(
+    window: &tauri::Window,
+    turn_id: &str,
+    files: Vec<GeneratedFile>,
+    final_text: &str,
+) {
+    let files = crate::providers::openai::select_displayable_files(files, final_text);
+    if files.is_empty() {
+        return;
+    }
+    let delta = StreamDelta {
+        turn_id: turn_id.to_string(),
+        text: String::new(),
+        citations: None,
+        inline_citations: None,
+        thinking: None,
+        execution: Some(ExecutionDelta {
+            tool_name: tool_names::CODE_INTERPRETER.to_string(),
+            stdout: None,
+            stderr: None,
+            status: ExecutionStatus::Completed,
+            code: None,
+            files: Some(files),
+        }),
+    };
+    if let Err(err) = window.emit("chat-stream-delta", delta) {
+        eprintln!("Failed to emit generated files delta: {}", err);
+    }
 }
