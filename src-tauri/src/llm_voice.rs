@@ -182,7 +182,7 @@ pub async fn send_voice_message_impl(
                                             window.emit("chat-stream-delta", delta).ok();
                                         }
                                     }
-                                    GeminiStreamEvent::ResponseComplete => {
+                                    GeminiStreamEvent::ResponseComplete { .. } => {
                                         llm_logger::log_response_complete("voice-chat", &full_response);
                                         window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }).ok();
                                         return Ok(());

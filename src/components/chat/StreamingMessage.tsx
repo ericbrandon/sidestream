@@ -9,7 +9,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isLocalGeneratedFileRef, isSandboxUrl, preserveFileRefUrlTransform } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 
@@ -201,20 +201,29 @@ function createMarkdownComponents(
     td: ({ children }) => <td>{processChildren(children)}</td>,
     th: ({ children }) => <th>{processChildren(children)}</th>,
     hr: () => <hr className="my-4 border-gray-300 dark:border-gray-600" />,
-    a: ({ href, children }) => (
-      <a
-        href={href}
-        onClick={(e) => {
-          e.preventDefault();
-          if (href) {
-            openUrl(href);
-          }
-        }}
-        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
-      >
-        {processChildren(children)}
-      </a>
-    ),
+    a: ({ href, children }) => {
+      // Generated files aren't attached until the stream finalizes, so a link to a
+      // local/sandbox file — or one with an empty href (Gemini often writes
+      // "[Download data.csv]()") — would be dead here. Render it as plain text
+      // mid-stream; the finalized Message turns it into a working download.
+      if (!href || isSandboxUrl(href) || isLocalGeneratedFileRef(href)) {
+        return <>{processChildren(children)}</>;
+      }
+      return (
+        <a
+          href={href}
+          onClick={(e) => {
+            e.preventDefault();
+            if (href) {
+              openUrl(href);
+            }
+          }}
+          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+        >
+          {processChildren(children)}
+        </a>
+      );
+    },
     // Code blocks with copy and download icons
     pre: ({ children }) => {
       // Extract code content and className from the code element
@@ -296,6 +305,7 @@ const CachedMarkdown = memo(function CachedMarkdown({
       remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
       rehypePlugins={[rehypeKatex]}
       components={markdownComponents}
+      urlTransform={preserveFileRefUrlTransform}
     >
       {processedContent}
     </ReactMarkdown>

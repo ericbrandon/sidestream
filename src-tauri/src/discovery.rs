@@ -622,7 +622,7 @@ async fn discover_resources_gemini(
 
                 for event in events {
                 match event {
-                    GeminiStreamEvent::ResponseComplete => {
+                    GeminiStreamEvent::ResponseComplete { .. } => {
                         // eprintln!("[DISCOVERY-GEMINI] === COMPLETE === chunks:{}, sse_events:{}, text_deltas:{}, items:{}", chunk_count, sse_event_count, text_delta_count, items_found);
                         // eprintln!("[DISCOVERY-GEMINI] Full response length: {} chars", full_response.len());
                         // if full_response.len() <= 1000 {

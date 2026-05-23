@@ -17,7 +17,7 @@ import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
-import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename } from './citationUtils';
+import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename, isLocalGeneratedFileRef, fileRefBasename, GENERATED_FILE_REF_REGEX, preserveFileRefUrlTransform } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 
@@ -97,6 +97,114 @@ async function handleSandboxUrlClick(href: string): Promise<void> {
   } catch (err) {
     console.error('Failed to download sandbox file:', err);
   }
+}
+
+/**
+ * Download a generated file to disk. Uses the file's inline base64 data when
+ * present (Gemini, and persisted Anthropic/OpenAI files); otherwise fetches it
+ * from the provider's API by id/name.
+ */
+async function downloadGeneratedFile(f: GeneratedFile): Promise<void> {
+  try {
+    let result: { data: number[]; filename: string; mime_type?: string };
+
+    // If inline_data is available (persisted), use it directly
+    if (f.inline_data) {
+      const binary = atob(f.inline_data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      result = { data: Array.from(bytes), filename: f.filename, mime_type: f.mime_type };
+    } else {
+      // Fallback to API download if inline_data not available (legacy data)
+      const currentModel = useSettingsStore.getState().frontierLLM.model;
+      const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
+
+      if (isOpenAI) {
+        const containerId = useChatStore.getState().openaiContainerId;
+        if (!containerId) {
+          throw new Error('No OpenAI container ID available for file download');
+        }
+        if (f.file_id.startsWith('sandbox:')) {
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_openai_file_by_name',
+            { containerId, filename: f.filename }
+          );
+        } else {
+          result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+            'download_openai_file',
+            { containerId, fileId: f.file_id, filename: f.filename }
+          );
+        }
+      } else {
+        result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
+          'download_anthropic_file',
+          { fileId: f.file_id, filename: f.filename }
+        );
+      }
+    }
+
+    const savePath = await save({ defaultPath: result.filename, title: 'Save Generated File' });
+    if (savePath) {
+      await writeFile(savePath, new Uint8Array(result.data));
+    }
+  } catch (err) {
+    console.error('Failed to download file:', err);
+  }
+}
+
+/**
+ * Resolve a markdown link href to one of this message's generated files by
+ * basename (e.g. a "[chart](canada.png)" link Gemini wrote in its prose).
+ */
+/** Flatten react-markdown link children to their plain-text string. */
+function nodeText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join('');
+  if (typeof node === 'object' && 'props' in node) {
+    return nodeText((node as { props?: { children?: React.ReactNode } }).props?.children);
+  }
+  return '';
+}
+
+/**
+ * Resolve a markdown link to one of this message's generated files by matching a
+ * filename found in EITHER the href OR the visible link text against the generated
+ * filenames. Gemini is inconsistent about download links: sometimes the filename is
+ * in the href ("[x](sandbox:/data.csv)"), sometimes only in the text with an empty
+ * href ("[Download data.csv]()"). We check both. Never hijacks a real web URL.
+ */
+function findReferencedGeneratedFile(
+  href: string,
+  linkText: string,
+  files: GeneratedFile[] | undefined
+): GeneratedFile | undefined {
+  if (!files || files.length === 0) return undefined;
+
+  const byName = (raw: string): GeneratedFile | undefined => {
+    const base = fileRefBasename(raw);
+    if (!base.includes('.')) return undefined;
+    return files.find((f) => f.filename.toLowerCase() === base);
+  };
+
+  // Don't hijack real web links even if a basename collides.
+  const scheme = href.match(/^([a-z][\w+.-]*):/i)?.[1]?.toLowerCase();
+  const isWeb = !!scheme && ['http', 'https', 'ftp', 'ftps', 'mailto', 'tel', 'data'].includes(scheme);
+  if (isWeb) return undefined;
+
+  // 1) Filename in the href (e.g. "sandbox:/data.csv", "./data.csv").
+  const fromHref = href ? byName(href) : undefined;
+  if (fromHref) return fromHref;
+
+  // 2) Filename in the visible link text (e.g. "Download data.csv" with an empty href).
+  const inText = linkText.match(GENERATED_FILE_REF_REGEX) || [];
+  for (const candidate of inText) {
+    const hit = byName(candidate);
+    if (hit) return hit;
+  }
+  return undefined;
 }
 
 /**
@@ -209,7 +317,8 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
 }
 
 function createMarkdownComponents(
-  citationMap: Map<number, InlineCitationType>
+  citationMap: Map<number, InlineCitationType>,
+  generatedFiles?: GeneratedFile[]
 ): Components {
   // Helper to process children and render citations
   const processChildren = (children: React.ReactNode): React.ReactNode => {
@@ -243,25 +352,51 @@ function createMarkdownComponents(
     td: ({ children }) => <td>{processChildren(children)}</td>,
     th: ({ children }) => <th>{processChildren(children)}</th>,
     hr: () => <hr className="my-4 border-gray-300 dark:border-gray-600" />,
-    a: ({ href, children }) => (
-      <a
-        href={href}
-        onClick={(e) => {
-          e.preventDefault();
-          if (href) {
-            // Check if this is a sandbox: URL (OpenAI code interpreter file)
-            if (isSandboxUrl(href)) {
-              handleSandboxUrlClick(href);
-            } else {
-              openUrl(href);
-            }
-          }
-        }}
-        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
-      >
-        {processChildren(children)}
-      </a>
-    ),
+    a: ({ href, children }) => {
+      const url = href ?? '';
+      // 1) Resolve to a generated file via the href OR the visible link text (Gemini
+      //    sometimes puts the filename only in the text with an empty href) → download.
+      const file = findReferencedGeneratedFile(url, nodeText(children), generatedFiles);
+      if (file) {
+        return (
+          <a
+            href={url}
+            onClick={(e) => { e.preventDefault(); downloadGeneratedFile(file); }}
+            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+          >
+            {processChildren(children)}
+          </a>
+        );
+      }
+      // 2) OpenAI code-interpreter sandbox file (sandbox:/mnt/data/...), resolved via
+      //    the container API. (Usually already stripped before render.)
+      if (url && isSandboxUrl(url) && extractSandboxFilename(url)) {
+        return (
+          <a
+            href={url}
+            onClick={(e) => { e.preventDefault(); handleSandboxUrlClick(url); }}
+            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+          >
+            {processChildren(children)}
+          </a>
+        );
+      }
+      // 3) An empty href, or a sandbox/local file-looking ref with no matching file =
+      //    leftover/intermediate reference — render its text without a dead link.
+      if (!url || isSandboxUrl(url) || isLocalGeneratedFileRef(url)) {
+        return <>{processChildren(children)}</>;
+      }
+      // 4) Normal external link.
+      return (
+        <a
+          href={url}
+          onClick={(e) => { e.preventDefault(); openUrl(url); }}
+          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline cursor-pointer"
+        >
+          {processChildren(children)}
+        </a>
+      );
+    },
     // Code blocks with copy and download icons
     pre: ({ children }) => {
       // Extract code content and className from the code element
@@ -312,9 +447,9 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
       citationMap.set(existingCitations.length + idx, citation);
     });
 
-    const markdownComponents = createMarkdownComponents(citationMap);
+    const markdownComponents = createMarkdownComponents(citationMap, message.generatedFiles);
     return { processedContent, markdownComponents };
-  }, [message.content, message.inlineCitations, showCitations]);
+  }, [message.content, message.inlineCitations, message.generatedFiles, showCitations]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     const selection = window.getSelection();
@@ -415,65 +550,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
             }
           }
 
-          const downloadFile = async (f: GeneratedFile) => {
-            try {
-              let result: { data: number[]; filename: string; mime_type?: string };
-
-              // If inline_data is available (persisted), use it directly
-              if (f.inline_data) {
-                const binary = atob(f.inline_data);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) {
-                  bytes[i] = binary.charCodeAt(i);
-                }
-                result = {
-                  data: Array.from(bytes),
-                  filename: f.filename,
-                  mime_type: f.mime_type,
-                };
-              } else {
-                // Fallback to API download if inline_data not available (legacy data)
-                const currentModel = useSettingsStore.getState().frontierLLM.model;
-                const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
-
-                if (isOpenAI) {
-                  // OpenAI requires container_id for file downloads
-                  const containerId = useChatStore.getState().openaiContainerId;
-                  if (!containerId) {
-                    throw new Error('No OpenAI container ID available for file download');
-                  }
-                  // Check if file_id is a sandbox placeholder (needs resolution by name)
-                  if (f.file_id.startsWith('sandbox:')) {
-                    result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                      'download_openai_file_by_name',
-                      { containerId, filename: f.filename }
-                    );
-                  } else {
-                    result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                      'download_openai_file',
-                      { containerId, fileId: f.file_id, filename: f.filename }
-                    );
-                  }
-                } else {
-                  // Anthropic download
-                  result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
-                    'download_anthropic_file',
-                    { fileId: f.file_id, filename: f.filename }
-                  );
-                }
-              }
-
-              const savePath = await save({
-                defaultPath: result.filename,
-                title: 'Save Generated File',
-              });
-              if (savePath) {
-                await writeFile(savePath, new Uint8Array(result.data));
-              }
-            } catch (err) {
-              console.error('Failed to download file:', err);
-            }
-          };
+          const downloadFile = downloadGeneratedFile;
 
           // Execution badge (inline at split point)
           const executionBadge = hasExecution && (
@@ -537,6 +614,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                     remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                     rehypePlugins={[rehypeKatex]}
                     components={markdownComponents}
+                    urlTransform={preserveFileRefUrlTransform}
                   >
                     {beforeExec}
                   </ReactMarkdown>
@@ -548,6 +626,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                       remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                       rehypePlugins={[rehypeKatex]}
                       components={markdownComponents}
+                      urlTransform={preserveFileRefUrlTransform}
                     >
                       {afterExec}
                     </ReactMarkdown>
@@ -567,6 +646,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                   remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
                   rehypePlugins={[rehypeKatex]}
                   components={markdownComponents}
+                  urlTransform={preserveFileRefUrlTransform}
                 >
                   {processedContent}
                 </ReactMarkdown>

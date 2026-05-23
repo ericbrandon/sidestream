@@ -41,6 +41,8 @@ bundle_dir="src-tauri/target/${TARGET}/release/bundle"
 app="${repo_root}/${bundle_dir}/macos/Sidestream.app"
 out="${repo_root}/${bundle_dir}/dmg/Sidestream_${version}_aarch64.dmg"
 vol_icon="${repo_root}/src-tauri/icons/icon.icns"
+bg_image="${repo_root}/scripts/dmg-background.tiff"   # HiDPI background w/ drag arrow
+[[ -f "$bg_image" ]] || { echo "warning: $bg_image missing — DMG will have no background" >&2; bg_image=""; }
 
 if [[ ! -d "$app" ]]; then
     echo "error: app not found at $app — run 'npm run tauri build -- --target $TARGET' first" >&2
@@ -66,7 +68,7 @@ fi
 echo "==> Building styled DMG: $(basename "$out")"
 mkdir -p "$(dirname "$out")"
 rm -f "$out"
-APP_PATH="$app" VOL_ICON="$vol_icon" \
+APP_PATH="$app" VOL_ICON="$vol_icon" DMG_BACKGROUND="$bg_image" \
     "${venv}/bin/dmgbuild" -s "${repo_root}/scripts/dmg-settings.py" "Sidestream" "$out"
 
 echo "==> Signing DMG"

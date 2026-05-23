@@ -243,6 +243,13 @@ export function useChat() {
         // Flush any remaining buffered content before finalizing
         flushStreamingBuffer();
 
+        // Did this turn actually produce an answer? A turn that ended with only a
+        // thinking block (e.g. an interrupted long code-execution run) has no
+        // content — we shouldn't run discovery on it.
+        const producedContent = stream
+          ? !!stream.streamingContent?.trim()
+          : !!chatStore.streamingContent?.trim();
+
         if (stream) {
           // Complete the background stream (handles saving to correct session)
           backgroundStore.completeChatStream(turnId);
@@ -255,9 +262,10 @@ export function useChat() {
         // Clear the buffer for next stream
         clearStreamingBuffer();
 
-        // Trigger discovery with the turnId and original sessionId (skip if mode is 'none')
+        // Trigger discovery with the turnId and original sessionId (skip if mode is
+        // 'none', or if the turn produced no answer to discover against).
         const discoveryMode = useSettingsStore.getState().discoveryMode;
-        if (discoveryMode !== 'none') {
+        if (discoveryMode !== 'none' && producedContent) {
           if (stream) {
             triggerDiscovery(turnId, stream.sessionId);
           } else {

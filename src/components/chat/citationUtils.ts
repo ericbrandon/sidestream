@@ -1,3 +1,4 @@
+import { defaultUrlTransform } from 'react-markdown';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 
 // Citation marker format: {{CITE:index}}
@@ -73,35 +74,70 @@ export function stripAnthropicFileUrls(content: string): string {
   return result;
 }
 
+// Extensions Gemini code execution can emit as downloadable files.
+const GENERATED_FILE_EXTS = [
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg',
+  'csv', 'json', 'txt', 'pdf', 'xlsx', 'xls', 'docx', 'pptx', 'html', 'md',
+];
+const GENERATED_IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+
+/** Matches a filename with a known generated-file extension anywhere in a string. */
+export const GENERATED_FILE_REF_REGEX = new RegExp(
+  `[\\w./\\\\-]+\\.(?:${GENERATED_FILE_EXTS.join('|')})`,
+  'gi'
+);
+
 /**
- * Strip Gemini local file references from markdown content.
- * Gemini's code execution outputs markdown image/link syntax referencing local filenames
- * like ![Graph](graph.png) or [Download](data.csv) - these reference files in Gemini's
- * sandbox that aren't accessible via URL. Since we display generated files via
- * GeneratedFileCard/GeneratedImageCard using inline_data, we strip these references.
+ * Strip Gemini local-file markdown IMAGES from content (e.g. ![Graph](graph.png),
+ * ![g](./out/graph.png)). The image is shown via GeneratedImageCard, so an inline
+ * <img> pointing at a sandbox filename would render broken/duplicate.
  *
- * Handles patterns like:
- * - ![alt text](filename.png) - markdown images with local filename
- * - [link text](filename.csv) - markdown links with local filename
+ * Markdown LINKS ([text](file.ext)) are intentionally left intact — the message's
+ * link renderer turns the ones that match a generated file into working downloads
+ * (see findLocalGeneratedFile / isLocalGeneratedFileRef) and drops the rest.
  *
- * Only strips references that look like local filenames (no protocol, no path separators).
+ * Skips anything with a URI scheme (http:, https:, data:, sandbox:, …) so real
+ * web images are untouched. Path prefixes (./, /tmp/, out/) are allowed.
  */
 export function stripGeminiLocalFileRefs(content: string): string {
-  // Strip markdown images with local filenames: ![alt](filename.ext)
-  // Matches: ![anything](word.ext) where word.ext has no / or : (not a URL or path)
-  let result = content.replace(/!\[([^\]]*)\]\(([^/:\s)]+\.[a-zA-Z0-9]+)\)/g, '');
-
-  // Strip markdown links with local filenames: [text](filename.ext)
-  // Only if it looks like a generated file (common extensions from code execution)
-  const generatedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'csv', 'json', 'txt', 'pdf', 'xlsx', 'html'];
-  const extPattern = generatedExtensions.join('|');
-  const linkRegex = new RegExp(`\\[([^\\]]*)\\]\\(([^/:\\s)]+\\.(${extPattern}))\\)`, 'gi');
-  result = result.replace(linkRegex, '');
-
+  const extPattern = GENERATED_IMAGE_EXTS.join('|');
+  const imgRegex = new RegExp(
+    `!\\[([^\\]]*)\\]\\((?![a-z][\\w+.-]*:)([^)\\s]*\\.(${extPattern}))\\)`,
+    'gi'
+  );
+  let result = content.replace(imgRegex, '');
   // Clean up any resulting empty lines (multiple consecutive newlines -> double newline)
   result = result.replace(/\n{3,}/g, '\n\n');
-
   return result;
+}
+
+/**
+ * Does this markdown link href look like a local generated file? True when it has
+ * no URI scheme and ends in a known generated-file extension — e.g. "chart.png",
+ * "./report.pdf", "/tmp/data.csv" — but not "https://example.com/x.png".
+ */
+export function isLocalGeneratedFileRef(href: string): boolean {
+  if (/^[a-z][\w+.-]*:/i.test(href)) return false; // has a scheme (http:, sandbox:, mailto:, data:)
+  if (href.startsWith('#')) return false;
+  const base = fileRefBasename(href);
+  const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
+  return GENERATED_FILE_EXTS.includes(ext);
+}
+
+/** Lowercased final path component of an href, for matching against a filename. */
+export function fileRefBasename(href: string): string {
+  return (href.split(/[?#]/)[0].split('/').pop() || '').toLowerCase();
+}
+
+/**
+ * `urlTransform` for ReactMarkdown that preserves "sandbox:" download links
+ * (Gemini/OpenAI code-execution files). react-markdown's default sanitizer rewrites
+ * any href with an unrecognized scheme to "" — which silently destroys the href
+ * before our link renderer can resolve it to a generated file. We keep the default
+ * sanitization for every other scheme (so javascript:/data: stay blocked).
+ */
+export function preserveFileRefUrlTransform(url: string): string {
+  return url.startsWith('sandbox:') ? url : defaultUrlTransform(url);
 }
 
 /**

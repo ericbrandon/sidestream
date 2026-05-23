@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -83,8 +84,10 @@ pub enum GeminiStreamEvent {
     TextDelta { text: String },
     /// Thinking content delta - for ephemeral UI display
     ThinkingDelta { text: String },
-    /// Response complete
-    ResponseComplete,
+    /// Response complete. `finish_reason` is Gemini's reason (e.g. "STOP",
+    /// "MAX_TOKENS", "SAFETY", "RECITATION") so the handler can distinguish a
+    /// clean finish from a truncated/blocked one.
+    ResponseComplete { finish_reason: String },
     /// Grounding metadata (search results)
     GroundingMetadata { metadata: GroundingInfo },
     /// Error occurred
@@ -674,10 +677,13 @@ pub fn parse_sse_event(data: &str) -> Vec<GeminiStreamEvent> {
     // Note: usageMetadata is sent with EVERY chunk, so we can't use that as completion signal
     if let Some(candidates) = parsed["candidates"].as_array() {
         if let Some(first_candidate) = candidates.first() {
-            if let Some(finish_reason) = first_candidate.get("finishReason") {
-                if finish_reason.as_str().is_some() {
-                    events.push(GeminiStreamEvent::ResponseComplete);
-                }
+            if let Some(finish_reason) = first_candidate
+                .get("finishReason")
+                .and_then(|v| v.as_str())
+            {
+                events.push(GeminiStreamEvent::ResponseComplete {
+                    finish_reason: finish_reason.to_string(),
+                });
             }
         }
     }
@@ -712,6 +718,102 @@ pub fn mime_to_extension(mime_type: &str) -> &'static str {
         "text/markdown" => "md",
         _ => "bin",
     }
+}
+
+/// Extensions we treat as "generated files" when correlating code-execution
+/// output to the model's prose. Used by both filename extractors below.
+const GENERATED_FILE_EXTS: &str =
+    "png|jpe?g|gif|webp|svg|csv|json|txt|pdf|xlsx|xls|docx|pptx|html|md";
+
+/// The final path component of a (possibly path-prefixed) filename.
+fn file_basename(path: &str) -> String {
+    path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
+}
+
+/// Extract the filenames a code block writes, as basenames, in first-seen order
+/// with duplicates removed. Matches quoted string literals that end in a known
+/// generated-file extension (e.g. `plt.savefig('chart.png')`, `doc.save("r.pdf")`).
+/// `inlineData` parts are anonymous, so this is how we recover a file's name and
+/// pair it (FIFO) with the file the sandbox returns.
+pub fn extract_saved_filenames(code: &str) -> Vec<String> {
+    let re = Regex::new(&format!(
+        r#"(?i)['"]([\w./\\-]+\.(?:{}))['"]"#,
+        GENERATED_FILE_EXTS
+    ))
+    .expect("valid saved-filename regex");
+    let mut out: Vec<String> = Vec::new();
+    for cap in re.captures_iter(code) {
+        let name = file_basename(&cap[1]);
+        if !out.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// Lowercased file extension (without the dot), or "" if none.
+fn file_ext(filename: &str) -> String {
+    match filename.rsplit_once('.') {
+        Some((_, ext)) if !ext.is_empty() => ext.to_lowercase(),
+        _ => String::new(),
+    }
+}
+
+/// Normalize equivalent extensions so comparisons match (e.g. jpeg == jpg).
+fn normalize_ext(ext: &str) -> &str {
+    match ext {
+        "jpeg" => "jpg",
+        other => other,
+    }
+}
+
+/// Is this an image file extension?
+fn is_image_ext(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "tiff" | "ico"
+    )
+}
+
+/// Choose which pending saved-filename belongs to a returned `inlineData` part of
+/// the given MIME type. The code's save order and the sandbox's return order don't
+/// always match, so pairing by position swaps names (e.g. a PNG getting a `.json`
+/// name). Instead we match by content type: first an exact extension match, then
+/// the same image/non-image category, so a `image/png` part takes an image name and
+/// a `application/json` part takes a non-image name. Returns the index to remove, or
+/// None if nothing suitable is pending (caller falls back to a synthetic name).
+pub fn pick_filename_index_for_mime(pending: &[String], mime: &str) -> Option<usize> {
+    if pending.is_empty() {
+        return None;
+    }
+    let target = normalize_ext(mime_to_extension(mime));
+    // 1) Exact extension match.
+    if let Some(i) = pending
+        .iter()
+        .position(|f| normalize_ext(&file_ext(f)) == target)
+    {
+        return Some(i);
+    }
+    // 2) Same category (image vs non-image) — handles MIME types we don't map to a
+    //    specific extension, and minor mismatches like jpg vs png.
+    let mime_is_image = mime.starts_with("image/");
+    pending
+        .iter()
+        .position(|f| is_image_ext(&normalize_ext(&file_ext(f))) == mime_is_image)
+}
+
+/// Extract the filenames the model references in its prose, as lowercased
+/// basenames. These are the files it "presents" to the user; anything generated
+/// but not named here is treated as an intermediate/working file.
+pub fn extract_referenced_filenames(text: &str) -> std::collections::HashSet<String> {
+    let re = Regex::new(&format!(
+        r"(?i)[\w./\\-]+\.(?:{})",
+        GENERATED_FILE_EXTS
+    ))
+    .expect("valid referenced-filename regex");
+    re.find_iter(text)
+        .map(|m| file_basename(m.as_str()).to_lowercase())
+        .collect()
 }
 
 /// Inline citation with position information
@@ -812,4 +914,119 @@ pub fn is_gemini_3_flash_model(model: &str) -> bool {
 pub fn supports_thinking(model: &str) -> bool {
     // Gemini 3.x models support thinking
     model.contains("gemini-3") || model.contains("gemini3")
+}
+
+#[cfg(test)]
+mod filename_tests {
+    use super::{
+        extract_referenced_filenames, extract_saved_filenames, pick_filename_index_for_mime,
+    };
+
+    #[test]
+    fn pairing_unswaps_when_return_order_differs_from_save_order() {
+        // Code saved JSON first, then PNG; sandbox returns PNG first, then JSON.
+        let mut pending = vec![
+            "canada_population_1980_present.json".to_string(),
+            "canada_population_trend.png".to_string(),
+        ];
+        // PNG part arrives first -> must take the .png name, not the first (.json).
+        let i = pick_filename_index_for_mime(&pending, "image/png").unwrap();
+        assert_eq!(pending.remove(i), "canada_population_trend.png");
+        // JSON part arrives second -> takes the remaining .json name.
+        let i = pick_filename_index_for_mime(&pending, "application/json").unwrap();
+        assert_eq!(pending.remove(i), "canada_population_1980_present.json");
+    }
+
+    #[test]
+    fn pairing_exact_extension_in_save_order() {
+        let pending = vec!["chart.png".to_string(), "data.csv".to_string()];
+        assert_eq!(pick_filename_index_for_mime(&pending, "image/png"), Some(0));
+        assert_eq!(pick_filename_index_for_mime(&pending, "text/csv"), Some(1));
+    }
+
+    #[test]
+    fn pairing_image_category_when_no_exact_extension() {
+        // Saved as .jpeg but the part is image/png — still an image, so it matches.
+        let pending = vec!["photo.jpeg".to_string()];
+        assert_eq!(pick_filename_index_for_mime(&pending, "image/png"), Some(0));
+    }
+
+    #[test]
+    fn pairing_non_image_mime_skips_image_names() {
+        // A document part shouldn't grab an image filename.
+        let pending = vec!["chart.png".to_string(), "report.docx".to_string()];
+        let i = pick_filename_index_for_mime(
+            &pending,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        .unwrap();
+        assert_eq!(pending[i], "report.docx");
+    }
+
+    #[test]
+    fn pairing_no_suitable_name_returns_none() {
+        // Only an image name is pending, but the part is a CSV -> synthetic name (None).
+        let pending = vec!["chart.png".to_string()];
+        assert_eq!(pick_filename_index_for_mime(&pending, "text/csv"), None);
+        assert_eq!(pick_filename_index_for_mime(&[], "image/png"), None);
+    }
+
+    #[test]
+    fn parser_captures_non_stop_finish_reason() {
+        let data = r#"{"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"MAX_TOKENS"}]}"#;
+        let events = super::parse_sse_event(data);
+        let captured = events.iter().any(|e| matches!(
+            e,
+            super::GeminiStreamEvent::ResponseComplete { finish_reason } if finish_reason == "MAX_TOKENS"
+        ));
+        assert!(captured, "expected ResponseComplete {{ MAX_TOKENS }}, got {:?}", events);
+    }
+
+    #[test]
+    fn saved_filenames_basic_savefig() {
+        assert_eq!(
+            extract_saved_filenames("plt.savefig('canada_population_trend.png')"),
+            vec!["canada_population_trend.png"]
+        );
+    }
+
+    #[test]
+    fn saved_filenames_strip_path() {
+        assert_eq!(
+            extract_saved_filenames("img.save(\"/tmp/out/red.png\")"),
+            vec!["red.png"]
+        );
+    }
+
+    #[test]
+    fn saved_filenames_dedupe_within_block() {
+        // Mentioned twice (save + a print) but it's one file.
+        let code = "plt.savefig('x.png')\nprint('wrote x.png')";
+        assert_eq!(extract_saved_filenames(code), vec!["x.png"]);
+    }
+
+    #[test]
+    fn saved_filenames_multiple_distinct_in_order() {
+        let code = "plt.savefig('a.png')\ndf.to_csv('b.csv')";
+        assert_eq!(extract_saved_filenames(code), vec!["a.png", "b.csv"]);
+    }
+
+    #[test]
+    fn saved_filenames_none_for_show_only() {
+        assert!(extract_saved_filenames("plt.plot(x, y)\nplt.show()").is_empty());
+    }
+
+    #[test]
+    fn referenced_filenames_from_bold_code_span() {
+        let text = "The graph has been saved as **`canada_population_trend.png`** and is available.";
+        let refs = extract_referenced_filenames(text);
+        assert!(refs.contains("canada_population_trend.png"));
+    }
+
+    #[test]
+    fn referenced_filenames_case_insensitive_basename() {
+        let text = "See [the file](./out/Chart.PNG) for details.";
+        let refs = extract_referenced_filenames(text);
+        assert!(refs.contains("chart.png"));
+    }
 }

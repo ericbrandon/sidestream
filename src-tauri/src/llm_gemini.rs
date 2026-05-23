@@ -9,10 +9,132 @@ use crate::llm::{tool_names, ChatMessage, ExecutionDelta, ExecutionStatus, Gener
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::gemini::{
-    extract_inline_citations_from_grounding, mime_to_extension, parse_sse_event as gemini_parse_sse_event,
+    extract_inline_citations_from_grounding, extract_referenced_filenames, extract_saved_filenames,
+    mime_to_extension, parse_sse_event as gemini_parse_sse_event, pick_filename_index_for_mime,
     string_to_thinking_config, supports_thinking as gemini_supports_thinking,
     ChatRequestConfig as GeminiChatRequestConfig, GeminiClient, GeminiStreamEvent,
 };
+
+/// Select and emit only the file(s) the model actually presents to the user.
+///
+/// Gemini streams every intermediate plot/file it produces while iterating. We buffer
+/// them all (each paired with the filename recovered from its code block) and, once the
+/// full response text is known, keep only those whose filename the model names in its
+/// prose — collapsing repeated saves of the same name to the last version. If it named
+/// none (e.g. `plt.show()` with no `savefig`), we fall back to the last file of each
+/// MIME type so a real deliverable is never dropped.
+/// Pure selection: from all buffered (filename, file) pairs and the final response
+/// text, return only the user-ready file(s). Keeps files whose name the model named
+/// in its prose (later saves of the same name win); if it named none, falls back to
+/// the last file of each MIME type so a real deliverable is never dropped.
+fn select_user_ready_files(
+    buffered: &[(String, GeneratedFile)],
+    final_text: &str,
+) -> Vec<GeneratedFile> {
+    let referenced = extract_referenced_filenames(final_text);
+
+    let mut chosen: Vec<(String, GeneratedFile)> = Vec::new();
+    for (name, file) in buffered {
+        if !referenced.contains(&name.to_lowercase()) {
+            continue;
+        }
+        if let Some(slot) = chosen.iter_mut().find(|(n, _)| n.eq_ignore_ascii_case(name)) {
+            slot.1 = file.clone(); // later save of the same name wins
+        } else {
+            chosen.push((name.clone(), file.clone()));
+        }
+    }
+
+    if !chosen.is_empty() {
+        return chosen.into_iter().map(|(_, f)| f).collect();
+    }
+
+    let mut last_by_mime: Vec<(String, GeneratedFile)> = Vec::new();
+    for (_, file) in buffered {
+        let mime = file.mime_type.clone().unwrap_or_default();
+        if let Some(slot) = last_by_mime.iter_mut().find(|(m, _)| *m == mime) {
+            slot.1 = file.clone();
+        } else {
+            last_by_mime.push((mime, file.clone()));
+        }
+    }
+    last_by_mime.into_iter().map(|(_, f)| f).collect()
+}
+
+fn emit_user_ready_files(
+    window: &tauri::Window,
+    turn_id: &str,
+    buffered: Vec<(String, GeneratedFile)>,
+    final_text: &str,
+) {
+    if buffered.is_empty() {
+        return;
+    }
+
+    let files = select_user_ready_files(&buffered, final_text);
+    if files.is_empty() {
+        return;
+    }
+
+    let delta = StreamDelta {
+        turn_id: turn_id.to_string(),
+        text: String::new(),
+        citations: None,
+        inline_citations: None,
+        thinking: None,
+        execution: Some(ExecutionDelta {
+            tool_name: tool_names::GEMINI_CODE_EXECUTION.to_string(),
+            stdout: None,
+            stderr: None,
+            status: ExecutionStatus::Completed,
+            code: None,
+            files: Some(files),
+        }),
+    };
+    if let Err(err) = window.emit("chat-stream-delta", delta) {
+        eprintln!("Failed to emit user-ready files delta: {}", err);
+    }
+}
+
+const INTERRUPTED_ERROR: &str = "The response was interrupted before Gemini produced an answer. Long code-execution tasks can occasionally drop the connection before finishing — please try again.";
+const INTERRUPTED_NOTE: &str = "\n\n_The response was interrupted before it finished._";
+
+/// A short note to append when a response ended abnormally but DID produce some
+/// text (so the partial answer is kept, with an explanation).
+fn finish_reason_note(reason: &str) -> String {
+    let detail = match reason {
+        "MAX_TOKENS" => "it reached the maximum length".to_string(),
+        "SAFETY" => "it was stopped by Gemini's safety filters".to_string(),
+        "RECITATION" => "it was stopped to avoid reproducing copyrighted material".to_string(),
+        other => format!("it ended unexpectedly (reason: {})", other),
+    };
+    format!("\n\n_The response was cut short because {}._", detail)
+}
+
+/// A user-facing error for when a response ended abnormally with NO text at all.
+fn finish_reason_error(reason: &str) -> String {
+    match reason {
+        "MAX_TOKENS" => "Gemini reached the maximum response length before producing an answer. Try simplifying the request or breaking it into steps.".to_string(),
+        "SAFETY" => "Gemini blocked this response with its safety filters.".to_string(),
+        "RECITATION" => "Gemini stopped this response to avoid reproducing copyrighted material.".to_string(),
+        other => format!("Gemini ended the response unexpectedly (reason: {}).", other),
+    }
+}
+
+/// Emit a plain-text delta (used to append an explanatory note to the answer).
+fn emit_text_note(window: &tauri::Window, turn_id: &str, text: &str) {
+    let delta = StreamDelta {
+        turn_id: turn_id.to_string(),
+        text: text.to_string(),
+        citations: None,
+        inline_citations: None,
+        thinking: None,
+        execution: None,
+    };
+    if let Err(err) = window.emit("chat-stream-delta", delta) {
+        eprintln!("Failed to emit note delta: {}", err);
+    }
+}
 
 /// Send chat message using Google Gemini API
 pub async fn send_chat_message_gemini(
@@ -71,6 +193,11 @@ pub async fn send_chat_message_gemini(
     let mut accumulated_text = String::new();
     let mut accumulated_thinking = String::new();
     let mut generated_file_count: u32 = 0;
+    // Filenames recovered from code blocks, paired FIFO with the anonymous
+    // inlineData parts that follow; buffered files held until stream end so we
+    // can emit only the user-ready one(s). See emit_user_ready_files.
+    let mut pending_filenames: Vec<String> = Vec::new();
+    let mut buffered_files: Vec<(String, GeneratedFile)> = Vec::new();
 
     loop {
         tokio::select! {
@@ -182,7 +309,26 @@ pub async fn send_chat_message_gemini(
                                             }
                                         }
                                     }
-                                    GeminiStreamEvent::ResponseComplete => {
+                                    GeminiStreamEvent::ResponseComplete { finish_reason } => {
+                                        let has_content = !full_response.trim().is_empty();
+                                        // A non-STOP reason (MAX_TOKENS, SAFETY, …) with no answer at all
+                                        // is surfaced as an error so the user sees why and discovery is
+                                        // skipped. Otherwise we keep what we have (appending a note if it
+                                        // ended abnormally) and complete normally.
+                                        if finish_reason != "STOP" && !has_content {
+                                            let msg = finish_reason_error(&finish_reason);
+                                            llm_logger::log_error("chat", &msg);
+                                            return Err(msg);
+                                        }
+                                        emit_user_ready_files(
+                                            window,
+                                            &turn_id,
+                                            std::mem::take(&mut buffered_files),
+                                            &full_response,
+                                        );
+                                        if finish_reason != "STOP" {
+                                            emit_text_note(window, &turn_id, &finish_reason_note(&finish_reason));
+                                        }
                                         llm_logger::log_response_complete("chat", &full_response);
                                         if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                             eprintln!("Failed to emit chat-stream-done event: {}", err);
@@ -195,6 +341,11 @@ pub async fn send_chat_message_gemini(
                                     }
                                     GeminiStreamEvent::ExecutableCode { code } => {
                                         llm_logger::log_feature_used("chat", "Gemini Code Execution Started");
+                                        // Recover the filenames this block writes so we can name the
+                                        // (anonymous) inlineData parts that follow it.
+                                        for name in extract_saved_filenames(&code) {
+                                            pending_filenames.push(name);
+                                        }
                                         // Emit execution started with code
                                         let delta = StreamDelta {
                                             turn_id: turn_id.clone(),
@@ -244,7 +395,16 @@ pub async fn send_chat_message_gemini(
 
                                         let extension = mime_to_extension(&mime_type);
                                         let file_id = format!("gemini-{}-{}", timestamp, generated_file_count);
-                                        let filename = format!("generated-{}.{}", timestamp, extension);
+                                        // Pair this file with a filename recovered from code BY CONTENT TYPE,
+                                        // not by order: the sandbox can return files in a different order than
+                                        // the code saved them, so a positional match swaps names (e.g. a PNG
+                                        // getting a .json name). The model references this name in its prose,
+                                        // so it must match the real content. Fall back to a synthetic name
+                                        // (with the correct extension) when nothing suitable was saved.
+                                        let filename = match pick_filename_index_for_mime(&pending_filenames, &mime_type) {
+                                            Some(i) => pending_filenames.remove(i),
+                                            None => format!("generated-{}.{}", timestamp, extension),
+                                        };
                                         generated_file_count += 1;
 
                                         // Create data URL for image preview (if it's an image)
@@ -255,8 +415,8 @@ pub async fn send_chat_message_gemini(
                                         };
 
                                         let file = GeneratedFile {
-                                            file_id: file_id.clone(),
-                                            filename,
+                                            file_id,
+                                            filename: filename.clone(),
                                             mime_type: Some(mime_type.clone()),
                                             image_preview,
                                             inline_data: Some(data),
@@ -264,25 +424,10 @@ pub async fn send_chat_message_gemini(
 
                                         llm_logger::log_feature_used("chat", &format!("Gemini File Generated: {}", mime_type));
 
-                                        // Emit file as it arrives
-                                        let delta = StreamDelta {
-                                            turn_id: turn_id.clone(),
-                                            text: String::new(),
-                                            citations: None,
-                                            inline_citations: None,
-                                            thinking: None,
-                                            execution: Some(ExecutionDelta {
-                                                tool_name: tool_names::GEMINI_CODE_EXECUTION.to_string(),
-                                                stdout: None,
-                                                stderr: None,
-                                                status: ExecutionStatus::Completed,
-                                                code: None,
-                                                files: Some(vec![file]),
-                                            }),
-                                        };
-                                        if let Err(err) = window.emit("chat-stream-delta", delta) {
-                                            eprintln!("Failed to emit generated file delta: {}", err);
-                                        }
+                                        // Buffer rather than emit: Gemini streams every intermediate plot
+                                        // as it iterates. emit_user_ready_files (at stream end) keeps only
+                                        // the file(s) the model actually presents in its final response.
+                                        buffered_files.push((filename, file));
                                     }
                                     GeminiStreamEvent::Unknown => {}
                                 }
@@ -297,9 +442,100 @@ pub async fn send_chat_message_gemini(
         }
     }
 
+    // Reaching here means the stream ended WITHOUT a finishReason — i.e. abnormally
+    // (e.g. the connection dropped during a long code-execution gap). If we got a
+    // partial answer, keep it with an "interrupted" note; if we got nothing, surface
+    // an error so the user knows to retry and discovery doesn't run on an empty turn.
+    if full_response.trim().is_empty() {
+        llm_logger::log_error("chat", INTERRUPTED_ERROR);
+        return Err(INTERRUPTED_ERROR.to_string());
+    }
+    emit_user_ready_files(window, &turn_id, std::mem::take(&mut buffered_files), &full_response);
+    emit_text_note(window, &turn_id, INTERRUPTED_NOTE);
     llm_logger::log_response_complete("chat", &full_response);
     if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod select_tests {
+    use super::{finish_reason_error, finish_reason_note, select_user_ready_files};
+    use crate::llm::GeneratedFile;
+
+    #[test]
+    fn abnormal_finish_messages_explain_the_reason() {
+        assert!(finish_reason_note("MAX_TOKENS").contains("maximum length"));
+        assert!(finish_reason_note("WEIRD").contains("WEIRD"));
+        assert!(finish_reason_error("SAFETY").to_lowercase().contains("safety"));
+        assert!(finish_reason_error("WEIRD").contains("WEIRD"));
+    }
+
+    fn gf(file_id: &str, filename: &str, mime: &str) -> GeneratedFile {
+        GeneratedFile {
+            file_id: file_id.to_string(),
+            filename: filename.to_string(),
+            mime_type: Some(mime.to_string()),
+            image_preview: None,
+            inline_data: Some("data".to_string()),
+        }
+    }
+
+    fn ids(files: &[GeneratedFile]) -> Vec<&str> {
+        files.iter().map(|f| f.file_id.as_str()).collect()
+    }
+
+    #[test]
+    fn keeps_single_named_file() {
+        let buffered = vec![(
+            "canada_population_trend.png".to_string(),
+            gf("g-0", "canada_population_trend.png", "image/png"),
+        )];
+        let text = "Saved as **`canada_population_trend.png`** and available for download.";
+        assert_eq!(ids(&select_user_ready_files(&buffered, text)), vec!["g-0"]);
+    }
+
+    #[test]
+    fn collapses_overwritten_name_to_last() {
+        let buffered = vec![
+            ("chart.png".to_string(), gf("g-0", "chart.png", "image/png")),
+            ("chart.png".to_string(), gf("g-1", "chart.png", "image/png")),
+            ("chart.png".to_string(), gf("g-2", "chart.png", "image/png")),
+        ];
+        let out = select_user_ready_files(&buffered, "Here is your chart.png.");
+        assert_eq!(ids(&out), vec!["g-2"]); // intermediates dropped, last wins
+    }
+
+    #[test]
+    fn drops_unreferenced_intermediates() {
+        let buffered = vec![
+            ("draft1.png".to_string(), gf("g-0", "draft1.png", "image/png")),
+            ("draft2.png".to_string(), gf("g-1", "draft2.png", "image/png")),
+            ("final_chart.png".to_string(), gf("g-2", "final_chart.png", "image/png")),
+        ];
+        let out = select_user_ready_files(&buffered, "Result: [chart](final_chart.png).");
+        assert_eq!(ids(&out), vec!["g-2"]);
+    }
+
+    #[test]
+    fn keeps_multiple_distinct_referenced_files() {
+        let buffered = vec![
+            ("chart.png".to_string(), gf("g-0", "chart.png", "image/png")),
+            ("data.csv".to_string(), gf("g-1", "data.csv", "text/csv")),
+        ];
+        let out = select_user_ready_files(&buffered, "[chart](chart.png) and [data](data.csv)");
+        assert_eq!(ids(&out), vec!["g-0", "g-1"]);
+    }
+
+    #[test]
+    fn fallback_to_last_per_mime_when_none_named() {
+        let buffered = vec![
+            ("a.png".to_string(), gf("g-0", "a.png", "image/png")),
+            ("b.png".to_string(), gf("g-1", "b.png", "image/png")),
+        ];
+        // No filename mentioned in prose -> keep the last image rather than nothing.
+        let out = select_user_ready_files(&buffered, "Here is the result.");
+        assert_eq!(ids(&out), vec!["g-1"]);
+    }
 }
