@@ -31,11 +31,11 @@ def s(v):  # scale 1x coord to supersampled space
 # Arrow geometry in 1x coords. Icons span x:116-244 (app) and x:416-544 (Apps),
 # so the clear gap is x:244-416. Arrow centered in it, at icon-center y=170.
 y = 170
-shaft_x0 = 264
-tip_x = 396
-shaft_h = 16        # shaft thickness
-head_w = 44         # arrowhead base height
-head_len = 36       # arrowhead length
+shaft_x0 = 286
+tip_x = 374
+shaft_h = 9         # shaft thickness
+head_w = 28         # arrowhead base height
+head_len = 26       # arrowhead length
 shaft_x1 = tip_x - head_len
 
 # shaft (square ends)
