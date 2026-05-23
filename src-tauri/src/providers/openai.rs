@@ -626,7 +626,9 @@ fn generated_file_is_better(existing: &GeneratedFile, candidate: &GeneratedFile)
     existing_placeholder && !candidate_placeholder
 }
 
-const IMAGE_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
+const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "tif", "ico", "avif", "heic", "heif",
+];
 
 /// Whether a generated file is an image (by MIME, falling back to extension).
 fn is_image_generated_file(f: &GeneratedFile) -> bool {
@@ -651,9 +653,8 @@ fn is_image_generated_file(f: &GeneratedFile) -> bool {
 /// chart still shows. Non-image files are always kept (already deduped by name).
 pub fn select_displayable_files(files: Vec<GeneratedFile>, final_text: &str) -> Vec<GeneratedFile> {
     let final_lower = final_text.to_lowercase();
-    let referenced = |f: &GeneratedFile| {
-        !f.filename.is_empty() && final_lower.contains(&f.filename.to_lowercase())
-    };
+    let referenced =
+        |f: &GeneratedFile| text_references_filename(&final_lower, &f.filename.to_lowercase());
     let any_image_referenced = files
         .iter()
         .any(|f| is_image_generated_file(f) && referenced(f));
@@ -671,6 +672,30 @@ pub fn select_displayable_files(files: Vec<GeneratedFile>, final_text: &str) -> 
             }
         })
         .collect()
+}
+
+/// Whether `filename` occurs in `text` as a whole token rather than as a substring
+/// of a larger name. Both args must already be lowercased.
+///
+/// We require the byte on each side of a match to not be a "name char" (ASCII
+/// alphanumeric, `_`, or `-`), so `…/mnt/data/chart.png)` references `chart.png` but
+/// neither `annualreport.png` matches `report.png` nor `banana.png` matches `a.png`.
+/// `.` is deliberately *not* a name char, so a trailing sentence period
+/// ("saved chart.png.") still counts. Uses literal search, so filenames with regex
+/// metacharacters are handled safely.
+fn text_references_filename(text: &str, filename: &str) -> bool {
+    if filename.is_empty() {
+        return false;
+    }
+    let is_name_char = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-');
+    let bytes = text.as_bytes();
+    let needle_len = filename.len();
+    text.match_indices(filename).any(|(idx, _)| {
+        let before_ok = idx == 0 || !is_name_char(bytes[idx - 1]);
+        let after = idx + needle_len;
+        let after_ok = after >= bytes.len() || !is_name_char(bytes[after]);
+        before_ok && after_ok
+    })
 }
 
 /// Convert a reasoning level string from the frontend to ReasoningEffort
@@ -886,6 +911,40 @@ mod tests {
         let text = "See sandbox:/mnt/data/a.png and sandbox:/mnt/data/b.png";
         let kept = select_displayable_files(files, text);
         assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn text_references_filename_matches_whole_token() {
+        assert!(text_references_filename(
+            "see [x](sandbox:/mnt/data/chart.png) here",
+            "chart.png"
+        ));
+        assert!(text_references_filename("chart.png", "chart.png"));
+        // trailing sentence period still counts (. is not a name char)
+        assert!(text_references_filename("i saved chart.png.", "chart.png"));
+    }
+
+    #[test]
+    fn text_references_filename_rejects_substring_of_larger_name() {
+        assert!(!text_references_filename("banana.png", "a.png"));
+        assert!(!text_references_filename("see annualreport.png", "report.png"));
+        assert!(!text_references_filename("my_chart.png", "chart.png"));
+        assert!(!text_references_filename("", "a.png"));
+        assert!(!text_references_filename("anything", ""));
+    }
+
+    #[test]
+    fn select_does_not_treat_substring_name_as_referenced() {
+        // The old loose `contains` would have kept report.png because it's a substring
+        // of the referenced annualreport.png. The boundary match drops it.
+        let files = vec![
+            image_file("report.png", "cfile_display"),
+            image_file("annualreport.png", "cfile_saved"),
+        ];
+        let text = "Here is your chart: sandbox:/mnt/data/annualreport.png";
+        let kept = select_displayable_files(files, text);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].file_id, "cfile_saved");
     }
 }
 
