@@ -799,7 +799,7 @@ pub fn pick_filename_index_for_mime(pending: &[String], mime: &str) -> Option<us
     let mime_is_image = mime.starts_with("image/");
     pending
         .iter()
-        .position(|f| is_image_ext(&normalize_ext(&file_ext(f))) == mime_is_image)
+        .position(|f| is_image_ext(normalize_ext(&file_ext(f))) == mime_is_image)
 }
 
 /// Extract the filenames the model references in its prose, as lowercased

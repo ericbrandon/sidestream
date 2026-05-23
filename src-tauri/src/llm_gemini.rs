@@ -15,17 +15,14 @@ use crate::providers::gemini::{
     ChatRequestConfig as GeminiChatRequestConfig, GeminiClient, GeminiStreamEvent,
 };
 
-/// Select and emit only the file(s) the model actually presents to the user.
-///
-/// Gemini streams every intermediate plot/file it produces while iterating. We buffer
-/// them all (each paired with the filename recovered from its code block) and, once the
-/// full response text is known, keep only those whose filename the model names in its
-/// prose — collapsing repeated saves of the same name to the last version. If it named
-/// none (e.g. `plt.show()` with no `savefig`), we fall back to the last file of each
-/// MIME type so a real deliverable is never dropped.
 /// Pure selection: from all buffered (filename, file) pairs and the final response
-/// text, return only the user-ready file(s). Keeps files whose name the model named
-/// in its prose (later saves of the same name win); if it named none, falls back to
+/// text, return only the user-ready file(s).
+///
+/// Gemini streams every intermediate plot/file it produces while iterating, so we
+/// buffer them all (each paired with the filename recovered from its code block) and,
+/// once the full response text is known, keep only those whose filename the model
+/// names in its prose — collapsing repeated saves of the same name to the last
+/// version. If it named none (e.g. `plt.show()` with no `savefig`), we fall back to
 /// the last file of each MIME type so a real deliverable is never dropped.
 fn select_user_ready_files(
     buffered: &[(String, GeneratedFile)],
@@ -133,6 +130,30 @@ fn emit_text_note(window: &tauri::Window, turn_id: &str, text: &str) {
     };
     if let Err(err) = window.emit("chat-stream-delta", delta) {
         eprintln!("Failed to emit note delta: {}", err);
+    }
+}
+
+/// Terminal sequence shared by the normal-finish and interrupted code paths: emit the
+/// user-ready file(s), optionally append an explanatory note, log, and signal done.
+fn finalize_chat_response(
+    window: &tauri::Window,
+    turn_id: &str,
+    buffered_files: Vec<(String, GeneratedFile)>,
+    full_response: &str,
+    note: Option<&str>,
+) {
+    emit_user_ready_files(window, turn_id, buffered_files, full_response);
+    if let Some(note) = note {
+        emit_text_note(window, turn_id, note);
+    }
+    llm_logger::log_response_complete("chat", full_response);
+    if let Err(err) = window.emit(
+        "chat-stream-done",
+        StreamEvent {
+            turn_id: turn_id.to_string(),
+        },
+    ) {
+        eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
 }
 
@@ -320,19 +341,15 @@ pub async fn send_chat_message_gemini(
                                             llm_logger::log_error("chat", &msg);
                                             return Err(msg);
                                         }
-                                        emit_user_ready_files(
+                                        let note = (finish_reason != "STOP")
+                                            .then(|| finish_reason_note(&finish_reason));
+                                        finalize_chat_response(
                                             window,
                                             &turn_id,
                                             std::mem::take(&mut buffered_files),
                                             &full_response,
+                                            note.as_deref(),
                                         );
-                                        if finish_reason != "STOP" {
-                                            emit_text_note(window, &turn_id, &finish_reason_note(&finish_reason));
-                                        }
-                                        llm_logger::log_response_complete("chat", &full_response);
-                                        if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
-                                            eprintln!("Failed to emit chat-stream-done event: {}", err);
-                                        }
                                         return Ok(());
                                     }
                                     GeminiStreamEvent::Error { message } => {
@@ -450,12 +467,13 @@ pub async fn send_chat_message_gemini(
         llm_logger::log_error("chat", INTERRUPTED_ERROR);
         return Err(INTERRUPTED_ERROR.to_string());
     }
-    emit_user_ready_files(window, &turn_id, std::mem::take(&mut buffered_files), &full_response);
-    emit_text_note(window, &turn_id, INTERRUPTED_NOTE);
-    llm_logger::log_response_complete("chat", &full_response);
-    if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
-        eprintln!("Failed to emit chat-stream-done event: {}", err);
-    }
+    finalize_chat_response(
+        window,
+        &turn_id,
+        std::mem::take(&mut buffered_files),
+        &full_response,
+        Some(INTERRUPTED_NOTE),
+    );
     Ok(())
 }
 

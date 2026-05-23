@@ -154,10 +154,6 @@ async function downloadGeneratedFile(f: GeneratedFile): Promise<void> {
   }
 }
 
-/**
- * Resolve a markdown link href to one of this message's generated files by
- * basename (e.g. a "[chart](canada.png)" link Gemini wrote in its prose).
- */
 /** Flatten react-markdown link children to their plain-text string. */
 function nodeText(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return '';
@@ -550,8 +546,6 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
             }
           }
 
-          const downloadFile = downloadGeneratedFile;
-
           // Execution badge (inline at split point)
           const executionBadge = hasExecution && (
             <div className="mt-3">
@@ -596,7 +590,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
                 <GeneratedFileCard
                   key={file.file_id}
                   file={file}
-                  onDownload={downloadFile}
+                  onDownload={downloadGeneratedFile}
                 />
               ))}
             </div>
