@@ -17,6 +17,7 @@ import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox } from './ImageLightbox';
+import { webImageRenderer } from './WebImage';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename, isLocalGeneratedFileRef, fileRefBasename, GENERATED_FILE_REF_REGEX, preserveFileRefUrlTransform } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -393,6 +394,9 @@ function createMarkdownComponents(
         </a>
       );
     },
+    // External web images (e.g. embedded from web search). Shared with StreamingMessage
+    // so the image renders at the same size during and after streaming — see WebImage.tsx.
+    img: webImageRenderer,
     // Code blocks with copy and download icons
     pre: ({ children }) => {
       // Extract code content and className from the code element

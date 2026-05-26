@@ -259,6 +259,25 @@ pub fn log_error(module: &str, error: &str) {
     }
 }
 
+/// Log a tool-use or tool-result content block with its full JSON payload.
+/// Used to capture what Claude searched for and what results came back, so we
+/// can see whether the model has real image URLs to lift or is constructing
+/// them from memory.
+pub fn log_tool_event(module: &str, label: &str, payload: &serde_json::Value) {
+    if !LOGGING_ENABLED {
+        return;
+    }
+    let log_path = get_log_file_path(module);
+
+    if let Ok(mut file) = OpenOptions::new().append(true).open(log_path) {
+        let timestamp = Local::now().format("%H:%M:%S%.3f");
+        writeln!(file, "\n**[{}] {}:**", timestamp, label).ok();
+        writeln!(file, "```json").ok();
+        writeln!(file, "{}", format_json_pretty(payload)).ok();
+        writeln!(file, "```").ok();
+    }
+}
+
 /// Log when a special feature is detected in the stream (extended thinking, web search)
 pub fn log_feature_used(module: &str, feature: &str) {
     if !LOGGING_ENABLED {

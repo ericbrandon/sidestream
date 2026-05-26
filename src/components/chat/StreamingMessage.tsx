@@ -10,6 +10,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import type { InlineCitation as InlineCitationType } from '../../lib/types';
 import { InlineCitation } from './InlineCitation';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isLocalGeneratedFileRef, isSandboxUrl, preserveFileRefUrlTransform } from './citationUtils';
+import { webImageRenderer } from './WebImage';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 
@@ -164,13 +165,21 @@ function renderTextWithCitations(
 }
 
 /**
- * Create markdown components that handle inline citations
+ * Create markdown components that handle inline citations.
+ *
+ * The citation map is passed via a ref (not by value) so this function can be
+ * called once per StreamingMessage instance and the resulting handler functions
+ * stay stable across every text delta. If the handlers had new function
+ * references each render, react-markdown would feed those new types to React,
+ * which would unmount and remount the entire markdown subtree on every delta —
+ * including any <WebImage>, causing it to re-fetch and visibly flash.
  */
 function createMarkdownComponents(
-  citationMap: Map<number, InlineCitationType>,
+  citationMapRef: React.MutableRefObject<Map<number, InlineCitationType>>,
   stableKeyMap: Map<string, number>
 ): Components {
   const processChildren = (children: React.ReactNode): React.ReactNode => {
+    const citationMap = citationMapRef.current;
     if (typeof children === 'string') {
       return renderTextWithCitations(children, citationMap, stableKeyMap);
     }
@@ -224,6 +233,10 @@ function createMarkdownComponents(
         </a>
       );
     },
+    // External web images. Shared with the finalized Message renderer so size and
+    // click-to-lightbox behavior stay consistent across the streaming→finalized swap
+    // — see WebImage.tsx.
+    img: webImageRenderer,
     // Code blocks with copy and download icons
     pre: ({ children }) => {
       // Extract code content and className from the code element
@@ -257,8 +270,15 @@ const CachedMarkdown = memo(function CachedMarkdown({
   showCitations: boolean;
   citationKeyMapRef: React.MutableRefObject<Map<string, number>>;
 }) {
-  const { processedContent, markdownComponents } = useMemo(() => {
-    if (!content) return { processedContent: '', markdownComponents: {} as Components };
+  // Holds the current citation map so the stable markdown handlers (below) can
+  // read it at render time without their own function references changing.
+  // The ref itself is created once and lives for the life of this CachedMarkdown.
+  const citationMapRef = useRef<Map<number, InlineCitationType>>(new Map());
+
+  // Content processing + citation-map computation. This DOES re-run on every
+  // text delta because content changes.
+  const { processedContent, citationMap } = useMemo(() => {
+    if (!content) return { processedContent: '', citationMap: new Map<number, InlineCitationType>() };
 
     // First, strip OpenAI sandbox: URLs (files are shown via GeneratedFileCard)
     let strippedContent = stripSandboxUrls(content);
@@ -294,9 +314,23 @@ const CachedMarkdown = memo(function CachedMarkdown({
       citationMap.set(existingCitations.length + idx, citation);
     });
 
-    const components = createMarkdownComponents(citationMap, keyMap);
-    return { processedContent: processed, markdownComponents: components };
+    return { processedContent: processed, citationMap };
   }, [content, inlineCitations, showCitations, citationKeyMapRef]);
+
+  // Synchronously point the ref at the latest citation map BEFORE ReactMarkdown
+  // renders, so the (stable) handlers below read the current map. Mutating a ref
+  // during render is the standard React idiom for "stash the latest value for
+  // closures to read later"; safe because it's idempotent.
+  citationMapRef.current = citationMap;
+
+  // Stable markdown component handlers. Created once per CachedMarkdown instance.
+  // Their function references never change across renders, so react-markdown
+  // hands React the same component types every delta and React preserves the
+  // subtree (no remounting <WebImage>, no image re-fetch, no flash).
+  const markdownComponents = useMemo(
+    () => createMarkdownComponents(citationMapRef, citationKeyMapRef.current),
+    [citationKeyMapRef]
+  );
 
   if (!content) return null;
 

@@ -242,9 +242,11 @@ pub async fn send_chat_message_anthropic(
                                                     }
                                                     "server_tool_use" => {
                                                         llm_logger::log_feature_used("chat", "Web Search initiated (server_tool_use)");
+                                                        llm_logger::log_tool_event("chat", "server_tool_use block start", &content_block);
                                                     }
                                                     "web_search_tool_result" => {
                                                         llm_logger::log_feature_used("chat", "Web Search results received");
+                                                        llm_logger::log_tool_event("chat", "web_search_tool_result content", &content_block);
                                                         // We no longer emit these as source citations - we only use inline citations
                                                     }
                                                     "text" => {
@@ -373,6 +375,17 @@ pub async fn send_chat_message_anthropic(
                                                         }
                                                     }
                                                     // Clear the accumulated JSON
+                                                    pending_tool_input_json.clear();
+                                                } else if block_type == "server_tool_use"
+                                                    && current_execution_tool_name.is_none()
+                                                    && !pending_tool_input_json.is_empty()
+                                                {
+                                                    // Non-code-execution server_tool_use (e.g. web_search). Log the
+                                                    // accumulated input JSON so we can see what Claude searched for,
+                                                    // then clear to avoid polluting a subsequent block's input.
+                                                    let parsed = serde_json::from_str::<serde_json::Value>(&pending_tool_input_json)
+                                                        .unwrap_or_else(|_| serde_json::Value::String(pending_tool_input_json.clone()));
+                                                    llm_logger::log_tool_event("chat", "server_tool_use input (search query)", &parsed);
                                                     pending_tool_input_json.clear();
                                                 }
                                             }
