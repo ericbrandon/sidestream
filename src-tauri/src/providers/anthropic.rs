@@ -145,6 +145,14 @@ impl AnthropicClient {
                 "type": "web_search_20250305",
                 "name": "web_search"
             }));
+            // Pair web_fetch with web_search so Claude can follow up a search by
+            // actually reading specific pages — useful e.g. when it needs a verified
+            // image URL from page HTML rather than guessing from memory. Requires the
+            // matching anthropic-beta header (set in llm_anthropic.rs).
+            tools.push(serde_json::json!({
+                "type": "web_fetch_20250910",
+                "name": "web_fetch"
+            }));
         }
 
         if config.code_execution_enabled {

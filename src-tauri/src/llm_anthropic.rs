@@ -64,12 +64,24 @@ pub async fn send_chat_message_anthropic(
 
     llm_logger::log_request("chat", &model, &body);
 
-    // Use beta header if code execution is enabled OR if we have a container ID
-    // (container reuse requires the code-execution beta header)
-    let beta_header = if code_execution_enabled || container_id.is_some() {
-        Some("code-execution-2025-08-25")
-    } else {
+    // Build the anthropic-beta header from features enabled this turn.
+    // - code-execution-2025-08-25: when code execution is on, or we're reusing a
+    //   container (container persistence requires the beta).
+    // - web-fetch-2025-09-10: paired with web_search — we register the web_fetch
+    //   tool whenever web_search is enabled so Claude can read specific pages,
+    //   not just see snippets (see providers/anthropic.rs).
+    let mut beta_parts: Vec<&'static str> = Vec::new();
+    if code_execution_enabled || container_id.is_some() {
+        beta_parts.push("code-execution-2025-08-25");
+    }
+    if web_search_enabled {
+        beta_parts.push("web-fetch-2025-09-10");
+    }
+    let beta_header_str = beta_parts.join(",");
+    let beta_header = if beta_header_str.is_empty() {
         None
+    } else {
+        Some(beta_header_str.as_str())
     };
     let response = client
         .send_streaming_request_with_beta(&body, beta_header)
@@ -241,13 +253,24 @@ pub async fn send_chat_message_anthropic(
                                                         llm_logger::log_feature_used("chat", "Extended Thinking block started");
                                                     }
                                                     "server_tool_use" => {
-                                                        llm_logger::log_feature_used("chat", "Web Search initiated (server_tool_use)");
-                                                        llm_logger::log_tool_event("chat", "server_tool_use block start", &content_block);
+                                                        // Server-side tool initiation — could be web_search, web_fetch, or another
+                                                        // Anthropic-hosted tool. Label by the actual `name` field so the log isn't
+                                                        // misleading.
+                                                        let tool_name = content_block["name"].as_str().unwrap_or("unknown");
+                                                        llm_logger::log_feature_used("chat", &format!("Server tool initiated: {}", tool_name));
+                                                        llm_logger::log_tool_event("chat", &format!("{} block start", tool_name), &content_block);
                                                     }
                                                     "web_search_tool_result" => {
                                                         llm_logger::log_feature_used("chat", "Web Search results received");
                                                         llm_logger::log_tool_event("chat", "web_search_tool_result content", &content_block);
                                                         // We no longer emit these as source citations - we only use inline citations
+                                                    }
+                                                    "web_fetch_tool_result" => {
+                                                        // web_fetch returns plaintext page content (unlike web_search,
+                                                        // which returns encrypted snippet tokens). Logged for debug
+                                                        // visibility into what Claude is actually reading.
+                                                        llm_logger::log_feature_used("chat", "Web Fetch results received");
+                                                        llm_logger::log_tool_event("chat", "web_fetch_tool_result content", &content_block);
                                                     }
                                                     "text" => {
                                                         // Insert paragraph break if previous block was non-text
@@ -380,12 +403,14 @@ pub async fn send_chat_message_anthropic(
                                                     && current_execution_tool_name.is_none()
                                                     && !pending_tool_input_json.is_empty()
                                                 {
-                                                    // Non-code-execution server_tool_use (e.g. web_search). Log the
-                                                    // accumulated input JSON so we can see what Claude searched for,
-                                                    // then clear to avoid polluting a subsequent block's input.
+                                                    // Non-code-execution server_tool_use (web_search or web_fetch). Log
+                                                    // the accumulated input JSON for debug visibility, then clear it
+                                                    // so a subsequent block's input doesn't accumulate stale bytes.
                                                     let parsed = serde_json::from_str::<serde_json::Value>(&pending_tool_input_json)
                                                         .unwrap_or_else(|_| serde_json::Value::String(pending_tool_input_json.clone()));
-                                                    llm_logger::log_tool_event("chat", "server_tool_use input (search query)", &parsed);
+                                                    // Generic label — the JSON itself reveals whether this was a
+                                                    // web_search ("query": ...) or web_fetch ("url": ...) call.
+                                                    llm_logger::log_tool_event("chat", "server_tool_use input", &parsed);
                                                     pending_tool_input_json.clear();
                                                 }
                                             }
