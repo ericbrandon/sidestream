@@ -19,7 +19,8 @@ use audio::{
 };
 use commands::{
     clear_chat_sessions_store, delete_api_key, delete_chat_session, download_anthropic_file,
-    download_openai_file, download_openai_file_by_name, export_chat_to_html, get_configured_providers, has_api_key,
+    download_openai_file, download_openai_file_by_name, export_chat_to_html, fetch_image_url_bytes,
+    get_configured_providers, has_api_key,
     list_chat_sessions, load_chat_session, log_debug, log_frontend_debug, log_frontend_error,
     print_webview, save_api_key, save_chat_session,
 };
@@ -133,6 +134,7 @@ pub fn run() {
             download_anthropic_file,
             download_openai_file,
             download_openai_file_by_name,
+            fetch_image_url_bytes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

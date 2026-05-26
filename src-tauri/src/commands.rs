@@ -304,6 +304,34 @@ async fn download_file_from_url(
     })
 }
 
+/// Fetch an arbitrary image URL from the public web and return its bytes.
+/// Used by WebImage's copy/download actions to grab images embedded inline
+/// by the model. Fetches server-side via reqwest so CORS doesn't apply, and
+/// sends no Referer header — matches the `referrerPolicy="no-referrer"` we
+/// set on the rendered <img>, so hotlink-protected hosts (Wikimedia, Getty,
+/// news CDNs) serve these requests the same way they serve the inline render.
+#[tauri::command]
+pub async fn fetch_image_url_bytes(url: String) -> Result<DownloadedFile, String> {
+    // Derive a sensible default filename from the URL's last path segment,
+    // stripping any query string. The save dialog still lets the user rename.
+    let filename = url
+        .split('?')
+        .next()
+        .unwrap_or(&url)
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("image")
+        .to_string();
+
+    download_file_from_url(
+        &url,
+        vec![("user-agent", "Mozilla/5.0".to_string())],
+        &filename,
+    )
+    .await
+}
+
 /// Download a file from Anthropic's Files API
 #[tauri::command]
 pub async fn download_anthropic_file(

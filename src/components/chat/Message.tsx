@@ -16,7 +16,7 @@ import { ThinkingBadge } from './ThinkingBadge';
 import { ExecutionBadge } from './ExecutionBadge';
 import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
-import { ImageLightbox } from './ImageLightbox';
+import { ImageLightbox, type LightboxSource } from './ImageLightbox';
 import { webImageRenderer } from './WebImage';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename, isLocalGeneratedFileRef, fileRefBasename, GENERATED_FILE_REF_REGEX, preserveFileRefUrlTransform } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -417,7 +417,7 @@ interface MessageProps {
 export const Message = memo(function Message({ message, onFork }: MessageProps) {
   const isUser = message.role === 'user';
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
-  const [lightboxImage, setLightboxImage] = useState<{ file: GeneratedFile; imageData: string } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<LightboxSource | null>(null);
   const showCitations = useSettingsStore((state) => state.showCitations);
 
   // Process content with inline citations
@@ -569,7 +569,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
 
           // Handler for expanding images in lightbox
           const handleImageExpand = (file: GeneratedFile, imageData: string) => {
-            setLightboxImage({ file, imageData });
+            setLightboxImage({ kind: 'generated', file, imageData });
           };
 
           // Generated images section (displayed inline with preview)
@@ -670,8 +670,7 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
       {/* Image lightbox for fullscreen viewing */}
       {lightboxImage && (
         <ImageLightbox
-          file={lightboxImage.file}
-          imageData={lightboxImage.imageData}
+          source={lightboxImage}
           onClose={() => setLightboxImage(null)}
         />
       )}

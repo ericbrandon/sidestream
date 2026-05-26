@@ -7,19 +7,32 @@ import { Image as TauriImage } from '@tauri-apps/api/image';
 import type { GeneratedFile } from '../../lib/types';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { copyWebImage, downloadWebImage, filenameFromUrl } from './webImageActions';
+
+/**
+ * Source descriptor for what the lightbox is displaying.
+ * - `generated`: an image produced by code execution. We already hold the raw
+ *   base64 bytes in memory, so copy uses canvas-from-base64 and download hits
+ *   the provider's files API (file_id + container_id).
+ * - `url`: an externally-hosted image embedded inline by the model (via
+ *   WebImage). We only have a URL, so both copy and download route through
+ *   the `fetch_image_url_bytes` Rust command — see webImageActions.ts.
+ */
+export type LightboxSource =
+  | { kind: 'generated'; file: GeneratedFile; imageData: string }
+  | { kind: 'url'; url: string; alt: string };
 
 interface ImageLightboxProps {
-  file: GeneratedFile;
-  imageData: string;
+  source: LightboxSource;
   onClose: () => void;
 }
 
 /**
- * Fullscreen image lightbox overlay.
- * Displays the image with a transparent background and close/download buttons in the top-left.
+ * Fullscreen image lightbox overlay. Same chrome for both generated and
+ * URL-sourced images; the source-specific bits (where bytes come from for
+ * copy/download, what filename to display) branch on `source.kind`.
  */
-function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps) {
-  // Handle keyboard navigation
+function ImageLightboxComponent({ source, onClose }: ImageLightboxProps) {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       onClose();
@@ -39,8 +52,12 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (source.kind === 'url') {
+      await downloadWebImage(source.url);
+      return;
+    }
+    // Generated image: existing provider-files-API flow.
     try {
-      // Determine which API to use based on current model
       const currentModel = useSettingsStore.getState().frontierLLM.model;
       const isOpenAI = currentModel.startsWith('gpt') || currentModel.startsWith('o3') || currentModel.startsWith('o4');
 
@@ -53,12 +70,12 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
         }
         result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
           'download_openai_file',
-          { containerId, fileId: file.file_id, filename: file.filename }
+          { containerId, fileId: source.file.file_id, filename: source.file.filename }
         );
       } else {
         result = await invoke<{ data: number[]; filename: string; mime_type?: string }>(
           'download_anthropic_file',
-          { fileId: file.file_id, filename: file.filename }
+          { fileId: source.file.file_id, filename: source.file.filename }
         );
       }
 
@@ -77,10 +94,15 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
 
   const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (source.kind === 'url') {
+      await copyWebImage(source.url);
+      return;
+    }
+    // Generated image: decode the base64 we already have via canvas, then
+    // write RGBA to the clipboard through Tauri's Image API.
     try {
-      // Decode image to RGBA using canvas (works for all image formats)
       const img = document.createElement('img');
-      img.src = imageData;
+      img.src = source.imageData;
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
@@ -92,10 +114,8 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
       const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      // Convert Uint8ClampedArray to Uint8Array for Tauri
       const rgbaData = new Uint8Array(imageDataObj.data);
 
-      // Create Tauri Image from RGBA data
       const image = await TauriImage.new(rgbaData, canvas.width, canvas.height);
       await writeImage(image);
     } catch (err) {
@@ -109,6 +129,16 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
       onClose();
     }
   };
+
+  // Source-specific display bits.
+  const displaySrc = source.kind === 'generated' ? source.imageData : source.url;
+  const displayAlt = source.kind === 'generated' ? source.file.filename : source.alt;
+  const displayFilename = source.kind === 'generated'
+    ? source.file.filename
+    : filenameFromUrl(source.url);
+  // Web images need no-referrer to match how they were originally fetched
+  // (hotlink-protected CDNs reject cross-origin Referer headers).
+  const imgReferrerPolicy = source.kind === 'url' ? 'no-referrer' : undefined;
 
   return (
     <div
@@ -152,15 +182,16 @@ function ImageLightboxComponent({ file, imageData, onClose }: ImageLightboxProps
       </div>
 
       {/* Filename - top right */}
-      <div className="absolute top-4 right-4 text-white/60 text-sm bg-black/30 px-3 py-1.5 rounded backdrop-blur-sm">
-        {file.filename}
+      <div className="absolute top-4 right-4 text-white/60 text-sm bg-black/30 px-3 py-1.5 rounded backdrop-blur-sm max-w-[40vw] truncate">
+        {displayFilename}
       </div>
 
       {/* Image container */}
       <div className="max-w-[95vw] max-h-[95vh] p-8">
         <img
-          src={imageData}
-          alt={file.filename}
+          src={displaySrc}
+          alt={displayAlt}
+          referrerPolicy={imgReferrerPolicy}
           className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-pointer"
           onClick={onClose}
         />

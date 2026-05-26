@@ -1,73 +1,9 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Components } from 'react-markdown';
-
-interface WebImageLightboxProps {
-  src: string;
-  alt: string;
-  onClose: () => void;
-}
-
-/**
- * Fullscreen overlay for an external web image. Matches the visual language of
- * `ImageLightbox` (used for code-execution generated images) but without the
- * download/copy controls that depend on having the raw bytes / a file id —
- * we only have a URL here. Close via the button, backdrop click, clicking the
- * image, or Esc.
- */
-function WebImageLightboxComponent({ src, alt, onClose }: WebImageLightboxProps) {
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
-  }, [onClose]);
-
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    // Prevent body scroll while open (mirrors ImageLightbox).
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
-    };
-  }, [handleKeyDown]);
-
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    // Only close if the click landed on the backdrop itself, not a bubbled child.
-    if (e.target === e.currentTarget) onClose();
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
-      onClick={handleBackdropClick}
-    >
-      {/* Close button — top-left, matches ImageLightbox styling */}
-      <div className="absolute top-4 left-4 flex gap-3 z-10">
-        <button
-          onClick={onClose}
-          className="p-3 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-white/80 hover:text-white backdrop-blur-sm"
-          title="Close (Esc)"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="max-w-[95vw] max-h-[95vh] p-8">
-        <img
-          src={src}
-          alt={alt}
-          referrerPolicy="no-referrer"
-          className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl cursor-pointer"
-          onClick={onClose}
-        />
-      </div>
-    </div>
-  );
-}
-
-const WebImageLightbox = memo(WebImageLightboxComponent);
+import { ImageLightbox } from './ImageLightbox';
+import { copyWebImage, downloadWebImage } from './webImageActions';
 
 interface WebImageProps {
   src: string;
@@ -84,9 +20,11 @@ interface WebImageProps {
  * same reason — without it, the request is sent and the CDN serves nothing,
  * giving a broken-image icon.
  *
- * Clicking opens a fullscreen lightbox. The overlay is portaled to `document.body`
- * because react-markdown wraps images in <p>, and a block element nested inside
- * <p> is invalid HTML and gets reparented by the browser.
+ * A hover-revealed action bar exposes the same expand/copy/download affordances
+ * we already offer for code-execution generated images (see GeneratedImageCard).
+ * The lightbox is the shared `ImageLightbox` with `kind: 'url'` — same chrome
+ * for both generated and web images, with copy/download routed through the
+ * Rust-side `fetch_image_url_bytes` command for URL sources.
  */
 export function WebImage({ src, alt }: WebImageProps) {
   const [open, setOpen] = useState(false);
@@ -114,18 +52,60 @@ export function WebImage({ src, alt }: WebImageProps) {
 
   return (
     <>
-      <img
-        src={src}
-        alt={alt || ''}
-        loading="lazy"
-        referrerPolicy="no-referrer"
-        onClick={() => setOpen(true)}
-        onError={() => setFailed(true)}
-        className="my-2 max-w-full h-auto max-h-[32rem] rounded-md cursor-zoom-in transition-transform hover:scale-[1.01]"
-      />
+      <span className="relative inline-block group my-2 max-w-full align-middle">
+        <img
+          src={src}
+          alt={alt || ''}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onClick={() => setOpen(true)}
+          onError={() => setFailed(true)}
+          className="max-w-full h-auto max-h-[32rem] rounded-md cursor-zoom-in transition-transform hover:scale-[1.01]"
+        />
+
+        {/* Hover-revealed action bar, mirroring GeneratedImageCard's chrome
+            (expand / copy / download). Buttons stopPropagation so clicking
+            them doesn't also open the lightbox via the <img>'s onClick. */}
+        <span className="absolute bottom-0 left-0 right-0 rounded-b-md bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex justify-center gap-3 pointer-events-none">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+            className="p-2 rounded-full bg-white/20 hover:bg-white/40 transition-colors text-white pointer-events-auto"
+            title="Expand image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); copyWebImage(src); }}
+            className="p-2 rounded-full bg-white/20 hover:bg-white/40 transition-colors text-white pointer-events-auto"
+            title="Copy image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); downloadWebImage(src); }}
+            className="p-2 rounded-full bg-white/20 hover:bg-white/40 transition-colors text-white pointer-events-auto"
+            title="Download image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+          </button>
+        </span>
+      </span>
+
       {open && createPortal(
-        <WebImageLightbox src={src} alt={alt || ''} onClose={() => setOpen(false)} />,
-        document.body
+        <ImageLightbox
+          source={{ kind: 'url', url: src, alt: alt || '' }}
+          onClose={() => setOpen(false)}
+        />,
+        document.body,
       )}
     </>
   );
