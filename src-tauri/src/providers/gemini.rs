@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
-/// Appended to the system instruction whenever code execution is enabled.
+/// Appended to the system instruction whenever code execution is enabled
+/// (Part B in notes/prompt_compositions.md).
 ///
 /// Without this, Gemini 3.x answers file-shaped requests as ASCII art or by
 /// printing raw contents as text — it doesn't know the host app can render
@@ -15,47 +16,63 @@ const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/m
 /// library. This is Gemini-specific: it's appended only in this builder,
 /// never to the shared cross-provider prompt.
 ///
-/// Scope: this prompt is intentionally about **producing a new file**, not
-/// "visuals" in general. Image embedding from the web has its own dedicated
-/// path (see GEMINI_IMAGE_URL_GUIDANCE — google_search + url_context). Earlier
-/// drafts that talked about "a visual or a file" caused Gemini to reach for
-/// matplotlib/PIL on "show me a picture of X at night" requests and burn its
-/// tool-call budget trying to synthesize a photo it couldn't produce
-/// (TOO_MANY_TOOL_CALLS in chat-log-20260526-172135.md). Talking only about
-/// files draws a cleaner boundary: code execution makes files; image URLs
-/// come from the web.
+/// Scope: this prompt is intentionally a positive statement of what code
+/// execution is for. The "find existing images" boundary is asserted in
+/// GEMINI_IMAGE_URL_GUIDANCE (Part C) when web search is on. "diagram" and
+/// "map" are intentionally NOT in the example list — earlier drafts that
+/// included them caused Gemini to pull "picture" requests into matplotlib via
+/// context contamination ("show me a diagram and pictures" → matplotlib for
+/// both). The remaining examples (plot, spreadsheet, document, PDF) are all
+/// unambiguously data-derived.
 const GEMINI_CODE_EXEC_FILE_GUIDANCE: &str =
     " This application can display images inline and lets the user download \
 files. When a file would serve the user better than plain text — for example \
-a plot, diagram, map, spreadsheet, document, or PDF — use the code execution \
-tool to generate it and save it to a file in the working directory. Any file \
-you save there is delivered to the user automatically: images are shown inline \
-and other files become downloads, so you never need to print file contents or \
-base64-encode them as text. Prefer producing a real saved file over drawing \
-ASCII art or pasting raw data as text. Only generate a file when it genuinely \
-helps; answer ordinary questions with plain text. Use code execution to \
-produce new artifacts from data or instructions. Do not use it when you \
-should retrieve all kinds of images that already exist on the web. When the \
-user wants an existing image, follow the image-URL workflow instead.";
+a plot, spreadsheet, document, or PDF — use the code execution tool to \
+generate it and save it to a file in the working directory. Any file you save \
+there is delivered to the user automatically, so you never need to print file \
+contents or base64-encode them as text. Prefer producing a real saved file \
+over drawing ASCII art or pasting raw data as text. Only generate a file when \
+it genuinely helps; answer ordinary questions with plain text. Use code \
+execution to produce new artifacts from data or instructions.";
 
-/// Appended to the system instruction whenever web search is enabled.
+/// Appended to the system instruction whenever web search is enabled
+/// (Part C in notes/prompt_compositions.md).
 ///
 /// Gemini's web tools are `google_search` and `url_context` — different names
 /// from Anthropic's `web_search` / `web_fetch`. The cross-provider SYSTEM_PROMPT
 /// (in useChat.ts) is tool-name-free; this is the Gemini-layer addendum that
 /// names its tools.
 ///
-/// Naming the exact sequence is load-bearing — earlier vague phrasings like
-/// "use your search tools" caused Claude to call search and skip the
-/// page-fetch step, and Gemini has the same failure mode (it guesses image
-/// URLs from memory in ~2s of thinking and the URLs 404). See
-/// notes/gemini_image_handling.md.
+/// Structure (load-bearing in order):
+/// 1. The "two kinds of images" framing — gives Gemini the mental model it was
+///    missing. Examples (graph vs circuit diagram vs picture-of-something-in-
+///    the-world) contrast data-derived visuals against found artifacts.
+/// 2. The workflow itself, with the "because search-result snippets often
+///    contain URLs that look usable but don't actually load" why-clause —
+///    without that, Gemini calls google_search and skips url_context (verified
+///    in chat-log-20260526-173321.md).
+/// 3. The graceful-failure clause: when no embeddable URL can be found
+///    (hotlink-blocked forum pages, niche photos not on Wikipedia), say so
+///    plainly instead of substituting a generated image.
+/// 4. The markdown embed syntax reminder.
 const GEMINI_IMAGE_URL_GUIDANCE: &str =
-    " To find and show the user an existing image from the web use this \
-workflow every time, because search-result snippets often contain URLs that \
-look usable but don't actually load: first call google_search to find a \
-relevant page, then call url_context on that page's URL, then embed an image \
-URL that literally appears in the fetched page's content.";
+    " There are two kinds of images you might want to show the user. Those \
+you created using code execution, and those you found on the web. Both are \
+very helpful, but don't confuse the two. Think about whether the user's needs \
+would be better served by an image you create, or an image already on the \
+web. As just one example, if you want to show the user a graph, it's likely \
+that you should create it. But if you want to show the user a circuit \
+diagram, it's likely an image on the web. If it's a picture of something in \
+the world, it's probably an image already on the web. \
+\n\nTo find and show the user an image from the web use this workflow every \
+time, because search-result snippets often contain URLs that look usable but \
+don't actually load: first call google_search to find a relevant page, then \
+call url_context on that page's URL, then embed an image URL that appears in \
+the fetched page's content. \
+\n\nIf you can't find a real, valid image url don't construct one from memory \
+or make one up. Better not to provide an image than a broken link. \
+\n\nWhen you have an image URL, you may embed it inline with \
+![description](https://…)";
 
 /// Google Gemini API client (Google AI Studio)
 pub struct GeminiClient {
@@ -333,9 +350,13 @@ impl GeminiClient {
             tools.push(serde_json::json!({"url_context": {}}));
         }
 
-        // Add Code Execution tool if enabled
+        // Add Code Execution tool if enabled. REST API uses snake_case
+        // `code_execution` (the camelCase form is the SDK convention); see
+        // ai.google.dev/gemini-api/docs/code-execution. Google's API has been
+        // accepting the camelCase form leniently, but matching the documented
+        // REST shape avoids future drift if they tighten it.
         if config.code_execution_enabled {
-            tools.push(serde_json::json!({"codeExecution": {}}));
+            tools.push(serde_json::json!({"code_execution": {}}));
         }
 
         // Add tools to request body if any are enabled
