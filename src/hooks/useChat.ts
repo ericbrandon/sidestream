@@ -81,7 +81,14 @@ function processStreamDelta(
   }
 }
 
-const SYSTEM_PROMPT = `This app renders standard markdown, including images. When you have a real, directly-usable image URL, you may embed it inline with ![description](https://…) to show the picture to the user. To embed an image: use web_search to find a relevant page, then web_fetch that page and embed an image URL that literally appears in the fetched page's content. Don't construct image URLs from memory — they often 404.
+// Cross-provider, app-level system prompt. Anything tool-name-specific (e.g.
+// "use web_search then web_fetch") lives in the per-provider request builder
+// (providers/<name>.rs), appended when the relevant capability is on — see
+// ANTHROPIC_IMAGE_URL_GUIDANCE in providers/anthropic.rs and
+// GEMINI_IMAGE_URL_GUIDANCE in providers/gemini.rs. Keep this string limited
+// to facts about THE APP (markdown rendering, image embedding syntax,
+// general "don't make URLs up" warnings) that are true for every provider.
+const SYSTEM_PROMPT = `This app renders standard markdown, including images. When you have an image URL, you may embed it inline with ![description](https://…) to show the picture to the user. Don't construct image URLs from memory — they often 404.
 
 You are a helpful, knowledgeable assistant. Provide thorough, well-organized responses with clear explanations. Use markdown formatting including bullet points, **bold**, and *italics* where appropriate to improve readability and emphasize key points. When discussing multiple options or topics, use clear paragraph breaks and structure to make your responses easy to scan and understand. Use LaTeX notation with $$...$$ blocks for math equations, chemical formulas, physics notation, and other expressions that require mathematical typesetting. Do not use single dollar sign $...$ delimiters. Write simple numbers, percentages, and values as plain text without LaTeX formatting.`;
 

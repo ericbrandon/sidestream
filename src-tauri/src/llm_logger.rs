@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 /// Set to true to enable detailed LLM request/response logging to files.
 /// Logs are written to the `logs/` directory with timestamped filenames.
 /// Useful for debugging but disabled by default to avoid disk usage.
-const LOGGING_ENABLED: bool = false;
+const LOGGING_ENABLED: bool = true;
 
 static CHAT_LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();
 static DISCOVERY_LOG_FILE_PATH: OnceLock<PathBuf> = OnceLock::new();

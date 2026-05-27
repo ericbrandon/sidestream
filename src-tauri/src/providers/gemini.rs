@@ -5,24 +5,57 @@ const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/m
 
 /// Appended to the system instruction whenever code execution is enabled.
 ///
-/// Without this, Gemini 3.x answers visual/file requests as ASCII art or by
-/// printing raw contents as text — it doesn't know the host app can render images
-/// and serve downloads. The Gemini sandbox returns ANY file the executed code
-/// writes to the working directory as a `part.inlineData` part (verified live for
-/// PNG via PIL and matplotlib, CSV, and PDF on both 3.5 Flash and 3.1 Pro), so the
-/// guidance describes the app's capabilities and the hand-off mechanism — save a
-/// file — rather than prescribing a single library. This is Gemini-specific: it's
-/// appended only in this builder, never to the shared cross-provider prompt.
+/// Without this, Gemini 3.x answers file-shaped requests as ASCII art or by
+/// printing raw contents as text — it doesn't know the host app can render
+/// inline images and serve downloads. The Gemini sandbox returns ANY file the
+/// executed code writes to the working directory as a `part.inlineData` part
+/// (verified live for PNG via PIL and matplotlib, CSV, and PDF on both 3.5
+/// Flash and 3.1 Pro), so the guidance describes the app's capabilities and
+/// the hand-off mechanism — save a file — rather than prescribing a single
+/// library. This is Gemini-specific: it's appended only in this builder,
+/// never to the shared cross-provider prompt.
+///
+/// Scope: this prompt is intentionally about **producing a new file**, not
+/// "visuals" in general. Image embedding from the web has its own dedicated
+/// path (see GEMINI_IMAGE_URL_GUIDANCE — google_search + url_context). Earlier
+/// drafts that talked about "a visual or a file" caused Gemini to reach for
+/// matplotlib/PIL on "show me a picture of X at night" requests and burn its
+/// tool-call budget trying to synthesize a photo it couldn't produce
+/// (TOO_MANY_TOOL_CALLS in chat-log-20260526-172135.md). Talking only about
+/// files draws a cleaner boundary: code execution makes files; image URLs
+/// come from the web.
 const GEMINI_CODE_EXEC_FILE_GUIDANCE: &str =
-    " This application can display images inline and lets the user download files \
-you create. When a visual or a file would serve the user better than plain text — \
-for example a plot, diagram, map, image, spreadsheet, document, or PDF — \
-use the code execution tool to generate it and save it to a file in the working \
-directory. Any file you save there is delivered to the user automatically: images \
-are shown inline and other files become downloads, so you never need to print file \
-contents or base64-encode them as text. Prefer producing a real saved file over \
-drawing ASCII art or pasting raw data as text. Only generate a file when it \
-genuinely helps; answer ordinary questions with plain text.";
+    " This application can display images inline and lets the user download \
+files. When a file would serve the user better than plain text — for example \
+a plot, diagram, map, spreadsheet, document, or PDF — use the code execution \
+tool to generate it and save it to a file in the working directory. Any file \
+you save there is delivered to the user automatically: images are shown inline \
+and other files become downloads, so you never need to print file contents or \
+base64-encode them as text. Prefer producing a real saved file over drawing \
+ASCII art or pasting raw data as text. Only generate a file when it genuinely \
+helps; answer ordinary questions with plain text. Use code execution to \
+produce new artifacts from data or instructions. Do not use it when you \
+should retrieve all kinds of images that already exist on the web. When the \
+user wants an existing image, follow the image-URL workflow instead.";
+
+/// Appended to the system instruction whenever web search is enabled.
+///
+/// Gemini's web tools are `google_search` and `url_context` — different names
+/// from Anthropic's `web_search` / `web_fetch`. The cross-provider SYSTEM_PROMPT
+/// (in useChat.ts) is tool-name-free; this is the Gemini-layer addendum that
+/// names its tools.
+///
+/// Naming the exact sequence is load-bearing — earlier vague phrasings like
+/// "use your search tools" caused Claude to call search and skip the
+/// page-fetch step, and Gemini has the same failure mode (it guesses image
+/// URLs from memory in ~2s of thinking and the URLs 404). See
+/// notes/gemini_image_handling.md.
+const GEMINI_IMAGE_URL_GUIDANCE: &str =
+    " To find and show the user an existing image from the web use this \
+workflow every time, because search-result snippets often contain URLs that \
+look usable but don't actually load: first call google_search to find a \
+relevant page, then call url_context on that page's URL, then embed an image \
+URL that literally appears in the fetched page's content.";
 
 /// Google Gemini API client (Google AI Studio)
 pub struct GeminiClient {
@@ -98,8 +131,20 @@ pub enum GeminiStreamEvent {
     CodeExecutionResult { output: String },
     /// Inline data: Generated file (image, CSV, etc.) as base64
     InlineData { mime_type: String, data: String },
+    /// url_context tool was used. Carries the URLs Gemini fetched and the
+    /// per-URL retrieval status (e.g. URL_RETRIEVAL_STATUS_SUCCESS) so the
+    /// log can show whether the model actually used the page-fetch path.
+    UrlContextUsed { entries: Vec<UrlContextEntry> },
     /// Unknown/unhandled event
     Unknown,
+}
+
+/// One entry from `urlContextMetadata.urlMetadata` — the URL Gemini retrieved
+/// with url_context and the status of that retrieval.
+#[derive(Debug, Clone)]
+pub struct UrlContextEntry {
+    pub url: String,
+    pub status: String,
 }
 
 /// Grounding information from Google Search
@@ -247,9 +292,15 @@ impl GeminiClient {
         // telling Gemini the app can render images / serve file downloads and that
         // saving a file to the working directory hands it off; otherwise Gemini 3.x
         // answers visual/file requests as ASCII or text and returns no inlineData.
+        // When web search is enabled, also append the google_search → url_context
+        // workflow so "show me a picture of X" reaches for a verifiable URL instead
+        // of guessing one from memory.
         let mut system_text = config.system_prompt.clone().unwrap_or_default();
         if config.code_execution_enabled {
             system_text.push_str(GEMINI_CODE_EXEC_FILE_GUIDANCE);
+        }
+        if config.web_search_enabled {
+            system_text.push_str(GEMINI_IMAGE_URL_GUIDANCE);
         }
         if !system_text.is_empty() {
             body["systemInstruction"] = serde_json::json!({
@@ -271,9 +322,15 @@ impl GeminiClient {
         // Build tools array
         let mut tools: Vec<serde_json::Value> = Vec::new();
 
-        // Add Google Search tool if enabled
+        // Add Google Search + URL Context tools if enabled. Single gate: the
+        // user-facing globe toggle controls both, mirroring how the Anthropic side
+        // pairs web_search with web_fetch. url_context returns plaintext page
+        // content (verified against ai.google.dev/gemini-api/docs/url-context), so
+        // Gemini can extract real image URLs from a fetched page rather than
+        // guessing them from memory.
         if config.web_search_enabled {
             tools.push(serde_json::json!({"google_search": {}}));
+            tools.push(serde_json::json!({"url_context": {}}));
         }
 
         // Add Code Execution tool if enabled
@@ -610,6 +667,38 @@ pub fn parse_sse_event(data: &str) -> Vec<GeminiStreamEvent> {
                     grounding_supports: supports,
                 },
             });
+        }
+    }
+
+    // Check for urlContextMetadata — present when the model called url_context.
+    // Same root-vs-candidate-nesting pattern as groundingMetadata. Diagnostic
+    // value: tells us whether the model actually fetched a page (vs. just
+    // calling google_search and guessing image URLs from snippets).
+    let url_ctx_opt = parsed.get("urlContextMetadata").or_else(|| {
+        parsed["candidates"]
+            .as_array()
+            .and_then(|c| c.first())
+            .and_then(|first| first.get("urlContextMetadata"))
+    });
+    if let Some(url_ctx) = url_ctx_opt {
+        let entries: Vec<UrlContextEntry> = url_ctx["urlMetadata"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        Some(UrlContextEntry {
+                            url: m["retrievedUrl"].as_str()?.to_string(),
+                            status: m["urlRetrievalStatus"]
+                                .as_str()
+                                .unwrap_or("UNKNOWN")
+                                .to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !entries.is_empty() {
+            events.push(GeminiStreamEvent::UrlContextUsed { entries });
         }
     }
 

@@ -13,6 +13,7 @@ use crate::providers::gemini::{
     mime_to_extension, parse_sse_event as gemini_parse_sse_event, pick_filename_index_for_mime,
     string_to_thinking_config, supports_thinking as gemini_supports_thinking,
     ChatRequestConfig as GeminiChatRequestConfig, GeminiClient, GeminiStreamEvent,
+    UrlContextEntry,
 };
 
 /// Pure selection: from all buffered (filename, file) pairs and the final response
@@ -95,6 +96,16 @@ fn emit_user_ready_files(
 
 const INTERRUPTED_ERROR: &str = "The response was interrupted before Gemini produced an answer. Long code-execution tasks can occasionally drop the connection before finishing — please try again.";
 const INTERRUPTED_NOTE: &str = "\n\n_The response was interrupted before it finished._";
+
+/// Render UrlContextEntry list as a compact comma-separated "<status> <url>"
+/// for the chat log (e.g. "URL_RETRIEVAL_STATUS_SUCCESS https://… , …").
+fn format_url_context_entries(entries: &[UrlContextEntry]) -> String {
+    entries
+        .iter()
+        .map(|e| format!("{} {}", e.status, e.url))
+        .collect::<Vec<_>>()
+        .join(" | ")
+}
 
 /// A short note to append when a response ended abnormally but DID produce some
 /// text (so the partial answer is kept, with an explanation).
@@ -445,6 +456,18 @@ pub async fn send_chat_message_gemini(
                                         // as it iterates. emit_user_ready_files (at stream end) keeps only
                                         // the file(s) the model actually presents in its final response.
                                         buffered_files.push((filename, file));
+                                    }
+                                    GeminiStreamEvent::UrlContextUsed { entries } => {
+                                        // Diagnostic only. Lets the chat log show whether
+                                        // url_context fired and which URLs were fetched (with
+                                        // each URL's retrieval status). No frontend effect.
+                                        llm_logger::log_feature_used(
+                                            "chat",
+                                            &format!(
+                                                "Gemini URL Context: {}",
+                                                format_url_context_entries(&entries)
+                                            ),
+                                        );
                                     }
                                     GeminiStreamEvent::Unknown => {}
                                 }

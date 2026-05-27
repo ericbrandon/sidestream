@@ -6,6 +6,21 @@ use crate::mime_utils;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Appended to the system prompt when web_search_enabled is true.
+///
+/// Anthropic-specific because it names Anthropic's tools (`web_search` and
+/// `web_fetch`). Lives in the provider layer so the cross-cutting system prompt
+/// in useChat.ts stays provider-neutral — see the comment on SYSTEM_PROMPT.
+///
+/// Naming the explicit *sequence* (search → fetch → embed) is load-bearing.
+/// Earlier vague drafts ("use the web tools") let Claude reach for search and
+/// skip the fetch step, falling back to memory-guessed URLs that 404. See
+/// notes/claude_image_handling.md for the empirical history.
+const ANTHROPIC_IMAGE_URL_GUIDANCE: &str =
+    " To embed an image: use the web_search tool to find a relevant page, \
+then use the web_fetch tool on that page and embed an image URL that \
+literally appears in the fetched page's content.";
+
 /// Anthropic API client
 pub struct AnthropicClient {
     client: reqwest::Client,
@@ -166,12 +181,21 @@ impl AnthropicClient {
             body["tools"] = serde_json::json!(tools);
         }
 
-        // Use prompt caching for the system prompt
+        // Use prompt caching for the system prompt. When web search is enabled,
+        // append the Anthropic-specific image-URL workflow so Claude reaches for
+        // web_search → web_fetch when asked to embed a picture. The shared
+        // cross-provider prompt (useChat.ts SYSTEM_PROMPT) stays tool-name-free;
+        // this is the Anthropic-layer addendum.
         if let Some(system) = &config.system_prompt {
+            let effective_system = if config.web_search_enabled {
+                format!("{}{}", system, ANTHROPIC_IMAGE_URL_GUIDANCE)
+            } else {
+                system.clone()
+            };
             body["system"] = serde_json::json!([
                 {
                     "type": "text",
-                    "text": system,
+                    "text": effective_system,
                     "cache_control": {"type": "ephemeral"}
                 }
             ]);

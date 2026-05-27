@@ -195,6 +195,7 @@ pub async fn send_voice_message_impl(
                                     GeminiStreamEvent::ExecutableCode { .. } => {}
                                     GeminiStreamEvent::CodeExecutionResult { .. } => {}
                                     GeminiStreamEvent::InlineData { .. } => {}
+                                    GeminiStreamEvent::UrlContextUsed { .. } => {}
                                     GeminiStreamEvent::Unknown => {}
                                 }
                                 } // end for event in events
