@@ -25,15 +25,28 @@ const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/m
 /// both). The remaining examples (plot, spreadsheet, document, PDF) are all
 /// unambiguously data-derived.
 const GEMINI_CODE_EXEC_FILE_GUIDANCE: &str =
-    " This application can display images inline and lets the user download \
+    "\n\nThis application can display images inline and lets the user download \
 files. When a file would serve the user better than plain text — for example \
-a plot, spreadsheet, document, or PDF — use the code execution tool to \
+a plot, spreadsheet, document, or PDF — use the code_execution tool to \
 generate it and save it to a file in the working directory. Any file you save \
 there is delivered to the user automatically, so you never need to print file \
 contents or base64-encode them as text. Prefer producing a real saved file \
 over drawing ASCII art or pasting raw data as text. Only generate a file when \
-it genuinely helps; answer ordinary questions with plain text. Use code \
-execution to produce new artifacts from data or instructions.";
+it genuinely helps; answer ordinary questions with plain text. Use \
+code_execution to produce new artifacts from data or instructions.";
+
+/// Appended to the system instruction when web_search_enabled is FALSE.
+///
+/// Without web search, the model has no way to fetch a real image URL, so its
+/// only option for embedding one would be to guess from training-data memory,
+/// which 404s. This closes that path. Originally lived as a cross-provider
+/// constant in useChat.ts; moved here so the TypeScript layer stays purely
+/// provider-neutral and each provider owns its full prompt-suffix story.
+/// Anthropic intentionally has no equivalent — see the doc comment on
+/// ANTHROPIC_IMAGE_URL_GUIDANCE.
+const GEMINI_NO_WEB_SEARCH_IMAGE_GUIDANCE: &str =
+    "\n\nIf trying to show the user an image on the web, don't construct image \
+URLs from memory — they often 404.";
 
 /// Appended to the system instruction whenever web search is enabled
 /// (Part C in notes/prompt_compositions.md).
@@ -56,19 +69,19 @@ execution to produce new artifacts from data or instructions.";
 ///    plainly instead of substituting a generated image.
 /// 4. The markdown embed syntax reminder.
 const GEMINI_IMAGE_URL_GUIDANCE: &str =
-    " There are two kinds of images you might want to show the user. Those \
-you created using code execution, and those you found on the web. Both are \
+    "\n\nThere are two kinds of images you might want to show the user. Those \
+you created using code_execution, and those you found on the web. Both are \
 very helpful, but don't confuse the two. Think about whether the user's needs \
 would be better served by an image you create, or an image already on the \
-web. As just one example, if you want to show the user a graph, it's likely \
-that you should create it. But if you want to show the user a circuit \
-diagram, it's likely an image on the web. If it's a picture of something in \
-the world, it's probably an image already on the web. \
+web. As just one example, if you want to show the user a graph, you should \
+likely create it. But if you want to show the user a circuit \
+diagram, it's likely an image on the web. If it's something already in the \
+world, it's probably an image already on the web. \
 \n\nTo find and show the user an image from the web use this workflow every \
 time, because search-result snippets often contain URLs that look usable but \
 don't actually load: first call google_search to find a relevant page, then \
-call url_context on that page's URL, then embed an image URL that appears in \
-the fetched page's content. \
+call url_context on that page's URL, then embed the exact image URL that \
+appears in the fetched page's content. \
 \n\nIf you can't find a real, valid image url don't construct one from memory \
 or make one up. Better not to provide an image than a broken link. \
 \n\nWhen you have an image URL, you may embed it inline with \
@@ -305,19 +318,24 @@ impl GeminiClient {
             "contents": contents
         });
 
-        // Add system instruction. When code execution is enabled, append guidance
-        // telling Gemini the app can render images / serve file downloads and that
-        // saving a file to the working directory hands it off; otherwise Gemini 3.x
-        // answers visual/file requests as ASCII or text and returns no inlineData.
-        // When web search is enabled, also append the google_search → url_context
-        // workflow so "show me a picture of X" reaches for a verifiable URL instead
-        // of guessing one from memory.
+        // Add system instruction. Layer three Gemini-specific addenda on top:
+        //   - GEMINI_CODE_EXEC_FILE_GUIDANCE whenever code execution is on
+        //     (the app-capability hand-off — Part B)
+        //   - GEMINI_IMAGE_URL_GUIDANCE whenever web search is on
+        //     (the google_search → url_context workflow — Part C)
+        //   - GEMINI_NO_WEB_SEARCH_IMAGE_GUIDANCE whenever web search is OFF
+        //     (the don't-invent-URLs fallback — was Part D, now per-provider)
+        // Without B, Gemini 3.x answers file-shaped requests as ASCII art or
+        // raw text and returns no inlineData. Without C, "show me a picture of
+        // X" results in a hallucinated URL that 404s.
         let mut system_text = config.system_prompt.clone().unwrap_or_default();
         if config.code_execution_enabled {
             system_text.push_str(GEMINI_CODE_EXEC_FILE_GUIDANCE);
         }
         if config.web_search_enabled {
             system_text.push_str(GEMINI_IMAGE_URL_GUIDANCE);
+        } else {
+            system_text.push_str(GEMINI_NO_WEB_SEARCH_IMAGE_GUIDANCE);
         }
         if !system_text.is_empty() {
             body["systemInstruction"] = serde_json::json!({

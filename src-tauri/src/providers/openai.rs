@@ -19,7 +19,7 @@ const OPENAI_API_URL: &str = "https://api.openai.com/v1/responses";
 /// lesson that hard-won omission encodes. The remaining examples (plot,
 /// spreadsheet, document, PDF) are all unambiguously data-derived.
 const OPENAI_CODE_INTERPRETER_GUIDANCE: &str =
-    " This application can display images inline and lets the user download \
+    "\n\nThis application can display images inline and lets the user download \
 files. When a file would serve the user better than plain text — for example \
 a plot, spreadsheet, document, or PDF — use the code_interpreter tool to \
 generate it and save it to /mnt/data/. Any file you save there is delivered \
@@ -28,6 +28,19 @@ base64-encode them as text. Prefer producing a real saved file over drawing \
 ASCII art or pasting raw data as text. Only generate a file when it \
 genuinely helps; answer ordinary questions with plain text. Use \
 code_interpreter to produce new artifacts from data or instructions.";
+
+/// Appended to the system prompt when web_search_enabled is FALSE.
+///
+/// Without web search, the model has no way to fetch a real image URL, so its
+/// only option for embedding one would be to guess from training-data memory,
+/// which 404s. This closes that path. Originally lived as a cross-provider
+/// constant in useChat.ts; moved here so the TypeScript layer stays purely
+/// provider-neutral and each provider owns its full prompt-suffix story.
+/// Anthropic intentionally has no equivalent — see the doc comment on
+/// ANTHROPIC_IMAGE_URL_GUIDANCE.
+const OPENAI_NO_WEB_SEARCH_IMAGE_GUIDANCE: &str =
+    "\n\nIf trying to show the user an image on the web, don't construct image \
+URLs from memory — they often 404.";
 
 /// Appended to the system prompt when web_search_enabled is true.
 ///
@@ -54,13 +67,13 @@ code_interpreter to produce new artifacts from data or instructions.";
 /// 4. Graceful-failure clause: better no image than a broken link.
 /// 5. Markdown embed syntax reminder.
 const OPENAI_IMAGE_URL_GUIDANCE: &str =
-    " There are two kinds of images you might want to show the user: those \
+    "\n\nThere are two kinds of images you might want to show the user: those \
 you created using code execution, and those you found on the web. Both are \
 very helpful, but don't confuse the two. Think about whether the user's needs \
 would be better served by an image you create or an image already on the web. \
 As just one example, if you want to show the user a graph, you should likely \
 create it. But if you want to show the user a circuit diagram, it's likely an \
-image already on the web. If it's a picture of something in the world, it's \
+image already on the web. If it's something already in the world, it's \
 probably an image already on the web. \
 \n\nTo find and show the user an image from the web use this workflow every \
 time. Search-result snippets often contain URLs that look usable but don't \
@@ -220,12 +233,14 @@ impl OpenAIClient {
         // OpenAI uses "input" array with role-based items
         let mut input_items: Vec<serde_json::Value> = Vec::new();
 
-        // Add system prompt as an item if provided. Layer two OpenAI-specific
+        // Add system prompt as an item if provided. Layer three OpenAI-specific
         // addenda on top, matching the Gemini provider's structure:
         //   - OPENAI_CODE_INTERPRETER_GUIDANCE whenever code_interpreter is on
         //     (the app-capability hand-off — Part B analog)
         //   - OPENAI_IMAGE_URL_GUIDANCE whenever web search is on
         //     (the tool-naming workflow — Part C analog)
+        //   - OPENAI_NO_WEB_SEARCH_IMAGE_GUIDANCE whenever web search is OFF
+        //     (the don't-invent-URLs fallback — was Part D, now per-provider)
         if let Some(system) = &config.system_prompt {
             let mut system_text = system.clone();
             if config.code_interpreter_enabled {
@@ -233,6 +248,8 @@ impl OpenAIClient {
             }
             if config.web_search_enabled {
                 system_text.push_str(OPENAI_IMAGE_URL_GUIDANCE);
+            } else {
+                system_text.push_str(OPENAI_NO_WEB_SEARCH_IMAGE_GUIDANCE);
             }
             input_items.push(serde_json::json!({
                 "type": "message",

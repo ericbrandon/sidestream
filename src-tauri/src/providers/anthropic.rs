@@ -6,20 +6,72 @@ use crate::mime_utils;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Appended to the system prompt whenever code_execution is enabled.
+///
+/// Anthropic's `code_execution` runs in a persistent container sandbox; files
+/// saved to `/tmp/` flow back to the user automatically through the same
+/// pipeline that handles inline image previews and download chips. Without an
+/// explicit nudge Claude tends to emit ASCII art when asked to "draw a
+/// diagram" instead of generating a real saved image file. This is the direct
+/// Anthropic analog of OPENAI_CODE_INTERPRETER_GUIDANCE and
+/// GEMINI_CODE_EXEC_FILE_GUIDANCE (Part B in notes/prompt_compositions.md).
+///
+/// "diagram" and "map" are intentionally NOT in the example list — see the
+/// doc comment on GEMINI_CODE_EXEC_FILE_GUIDANCE for the context-contamination
+/// lesson that omission encodes. The remaining examples (plot, spreadsheet,
+/// document, PDF) are all unambiguously data-derived.
+const ANTHROPIC_CODE_EXEC_GUIDANCE: &str =
+    "\n\nThis application can display images inline and lets the user download \
+files. When a file would serve the user better than plain text — for example \
+a plot, spreadsheet, document, or PDF — use the code_execution tool to \
+generate it and save it to /tmp/. Any file you save there is delivered to the \
+user automatically, so you never need to print file contents or base64-encode \
+them as text. Prefer producing a real saved file over drawing ASCII art or \
+pasting raw data as text. Only generate a file when it genuinely helps; \
+answer ordinary questions with plain text. Use code_execution to produce new \
+artifacts from data or instructions.";
+
 /// Appended to the system prompt when web_search_enabled is true.
 ///
 /// Anthropic-specific because it names Anthropic's tools (`web_search` and
 /// `web_fetch`). Lives in the provider layer so the cross-cutting system prompt
 /// in useChat.ts stays provider-neutral — see the comment on SYSTEM_PROMPT.
 ///
-/// Naming the explicit *sequence* (search → fetch → embed) is load-bearing.
-/// Earlier vague drafts ("use the web tools") let Claude reach for search and
+/// Structure mirrors GEMINI_IMAGE_URL_GUIDANCE / OPENAI_IMAGE_URL_GUIDANCE (see
+/// notes/prompt_compositions.md): two-kinds framing → workflow with embedded
+/// why-clause → graceful-failure permission → markdown embed syntax reminder.
+/// Naming the explicit *sequence* (search → fetch → embed) is load-bearing —
+/// earlier vague drafts ("use the web tools") let Claude reach for search and
 /// skip the fetch step, falling back to memory-guessed URLs that 404. See
 /// notes/claude_image_handling.md for the empirical history.
+///
+/// Wording notes:
+///   - "code_execution" with underscore matches the tool name used in the
+///     preceding ANTHROPIC_CODE_EXEC_GUIDANCE paragraph.
+///   - "the exact image URL" front-loads the anti-paraphrase constraint into a
+///     noun phrase the model sees before the verb. Gemini's image-URL
+///     guidance carries the same wording.
+///   - No analog of OpenAI's "copy the URL verbatim, don't reconstruct
+///     hash-prefix or size segments" clause — that was tuned for a GPT-5
+///     Wikimedia failure mode we haven't observed on Claude.
 const ANTHROPIC_IMAGE_URL_GUIDANCE: &str =
-    " To embed an image: use the web_search tool to find a relevant page, \
-then use the web_fetch tool on that page and embed an image URL that \
-literally appears in the fetched page's content.";
+    "\n\nThere are two kinds of images you might want to show the user. Those \
+you created using code_execution, and those you found on the web. Both are \
+very helpful, but don't confuse the two. Think about whether the user's needs \
+would be better served by an image you create, or an image already on the \
+web. As just one example, if you want to show the user a graph, you should \
+likely create it. But if you want to show the user a circuit \
+diagram, it's likely an image on the web. If it's something already in the \
+world, it's probably an image already on the web. \
+\n\nTo find and show the user an image from the web use this workflow every \
+time, because search-result snippets often contain URLs that look usable but \
+don't actually load: first call web_search to find a relevant page, then call \
+web_fetch on that page's URL, then embed the exact image URL that appears in \
+the fetched page's content. \
+\n\nIf you can't find a real, valid image URL don't construct one from memory \
+or make one up. Better not to provide an image than a broken link. \
+\n\nWhen you have an image URL, you may embed it inline with \
+![description](https://…)";
 
 /// Anthropic API client
 pub struct AnthropicClient {
@@ -181,17 +233,21 @@ impl AnthropicClient {
             body["tools"] = serde_json::json!(tools);
         }
 
-        // Use prompt caching for the system prompt. When web search is enabled,
-        // append the Anthropic-specific image-URL workflow so Claude reaches for
-        // web_search → web_fetch when asked to embed a picture. The shared
-        // cross-provider prompt (useChat.ts SYSTEM_PROMPT) stays tool-name-free;
-        // this is the Anthropic-layer addendum.
+        // Use prompt caching for the system prompt. Layer two Anthropic-specific
+        // addenda onto the cross-provider prompt (useChat.ts SYSTEM_PROMPT, which
+        // stays tool-name-free):
+        //   - ANTHROPIC_CODE_EXEC_GUIDANCE whenever code_execution is on, so
+        //     Claude saves a real file to /tmp/ instead of emitting ASCII art
+        //   - ANTHROPIC_IMAGE_URL_GUIDANCE whenever web search is on, so Claude
+        //     reaches for web_search → web_fetch when asked to embed a picture
         if let Some(system) = &config.system_prompt {
-            let effective_system = if config.web_search_enabled {
-                format!("{}{}", system, ANTHROPIC_IMAGE_URL_GUIDANCE)
-            } else {
-                system.clone()
-            };
+            let mut effective_system = system.clone();
+            if config.code_execution_enabled {
+                effective_system.push_str(ANTHROPIC_CODE_EXEC_GUIDANCE);
+            }
+            if config.web_search_enabled {
+                effective_system.push_str(ANTHROPIC_IMAGE_URL_GUIDANCE);
+            }
             body["system"] = serde_json::json!([
                 {
                     "type": "text",
