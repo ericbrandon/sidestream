@@ -4,6 +4,77 @@ use crate::llm::GeneratedFile;
 
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/responses";
 
+/// Appended to the system prompt whenever code_interpreter is enabled.
+///
+/// OpenAI's `code_interpreter` runs in a persistent sandbox at `/mnt/data/`;
+/// files saved there flow back to the user automatically through the same
+/// pipeline that handles inline image previews and download chips (see
+/// notes/openai_fixes.md). The model doesn't infer this on its own — without
+/// an explicit nudge it tends to emit ASCII art / pasted raw data instead of
+/// generating a real saved file. This is the direct OpenAI analog of
+/// GEMINI_CODE_EXEC_FILE_GUIDANCE (Part B in notes/prompt_compositions.md).
+///
+/// "diagram" and "map" are intentionally NOT in the example list — see the
+/// doc comment on GEMINI_CODE_EXEC_FILE_GUIDANCE for the context-contamination
+/// lesson that hard-won omission encodes. The remaining examples (plot,
+/// spreadsheet, document, PDF) are all unambiguously data-derived.
+const OPENAI_CODE_INTERPRETER_GUIDANCE: &str =
+    " This application can display images inline and lets the user download \
+files. When a file would serve the user better than plain text — for example \
+a plot, spreadsheet, document, or PDF — use the code_interpreter tool to \
+generate it and save it to /mnt/data/. Any file you save there is delivered \
+to the user automatically, so you never need to print file contents or \
+base64-encode them as text. Prefer producing a real saved file over drawing \
+ASCII art or pasting raw data as text. Only generate a file when it \
+genuinely helps; answer ordinary questions with plain text. Use \
+code_interpreter to produce new artifacts from data or instructions.";
+
+/// Appended to the system prompt when web_search_enabled is true.
+///
+/// OpenAI-specific because it names the `web_search` tool and its `open_page`
+/// action — the GPT-5 reasoning-model variant of the page-fetch step that
+/// Anthropic exposes as `web_fetch` and Gemini as `url_context`. The cross-
+/// cutting SYSTEM_PROMPT in useChat.ts is tool-name-free; this is the
+/// OpenAI-layer addendum that names its tools.
+///
+/// Structure (mirrors GEMINI_IMAGE_URL_GUIDANCE — see prompt_compositions.md):
+/// 1. "Two kinds of images" framing — preventive medicine against confusing a
+///    code-interpreter-generated image with a found-on-the-web image. OpenAI
+///    hasn't shown the same chart-instead-of-photo bias Gemini did, but the
+///    clarification is cheap.
+/// 2. Workflow with standalone why-sentence. The why is given its own sentence
+///    rather than buried in a comma clause so it doesn't get glossed over —
+///    on Gemini, including the why was empirically what shifted the model into
+///    following the full workflow.
+/// 3. "Copy the URL verbatim" — written for the GPT-5 failure mode observed
+///    in chat-log-20260527-182322.md: the model called open_page on the right
+///    Wikimedia file description page but then embedded a constructed URL with
+///    the wrong hash prefix (7/75 vs the real 9/98), filling in plausible-
+///    looking but wrong path segments from memory.
+/// 4. Graceful-failure clause: better no image than a broken link.
+/// 5. Markdown embed syntax reminder.
+const OPENAI_IMAGE_URL_GUIDANCE: &str =
+    " There are two kinds of images you might want to show the user: those \
+you created using code execution, and those you found on the web. Both are \
+very helpful, but don't confuse the two. Think about whether the user's needs \
+would be better served by an image you create or an image already on the web. \
+As just one example, if you want to show the user a graph, you should likely \
+create it. But if you want to show the user a circuit diagram, it's likely an \
+image already on the web. If it's a picture of something in the world, it's \
+probably an image already on the web. \
+\n\nTo find and show the user an image from the web use this workflow every \
+time. Search-result snippets often contain URLs that look usable but don't \
+actually load, and partial URLs cannot be reliably completed from memory. So: \
+first call web_search (action \"search\") to find a relevant page, then call \
+web_search again with action \"open_page\" on that page's URL, then embed an \
+image URL that appears in the fetched page's content. Copy the URL verbatim \
+— do not reconstruct, shorten, or substitute hash-prefix or size segments \
+based on what similar URLs usually look like. \
+\n\nIf you can't find a real, valid image URL don't construct one from memory \
+or make one up. Better not to provide an image than a broken link. \
+\n\nWhen you have an image URL, you may embed it inline with \
+![description](https://…)";
+
 /// OpenAI API client (using Responses API)
 pub struct OpenAIClient {
     client: reqwest::Client,
@@ -71,8 +142,16 @@ pub enum OpenAIStreamEvent {
     },
     /// Reasoning summary text (for ephemeral thinking UI)
     ReasoningSummary { text: String },
-    /// Web search started
-    WebSearchStarted,
+    /// Web search call started. `action_kind` is the inner action type
+    /// (`"search"`, `"open_page"`, `"find_in_page"`); `detail` carries the
+    /// query for searches or the URL for page-fetch actions. Both are best-
+    /// effort for diagnostic logging.
+    WebSearchStarted {
+        #[allow(dead_code)]
+        action_kind: Option<String>,
+        #[allow(dead_code)]
+        detail: Option<String>,
+    },
     /// Code interpreter call started
     CodeInterpreterStarted {
         #[allow(dead_code)]
@@ -141,12 +220,24 @@ impl OpenAIClient {
         // OpenAI uses "input" array with role-based items
         let mut input_items: Vec<serde_json::Value> = Vec::new();
 
-        // Add system prompt as an item if provided
+        // Add system prompt as an item if provided. Layer two OpenAI-specific
+        // addenda on top, matching the Gemini provider's structure:
+        //   - OPENAI_CODE_INTERPRETER_GUIDANCE whenever code_interpreter is on
+        //     (the app-capability hand-off — Part B analog)
+        //   - OPENAI_IMAGE_URL_GUIDANCE whenever web search is on
+        //     (the tool-naming workflow — Part C analog)
         if let Some(system) = &config.system_prompt {
+            let mut system_text = system.clone();
+            if config.code_interpreter_enabled {
+                system_text.push_str(OPENAI_CODE_INTERPRETER_GUIDANCE);
+            }
+            if config.web_search_enabled {
+                system_text.push_str(OPENAI_IMAGE_URL_GUIDANCE);
+            }
             input_items.push(serde_json::json!({
                 "type": "message",
                 "role": "system",
-                "content": system
+                "content": system_text
             }));
         }
 
@@ -407,7 +498,10 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
         "response.output_item.added" => {
             let item_type = parsed["item"]["type"].as_str().unwrap_or("");
             match item_type {
-                "web_search_call" => OpenAIStreamEvent::WebSearchStarted,
+                // The `action` object isn't populated yet on `output_item.added` for
+                // web_search_call — only on `output_item.done`. Emit the diagnostic
+                // event from there so we capture the real action kind.
+                "web_search_call" => OpenAIStreamEvent::Unknown,
                 "code_interpreter_call" => {
                     let call_id = parsed["item"]["id"].as_str().unwrap_or("").to_string();
                     OpenAIStreamEvent::CodeInterpreterStarted { call_id }
@@ -453,9 +547,19 @@ pub fn parse_sse_event(data: &str) -> OpenAIStreamEvent {
             OpenAIStreamEvent::CodeInterpreterCodeDone { call_id, code }
         }
 
-        // Code interpreter output item done - contains execution results and files
+        // Output item done — for code interpreter (execution results/files) and
+        // for web_search_call (where the `action` object is finally populated).
         "response.output_item.done" => {
             let item_type = parsed["item"]["type"].as_str().unwrap_or("");
+            if item_type == "web_search_call" {
+                let action = &parsed["item"]["action"];
+                let action_kind = action["type"].as_str().map(|s| s.to_string());
+                let detail = action["query"]
+                    .as_str()
+                    .or_else(|| action["url"].as_str())
+                    .map(|s| s.to_string());
+                return OpenAIStreamEvent::WebSearchStarted { action_kind, detail };
+            }
             if item_type == "code_interpreter_call" {
                 let call_id = parsed["item"]["id"].as_str().unwrap_or("").to_string();
                 let container_id = parsed["item"]["container_id"].as_str().map(|s| s.to_string());

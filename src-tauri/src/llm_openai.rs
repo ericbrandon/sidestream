@@ -219,18 +219,27 @@ pub async fn send_chat_message_openai(
                                                     };
 
                                                     let (inline_data, image_preview, mime_type) = if let Some(ref container_id) = cid {
-                                                        match fetch_file_content_base64(&api_key, container_id, &f.file_id).await {
-                                                            Ok(data) => {
-                                                                // Guess mime type from filename extension
-                                                                let mime = crate::mime_utils::extension_to_mime(&f.filename);
-                                                                let preview = mime.as_ref()
-                                                                    .filter(|m| m.starts_with("image/"))
-                                                                    .map(|m| format!("data:{};base64,{}", m, data));
-                                                                (Some(data), preview, mime.map(|s| s.to_string()))
-                                                            }
-                                                            Err(e) => {
-                                                                eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
-                                                                (None, None, None)
+                                                        if f.file_id.starts_with("sandbox:") {
+                                                            // Placeholder from output_text.done; the real cfile_
+                                                            // id arrives via content_part.done and replaces this
+                                                            // entry through merge_generated_file. Don't attempt
+                                                            // the fetch — the Containers API rejects sandbox:
+                                                            // paths and the noise is misleading.
+                                                            (None, None, None)
+                                                        } else {
+                                                            match fetch_file_content_base64(&api_key, container_id, &f.file_id).await {
+                                                                Ok(data) => {
+                                                                    // Guess mime type from filename extension
+                                                                    let mime = crate::mime_utils::extension_to_mime(&f.filename);
+                                                                    let preview = mime.as_ref()
+                                                                        .filter(|m| m.starts_with("image/"))
+                                                                        .map(|m| format!("data:{};base64,{}", m, data));
+                                                                    (Some(data), preview, mime.map(|s| s.to_string()))
+                                                                }
+                                                                Err(e) => {
+                                                                    eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
+                                                                    (None, None, None)
+                                                                }
                                                             }
                                                         }
                                                     } else {
@@ -257,8 +266,13 @@ pub async fn send_chat_message_openai(
                                                 }
                                             }
                                         }
-                                        OpenAIStreamEvent::WebSearchStarted => {
-                                            llm_logger::log_feature_used("chat", "OpenAI Web Search initiated");
+                                        OpenAIStreamEvent::WebSearchStarted { action_kind, detail } => {
+                                            let kind = action_kind.as_deref().unwrap_or("?");
+                                            let label = match detail.as_deref() {
+                                                Some(d) if !d.is_empty() => format!("OpenAI web_search_call action={} {}", kind, d),
+                                                _ => format!("OpenAI web_search_call action={}", kind),
+                                            };
+                                            llm_logger::log_feature_used("chat", &label);
                                         }
                                         // Code interpreter events - reuse same ExecutionDelta pattern as Anthropic
                                         OpenAIStreamEvent::CodeInterpreterStarted { call_id: _ } => {
@@ -319,18 +333,24 @@ pub async fn send_chat_message_openai(
                                             let mut generated_files: Vec<GeneratedFile> = Vec::new();
                                             for f in files {
                                                 let (inline_data, image_preview, mime_type) = if let Some(ref cid) = container_id {
-                                                    match fetch_file_content_base64(&api_key, cid, &f.file_id).await {
-                                                        Ok(data) => {
-                                                            // Guess mime type from filename extension
-                                                            let mime = crate::mime_utils::extension_to_mime(&f.filename);
-                                                            let preview = mime.as_ref()
-                                                                .filter(|m| m.starts_with("image/"))
-                                                                .map(|m| format!("data:{};base64,{}", m, data));
-                                                            (Some(data), preview, mime.map(|s| s.to_string()))
-                                                        }
-                                                        Err(e) => {
-                                                            eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
-                                                            (None, None, None)
+                                                    if f.file_id.starts_with("sandbox:") {
+                                                        // See sibling site above: sandbox: placeholders are
+                                                        // superseded by the real cfile_ id via merge_generated_file.
+                                                        (None, None, None)
+                                                    } else {
+                                                        match fetch_file_content_base64(&api_key, cid, &f.file_id).await {
+                                                            Ok(data) => {
+                                                                // Guess mime type from filename extension
+                                                                let mime = crate::mime_utils::extension_to_mime(&f.filename);
+                                                                let preview = mime.as_ref()
+                                                                    .filter(|m| m.starts_with("image/"))
+                                                                    .map(|m| format!("data:{};base64,{}", m, data));
+                                                                (Some(data), preview, mime.map(|s| s.to_string()))
+                                                            }
+                                                            Err(e) => {
+                                                                eprintln!("Failed to fetch file content for {}: {}", f.file_id, e);
+                                                                (None, None, None)
+                                                            }
                                                         }
                                                     }
                                                 } else {
