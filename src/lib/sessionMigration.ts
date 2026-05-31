@@ -1,7 +1,8 @@
 import type { ChatSessionSettings } from './types';
 
 const LEGACY_OPUS_45_ID = 'claude-opus-4-5-20251101';
-const REPLACEMENT_OPUS_ID = 'claude-opus-4-6';
+const LEGACY_OPUS_47_ID = 'claude-opus-4-7';
+const REPLACEMENT_OPUS_ID = 'claude-opus-4-8';
 
 // Map of retired OpenAI GPT-5.x IDs to their replacement.
 // 5.2 and 5.1 both collapse to 5.4 (5.5 is 2x the price for marginal gains).
@@ -22,8 +23,12 @@ const LEGACY_GEMINI_IDS: Record<string, string> = {
 };
 
 // Rewrite a legacy model ID to its current replacement. Idempotent.
+// Opus 4.5 and 4.7 both forward to the current Opus (4.8); 4.5→4.8 is a two-hop
+// upgrade that skips the 4.6 way-station, which is fine because 4.6 is still
+// supported and the user could pick it manually.
 export function migrateLegacyModelId(modelId: string | undefined | null): string {
   if (modelId === LEGACY_OPUS_45_ID) return REPLACEMENT_OPUS_ID;
+  if (modelId === LEGACY_OPUS_47_ID) return REPLACEMENT_OPUS_ID;
   if (modelId && modelId in LEGACY_GPT_IDS) return LEGACY_GPT_IDS[modelId];
   if (modelId && modelId in LEGACY_GEMINI_IDS) return LEGACY_GEMINI_IDS[modelId];
   return modelId ?? REPLACEMENT_OPUS_ID;

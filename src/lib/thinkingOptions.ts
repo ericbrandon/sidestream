@@ -107,11 +107,11 @@ export function getOpenAIReasoningLetter(level: OpenAIReasoningLevel, model: str
 }
 
 // =============================================================================
-// Anthropic Claude Thinking Options (Opus 4.7 / Opus 4.6 / Sonnet 4.6)
+// Anthropic Claude Thinking Options (Opus 4.8 / Opus 4.6 / Sonnet 4.6)
 // =============================================================================
 
 // Adaptive thinking + effort levels for Anthropic models.
-// xhigh is recommended for coding/agentic tasks on Opus 4.7.
+// xhigh is recommended for coding/agentic tasks on Opus 4.8.
 export const OPUS_46_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] = [
   { value: 'off', label: 'Off', letter: '' },
   { value: 'low', label: 'Low', letter: 'L' },

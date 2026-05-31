@@ -39,7 +39,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     : null;
 
   return {
-    // Only adaptive-thinking models (Opus 4.7/4.6, Sonnet 4.6) accept the
+    // Only adaptive-thinking models (Opus 4.8/4.6, Sonnet 4.6) accept the
     // `thinking: {type: "adaptive"}` request the backend sends when this is true.
     // Non-adaptive models like Haiku 4.5 reject it with a 400, so gate the flag the
     // same way opus46ThinkingLevel is gated below. (The chat path ignores this flag
@@ -48,7 +48,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
       provider === 'anthropic' && usesAdaptiveThinking(llm.model)
         ? llm.extendedThinking.enabled
         : false,
-    // Anthropic: Adaptive thinking level for Opus 4.6 / Sonnet 4.6 (off, low, medium, high, max, adaptive)
+    // Anthropic: Adaptive thinking level for Opus 4.8 / Opus 4.6 / Sonnet 4.6 (off, low, medium, high, xhigh, max, adaptive)
     opus46ThinkingLevel: effectiveOpus46Level,
     // OpenAI: Reasoning level (normalized for model)
     reasoningLevel: effectiveReasoningLevel,

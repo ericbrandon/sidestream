@@ -91,7 +91,7 @@ pub struct ChatRequestConfig {
     pub container_id: Option<String>,
 }
 
-/// Configuration for adaptive extended thinking (Opus 4.7 / Opus 4.6 / Sonnet 4.6)
+/// Configuration for adaptive extended thinking (Opus 4.8 / Opus 4.6 / Sonnet 4.6)
 pub struct ThinkingConfig {
     pub effort_level: String,  // "off", "low", "medium", "high", "xhigh", "max", "adaptive"
 }
@@ -187,10 +187,10 @@ impl AnthropicClient {
             body["container"] = serde_json::json!(container_id);
         }
 
-        // Add adaptive extended thinking if enabled (Opus 4.7 / Opus 4.6 / Sonnet 4.6).
-        // display: "summarized" is required on Opus 4.7 to receive thinking text in the
-        // stream (default there is "omitted"); it is the existing default on 4.6/Sonnet 4.6
-        // so setting it explicitly is a no-op for those.
+        // Add adaptive extended thinking if enabled (Opus 4.8 / Opus 4.6 / Sonnet 4.6).
+        // display: "summarized" is required on Opus 4.8 (inherited from 4.7) to receive
+        // thinking text in the stream — its default is "omitted" — and is the existing
+        // default on 4.6/Sonnet 4.6, so setting it explicitly is a no-op for those.
         if let Some(thinking) = &config.extended_thinking {
             if thinking.effort_level != "off" {
                 body["thinking"] = serde_json::json!({
@@ -291,16 +291,16 @@ impl AnthropicClient {
             ]
         });
 
-        // Add adaptive extended thinking if enabled (Opus 4.7 / Opus 4.6 / Sonnet 4.6).
+        // Add adaptive extended thinking if enabled (Opus 4.8 / Opus 4.6 / Sonnet 4.6).
         // Discovery uses a low/medium effort to keep cost and latency reasonable.
-        // Opus 4.7 gets "medium" because it honors low effort more strictly than 4.6
-        // (per the Opus 4.7 migration guide), and discovery benefits from a bit more
-        // reasoning headroom. Other Anthropic models stay at "low".
+        // Opus 4.8 gets "medium" because it inherits 4.7's strict low-effort
+        // calibration (per the Opus 4.7/4.8 migration guides), and discovery benefits
+        // from a bit more reasoning headroom. Other Anthropic models stay at "low".
         // We do NOT set thinking.display here: discovery discards thinking deltas, so
-        // leaving 4.7's default of "omitted" avoids paying for summary tokens we'd
+        // leaving 4.8's default of "omitted" avoids paying for summary tokens we'd
         // throw away.
         if config.extended_thinking_enabled.unwrap_or(false) {
-            let effort = if config.model.starts_with("claude-opus-4-7") {
+            let effort = if config.model.starts_with("claude-opus-4-8") {
                 "medium"
             } else {
                 "low"
@@ -572,15 +572,17 @@ pub fn add_cache_control_to_last_message(messages: &mut Vec<serde_json::Value>) 
 
 /// Calculate max_tokens based on model and extended thinking settings.
 ///
-/// Opus 4.7 needs more headroom than 4.6:
+/// Opus 4.8 (and 4.7 before it) needs more headroom than 4.6:
 /// - Its tokenizer is ~1.0–1.35× more verbose than 4.6's, so identical text counts higher.
 /// - The migration guide explicitly recommends ≥ 64k max_tokens at `xhigh` or `max`
-///   effort to give the model room to think across subagents and tool calls.
+///   effort to give the model room to think across subagents and tool calls. On 4.8,
+///   `xhigh` allocates substantially more thinking tokens than it did on 4.7, so the
+///   64k ceiling here is the floor, not the target.
 /// All Anthropic models hit a 128k output ceiling, so these caps are conservative.
 pub fn calculate_max_tokens(model: &str, effort_level: Option<&str>) -> u32 {
     let level = effort_level.unwrap_or("off");
 
-    if model.starts_with("claude-opus-4-7") {
+    if model.starts_with("claude-opus-4-8") {
         match level {
             "off" => 8192,
             "xhigh" | "max" => 64000,

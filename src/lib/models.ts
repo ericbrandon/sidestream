@@ -2,7 +2,7 @@ import type { ModelDefinition, LLMProvider } from './types';
 
 export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
-  { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', provider: 'anthropic' },
+  { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', provider: 'anthropic' },
   { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
   { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
@@ -43,12 +43,12 @@ export function getDefaultModelForProvider(provider: LLMProvider): string {
   // of 5.4 for marginal capability gains, so 5.4 is the better starting point.
   if (provider === 'openai') return 'gpt-5.4';
   const models = ALL_MODELS.filter((m) => m.provider === provider);
-  return models[0]?.id ?? 'claude-opus-4-7';
+  return models[0]?.id ?? 'claude-opus-4-8';
 }
 
-// Check if a model is Opus 4.7 (supports adaptive thinking + effort, no sampling params, no budget thinking)
-export function isOpus47(modelId: string): boolean {
-  return modelId === 'claude-opus-4-7';
+// Check if a model is Opus 4.8 (supports adaptive thinking + effort, no sampling params, no budget thinking)
+export function isOpus48(modelId: string): boolean {
+  return modelId === 'claude-opus-4-8';
 }
 
 // Check if a model is Opus 4.6 (supports adaptive thinking + effort)
@@ -61,9 +61,9 @@ export function isSonnet46(modelId: string): boolean {
   return modelId === 'claude-sonnet-4-6';
 }
 
-// Check if a model uses adaptive thinking (Opus 4.7, Opus 4.6, and Sonnet 4.6)
+// Check if a model uses adaptive thinking (Opus 4.8, Opus 4.6, and Sonnet 4.6)
 export function usesAdaptiveThinking(modelId: string): boolean {
-  return isOpus47(modelId) || isOpus46(modelId) || isSonnet46(modelId);
+  return isOpus48(modelId) || isOpus46(modelId) || isSonnet46(modelId);
 }
 
 // Check if a model supports extended thinking (Opus models and Sonnet 4.6)

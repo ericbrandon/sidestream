@@ -70,17 +70,20 @@ export interface DiscoveryItem {
 }
 
 // Adaptive thinking levels for Anthropic models that support effort
-// (Opus 4.7, Opus 4.6, Sonnet 4.6).
+// (Opus 4.8, Opus 4.6, Sonnet 4.6).
 // - off: no thinking
 // - low/medium/high/xhigh/max: adaptive thinking with explicit effort level
 // - adaptive: adaptive thinking where Claude decides effort level
-// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.7.
+// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.8.
+// (Type name kept as Opus46* — it's a stable wire format reused across all three
+// adaptive-thinking Anthropic models; renaming would force a session migration
+// for no functional gain.)
 export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'adaptive';
 
 // Extended thinking configuration (for Anthropic Claude models)
 export interface ExtendedThinkingConfig {
   enabled: boolean;
-  opus46Level: Opus46ThinkingLevel; // For Opus 4.7 / Opus 4.6 / Sonnet 4.6
+  opus46Level: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
 }
 
 // Reasoning level options for OpenAI models
@@ -242,12 +245,12 @@ export interface ChatSessionSettings {
   // Frontier/chat model thinking settings (optional for backward compatibility)
   frontierReasoningLevel?: OpenAIReasoningLevel;
   frontierGeminiThinkingLevel?: GeminiThinkingLevel;
-  frontierOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.6
+  frontierOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
   // Evaluator/discovery pane thinking settings (optional for backward compatibility)
   evaluatorExtendedThinkingEnabled?: boolean;
   evaluatorReasoningLevel?: OpenAIReasoningLevel;
   evaluatorGeminiThinkingLevel?: GeminiThinkingLevel;
-  evaluatorOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.6
+  evaluatorOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
   // Claude code execution container ID (persists sandbox state across requests)
   anthropicContainerId?: string;
   // OpenAI code interpreter container ID (persists file access across requests)
