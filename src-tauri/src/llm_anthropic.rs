@@ -3,7 +3,7 @@ use tauri::Emitter;
 use tokio_util::sync::CancellationToken;
 
 use crate::commands::get_api_key_async;
-use crate::llm::{tool_names, ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, StreamDelta, StreamEvent};
+use crate::llm::{tool_names, ChatMessage, ContainerIdEvent, ExecutionDelta, ExecutionStatus, GeneratedFile, ModelSwitchEvent, StreamDelta, StreamEvent};
 use crate::llm_logger;
 use crate::mime_utils;
 use crate::providers::anthropic::{
@@ -11,6 +11,7 @@ use crate::providers::anthropic::{
     fetch_file_metadata, fetch_file_content_base64, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
     ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation, ThinkingConfig,
+    FABLE_5_FALLBACK_BETA, FABLE_5_MODEL,
 };
 
 /// Send chat message using Anthropic API
@@ -76,6 +77,11 @@ pub async fn send_chat_message_anthropic(
     }
     if web_search_enabled {
         beta_parts.push("web-fetch-2025-09-10");
+    }
+    // Fable 5 can refuse for safety; enable the server-side `fallbacks` param (set in
+    // build_chat_request) so the request is retried on Opus 4.8 in one round trip.
+    if model == FABLE_5_MODEL {
+        beta_parts.push(FABLE_5_FALLBACK_BETA);
     }
     let beta_header_str = beta_parts.join(",");
     let beta_header = if beta_header_str.is_empty() {
@@ -143,6 +149,18 @@ pub async fn send_chat_message_anthropic(
                                                 }) {
                                                     eprintln!("Failed to emit chat-container-id event: {}", err);
                                                 }
+                                            }
+                                        }
+                                        AnthropicStreamEvent::Fallback { from_model, to_model } => {
+                                            // Fable 5 refused for safety; the API answered with the
+                                            // fallback model. Tell the UI so it can show a notice.
+                                            llm_logger::log_feature_used("chat", &format!("Model fallback: {} -> {}", from_model, to_model));
+                                            if let Err(err) = window.emit("chat-model-switch", ModelSwitchEvent {
+                                                turn_id: turn_id.clone(),
+                                                from_model,
+                                                to_model,
+                                            }) {
+                                                eprintln!("Failed to emit chat-model-switch event: {}", err);
                                             }
                                         }
                                         AnthropicStreamEvent::ContentBlockStart { block_type, content_block } => {

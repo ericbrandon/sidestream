@@ -14,7 +14,7 @@ import {
   clearStreamingBuffer,
   flushStreamingBuffer,
 } from '../lib/streamingBuffer';
-import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent, ExecutionDelta, Citation, InlineCitation, GeneratedFile } from '../lib/types';
+import type { Message, ContentBlock, StreamDelta, StreamEvent, ContainerIdEvent, ModelSwitchEvent, ExecutionDelta, Citation, InlineCitation, GeneratedFile } from '../lib/types';
 
 /**
  * Process execution delta and update UI state.
@@ -335,11 +335,32 @@ export function useChat() {
         }
       });
 
+      // Listen for server-side model fallback (Fable 5 refused → Opus 4.8 answered)
+      const unlistenModelSwitch = await listen<ModelSwitchEvent>('chat-model-switch', (event) => {
+        const { turn_id: turnId, from_model, to_model } = event.payload;
+        const modelSwitch = { fromModel: from_model, toModel: to_model };
+        const backgroundStore = useBackgroundStreamStore.getState();
+
+        // Always record on the background stream (source of truth → persisted on the message)
+        backgroundStore.setChatModelSwitch(turnId, modelSwitch);
+
+        // Mirror to the live store for the in-progress banner if this turn is on screen
+        const stream = backgroundStore.getStreamByTurnId(turnId);
+        const activeSessionId = useSessionStore.getState().activeSessionId;
+        const onScreen = stream
+          ? stream.sessionId === activeSessionId
+          : useChatStore.getState().pendingTurnId === turnId;
+        if (onScreen) {
+          useChatStore.getState().setStreamingModelSwitch(modelSwitch);
+        }
+      });
+
       return () => {
         unlistenDelta();
         unlistenDone();
         unlistenCancelled();
         unlistenContainerId();
+        unlistenModelSwitch();
       };
     };
 

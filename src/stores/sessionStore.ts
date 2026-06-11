@@ -185,7 +185,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             activeStream.executionError,
             activeStream.executionStartTime,
             activeStream.executionTextPosition,
-            activeStream.streamingGeneratedFiles
+            activeStream.streamingGeneratedFiles,
+            activeStream.modelSwitch
           );
         } else {
           // Normal load (no active stream)

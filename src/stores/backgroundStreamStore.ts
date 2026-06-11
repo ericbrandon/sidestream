@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile } from '../lib/types';
+import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile, ModelSwitch } from '../lib/types';
 import { buildSessionSettings } from '../lib/sessionHelpers';
 import { migrateLegacyModelId } from '../lib/sessionMigration';
 import { deduplicateCitations } from '../lib/citationHelpers';
@@ -27,6 +27,7 @@ interface BackgroundChatStream {
   executionStartTime: number | null;
   executionTextPosition: number | null;
   streamingGeneratedFiles: GeneratedFile[];
+  modelSwitch: ModelSwitch | null; // Set if Fable 5 refused and Opus 4.8 answered this turn
 }
 
 interface BackgroundDiscoveryStream {
@@ -53,6 +54,7 @@ interface BackgroundStreamState {
   appendExecutionOutput: (turnId: string, output: string) => void;
   setExecutionCompleted: (turnId: string, files?: GeneratedFile[]) => void;
   setExecutionFailed: (turnId: string, error: string) => void;
+  setChatModelSwitch: (turnId: string, modelSwitch: ModelSwitch) => void;
   completeChatStream: (turnId: string) => Promise<void>;
   cancelChatStream: (turnId: string) => void;
 
@@ -94,6 +96,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
         executionStartTime: null,
         executionTextPosition: null,
         streamingGeneratedFiles: [],
+        modelSwitch: null,
       });
       return { chatStreams: newStreams };
     });
@@ -226,6 +229,17 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     });
   },
 
+  setChatModelSwitch: (turnId, modelSwitch) => {
+    set((state) => {
+      const stream = state.chatStreams.get(turnId);
+      if (!stream) return state;
+
+      const newStreams = new Map(state.chatStreams);
+      newStreams.set(turnId, { ...stream, modelSwitch });
+      return { chatStreams: newStreams };
+    });
+  },
+
   completeChatStream: async (turnId) => {
     const stream = get().chatStreams.get(turnId);
     if (!stream) return;
@@ -279,6 +293,7 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
       generatedFiles: stream.streamingGeneratedFiles.length > 0
         ? stream.streamingGeneratedFiles
         : undefined,
+      modelSwitch: stream.modelSwitch ?? undefined,
     };
 
     const activeSessionId = useSessionStore.getState().activeSessionId;
@@ -287,6 +302,11 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     if (isActiveSession) {
       // User is still viewing this session - update the live UI
       const chatStore = useChatStore.getState();
+      // Mirror the model switch into the live store so finalizeStreaming (which
+      // builds the message from chatStore state) persists it onto the message.
+      if (stream.modelSwitch) {
+        chatStore.setStreamingModelSwitch(stream.modelSwitch);
+      }
       // Add the message directly (streaming state is already being shown)
       set((state) => {
         const newStreams = new Map(state.chatStreams);

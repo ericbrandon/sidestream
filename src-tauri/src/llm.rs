@@ -122,6 +122,17 @@ pub struct ContainerIdEvent {
     pub container_id: String,
 }
 
+/// Event payload for a server-side model fallback (Claude Fable 5 safety refusal →
+/// Opus 4.8). Emitted as `chat-model-switch` so the UI can tell the user the answer
+/// came from the fallback model. Fields are snake_case to match the sibling chat
+/// events (ContainerIdEvent / StreamDelta) the frontend already listens for.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelSwitchEvent {
+    pub turn_id: String,
+    pub from_model: String,
+    pub to_model: String,
+}
+
 /// Determine which provider to use based on model name
 fn get_provider_for_model(model: &str) -> &'static str {
     if model.starts_with("gpt") || model.starts_with("o3") || model.starts_with("o4") {

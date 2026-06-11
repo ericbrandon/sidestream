@@ -6,7 +6,7 @@ use crate::commands::get_api_key_async;
 use crate::llm_logger;
 use crate::providers::anthropic::{
     parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
-    DiscoveryRequestConfig as AnthropicDiscoveryRequestConfig,
+    DiscoveryRequestConfig as AnthropicDiscoveryRequestConfig, FABLE_5_FALLBACK_BETA, FABLE_5_MODEL,
 };
 use crate::providers::openai::{
     parse_sse_event as openai_parse_sse_event, OpenAIClient, OpenAIStreamEvent,
@@ -51,6 +51,16 @@ pub struct DiscoveryDoneEvent {
 pub struct DiscoveryErrorEvent {
     pub turn_id: String,
     pub error: String,
+}
+
+/// Payload for discovery-model-switch event: Fable 5 (as the evaluator model)
+/// refused for safety and the API fell back to Opus 4.8 for this discovery turn.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryModelSwitchEvent {
+    pub turn_id: String,
+    pub from_model: String,
+    pub to_model: String,
 }
 
 /// State for incremental JSON parsing
@@ -251,7 +261,15 @@ async fn discover_resources_anthropic(
 
     llm_logger::log_request("discovery", &model, &body);
 
-    let response = client.send_streaming_request(&body).await.map_err(|e| {
+    // Fable 5 can refuse for safety; enable the server-side `fallbacks` param (set in
+    // build_discovery_request) so the discovery retries on Opus 4.8 in one round trip.
+    let beta_header = if model == FABLE_5_MODEL {
+        Some(FABLE_5_FALLBACK_BETA)
+    } else {
+        None
+    };
+
+    let response = client.send_streaming_request_with_beta(&body, beta_header).await.map_err(|e| {
         llm_logger::log_error("discovery", &e);
         window
             .emit(
@@ -312,6 +330,21 @@ async fn discover_resources_anthropic(
                                 eprintln!("Failed to emit discovery-done event: {}", err);
                             }
                             return Ok(());
+                        }
+                        AnthropicStreamEvent::Fallback { from_model, to_model } => {
+                            // Fable 5 refused this discovery for safety; Opus 4.8 produced
+                            // the items instead. Tell the UI so it can flag the chip.
+                            llm_logger::log_feature_used("discovery", &format!("Model fallback: {} -> {}", from_model, to_model));
+                            if let Err(err) = window.emit(
+                                "discovery-model-switch",
+                                DiscoveryModelSwitchEvent {
+                                    turn_id: turn_id.clone(),
+                                    from_model,
+                                    to_model,
+                                },
+                            ) {
+                                eprintln!("Failed to emit discovery-model-switch event: {}", err);
+                            }
                         }
                         AnthropicStreamEvent::ContentBlockDelta { text, thinking: _, citation: _, input_json: _ } => {
                             if let Some(delta_text) = text {

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { DiscoveryItem } from '../lib/types';
+import type { DiscoveryItem, ModelSwitch } from '../lib/types';
 import type { DiscoveryModeId } from '../lib/discoveryModes';
 import { useSessionStore } from './sessionStore';
 
@@ -40,6 +40,9 @@ interface DiscoveryState {
   sessionLoadedAt: number | null; // Timestamp to trigger scroll to bottom on session load
   activeSessionId: string | null; // Track which session discoveries belong to
   emptyTurnMessages: EmptyTurnMessage[]; // Transient messages for turns with no discoveries
+  // Per-turn Fable 5 → Opus 4.8 safety fallbacks (keyed by turnId). The fallback block
+  // arrives before any items, so addItem stamps each item from this map for persistence.
+  turnModelSwitches: Record<string, ModelSwitch>;
 
   // Derived - true if any turns are pending
   isSearching: boolean;
@@ -63,6 +66,7 @@ interface DiscoveryState {
   setActiveSessionId: (sessionId: string | null) => void;
   markTurnEmpty: (turnId: string) => void;
   dismissEmptyMessage: (turnId: string) => void;
+  setModelSwitch: (turnId: string, sessionId: string, modelSwitch: ModelSwitch) => void;
 }
 
 export const useDiscoveryStore = create<DiscoveryState>((set) => ({
@@ -72,6 +76,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
   sessionLoadedAt: null,
   activeSessionId: null,
   emptyTurnMessages: [],
+  turnModelSwitches: {},
   isSearching: false,
 
   startTurn: (turnId, sessionId) =>
@@ -97,6 +102,8 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
       turnId,
       sessionId,
       modeId,
+      // Stamp the turn's model switch (if any) so the chip notice persists with the item
+      modelSwitch: currentState.turnModelSwitches[turnId],
     };
 
     set((state) => ({
@@ -153,7 +160,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
       ),
     })),
 
-  clearItems: () => set({ items: [], pendingTurnIds: [], isSearching: false, activeSessionId: null, emptyTurnMessages: [] }),
+  clearItems: () => set({ items: [], pendingTurnIds: [], isSearching: false, activeSessionId: null, emptyTurnMessages: [], turnModelSwitches: {} }),
 
   loadItems: (items, sessionId) =>
     set({
@@ -164,6 +171,11 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
       sessionLoadedAt: Date.now(),
       activeSessionId: sessionId ?? null,
       emptyTurnMessages: [],
+      // Rebuild per-turn switches from the loaded items so the chip notice survives reload
+      turnModelSwitches: items.reduce<Record<string, ModelSwitch>>((acc, item) => {
+        if (item.modelSwitch) acc[item.turnId] = item.modelSwitch;
+        return acc;
+      }, {}),
     }),
 
   setActiveSessionId: (sessionId) => set({ activeSessionId: sessionId }),
@@ -184,4 +196,14 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
     set((state) => ({
       emptyTurnMessages: state.emptyTurnMessages.filter((m) => m.turnId !== turnId),
     })),
+
+  setModelSwitch: (turnId, sessionId, modelSwitch) => {
+    // Ignore switches for a session the user has navigated away from (mirrors addItem).
+    const currentState = useDiscoveryStore.getState();
+    if (currentState.activeSessionId !== sessionId) return;
+
+    set((state) => ({
+      turnModelSwitches: { ...state.turnModelSwitches, [turnId]: modelSwitch },
+    }));
+  },
 }));

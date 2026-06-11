@@ -9,7 +9,7 @@ import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { getDiscoveryMode } from '../lib/discoveryModes';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
 import { logError } from '../lib/logger';
-import type { DiscoveryItem, Message } from '../lib/types';
+import type { DiscoveryItem, Message, ModelSwitch } from '../lib/types';
 
 // Event payload types matching Rust structs
 interface DiscoveryItemEvent {
@@ -26,10 +26,16 @@ interface DiscoveryErrorEvent {
   error: string;
 }
 
+interface DiscoveryModelSwitchEvent {
+  turnId: string;
+  fromModel: string;
+  toModel: string;
+}
+
 const MAX_DISCOVERIES_PER_SEARCH = 5;
 
 export function useDiscovery() {
-  const { startTurn, addItem, completeTurn, markTurnEmpty } = useDiscoveryStore();
+  const { startTurn, addItem, completeTurn, markTurnEmpty, setModelSwitch } = useDiscoveryStore();
   const { evaluatorLLM } = useSettingsStore();
 
   // Track active listeners for cleanup
@@ -37,6 +43,10 @@ export function useDiscovery() {
 
   // Track whether items were received for each turn
   const turnItemsReceivedRef = useRef<Map<string, boolean>>(new Map());
+
+  // Track per-turn model fallback (Fable 5 → Opus 4.8) so the background path can
+  // stamp items even when the user has switched away (the live store can't).
+  const turnModelSwitchRef = useRef<Map<string, ModelSwitch>>(new Map());
 
   const cleanupListeners = useCallback((turnId: string) => {
     const listeners = activeListenersRef.current.get(turnId);
@@ -121,6 +131,9 @@ export function useDiscovery() {
             turnId,
             sessionId,
             modeId: discoveryMode,
+            // Stamp the turn's model switch (if any) so it persists with the item even
+            // when the user switched away (live store stamping doesn't run then).
+            modelSwitch: turnModelSwitchRef.current.get(turnId),
           };
 
           // Always add to background store
@@ -156,8 +169,25 @@ export function useDiscovery() {
 
             // Cleanup tracking
             turnItemsReceivedRef.current.delete(turnId);
+            turnModelSwitchRef.current.delete(turnId);
             cleanupListeners(turnId);
           }
+        }
+      );
+
+      const unlistenModelSwitch = await listen<DiscoveryModelSwitchEvent>(
+        'discovery-model-switch',
+        (event) => {
+          if (event.payload.turnId !== turnId) return;
+
+          const modelSwitch: ModelSwitch = {
+            fromModel: event.payload.fromModel,
+            toModel: event.payload.toModel,
+          };
+          // Ref drives background-item stamping (works even if switched away)
+          turnModelSwitchRef.current.set(turnId, modelSwitch);
+          // Store map drives the live chip notice (session-guarded inside setModelSwitch)
+          setModelSwitch(turnId, sessionId, modelSwitch);
         }
       );
 
@@ -178,6 +208,7 @@ export function useDiscovery() {
 
             // Cleanup tracking
             turnItemsReceivedRef.current.delete(turnId);
+            turnModelSwitchRef.current.delete(turnId);
             cleanupListeners(turnId);
           }
         }
@@ -187,6 +218,7 @@ export function useDiscovery() {
       activeListenersRef.current.set(turnId, [
         unlistenItem,
         unlistenDone,
+        unlistenModelSwitch,
         unlistenError,
       ]);
 
@@ -210,6 +242,7 @@ export function useDiscovery() {
 
       // Cleanup tracking
       turnItemsReceivedRef.current.delete(turnId);
+      turnModelSwitchRef.current.delete(turnId);
       cleanupListeners(turnId);
     }
   }, [
@@ -218,6 +251,7 @@ export function useDiscovery() {
     addItem,
     completeTurn,
     markTurnEmpty,
+    setModelSwitch,
     cleanupListeners,
   ]);
 

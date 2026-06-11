@@ -18,6 +18,7 @@ import { GeneratedFileCard } from './GeneratedFileCard';
 import { GeneratedImageCard } from './GeneratedImageCard';
 import { ImageLightbox, type LightboxSource } from './ImageLightbox';
 import { webImageRenderer } from './WebImage';
+import { ModelSwitchNotice } from '../shared/ModelSwitchNotice';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isSandboxUrl, extractSandboxFilename, isLocalGeneratedFileRef, fileRefBasename, GENERATED_FILE_REF_REGEX, preserveFileRefUrlTransform } from './citationUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
@@ -524,6 +525,9 @@ export const Message = memo(function Message({ message, onFork }: MessageProps) 
             </div>
           </div>
         )}
+
+        {/* Model fallback notice (Fable 5 refused → Opus 4.8 answered) */}
+        {!isUser && <ModelSwitchNotice modelSwitch={message.modelSwitch} />}
 
         {/* Thinking badge for assistant messages with thinking content */}
         {!isUser && message.thinkingContent && (

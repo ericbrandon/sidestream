@@ -12,6 +12,8 @@ import { InlineCitation } from './InlineCitation';
 import { CITATION_MARKER_REGEX, insertCitationMarkers, extractChatGPTCitations, stripSandboxUrls, stripAnthropicFileUrls, stripGeminiLocalFileRefs, isLocalGeneratedFileRef, isSandboxUrl, preserveFileRefUrlTransform } from './citationUtils';
 import { webImageRenderer } from './WebImage';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useChatStore } from '../../stores/chatStore';
+import { ModelSwitchNotice } from '../shared/ModelSwitchNotice';
 
 
 /**
@@ -351,10 +353,13 @@ export function StreamingMessage({ content, inlineCitations = [] }: StreamingMes
   // Use ref to maintain stable citation map across renders
   const citationKeyMapRef = useRef<Map<string, number>>(new Map());
   const showCitations = useSettingsStore((state) => state.showCitations);
+  // Live model-switch notice for the in-progress turn (Fable 5 → Opus 4.8 on a refusal)
+  const streamingModelSwitch = useChatStore((state) => state.streamingModelSwitch);
 
   return (
     <div className="flex justify-start mb-4">
       <div className="max-w-[85%] p-4">
+        <ModelSwitchNotice modelSwitch={streamingModelSwitch ?? undefined} />
         <div className="prose prose-sm max-w-none prose-gray dark:prose-invert font-scalable">
           {/* Render all content as markdown - memoization handles caching */}
           <CachedMarkdown

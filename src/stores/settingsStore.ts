@@ -89,8 +89,20 @@ function getSavedSonnet46ThinkingLevel(): Opus46ThinkingLevel {
   return 'high';
 }
 
+// Load saved thinking level for Fable 5 (default 'high'). Fable has no 'off' level
+// (thinking is always on), so it gets its own key — toggling between Opus and Fable
+// must not clobber each other's remembered level.
+function getSavedFable5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('fable5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'high';
+}
+
 // Get the saved adaptive thinking level for the given model
 function getSavedAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
+  if (model === 'claude-fable-5') return getSavedFable5ThinkingLevel();
   return model === 'claude-sonnet-4-6'
     ? getSavedSonnet46ThinkingLevel()
     : getSavedOpus46ThinkingLevel();
@@ -164,8 +176,19 @@ function getSavedEvaluatorSonnet46ThinkingLevel(): Opus46ThinkingLevel {
   return 'low';
 }
 
+// Load saved evaluator thinking level for Fable 5 (default 'low' - lighter thinking
+// for discovery). Own key, no 'off' (see getSavedFable5ThinkingLevel).
+function getSavedEvaluatorFable5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('evaluatorFable5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'low';
+}
+
 // Get the saved evaluator adaptive thinking level for the given model
 function getSavedEvaluatorAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
+  if (model === 'claude-fable-5') return getSavedEvaluatorFable5ThinkingLevel();
   return model === 'claude-sonnet-4-6'
     ? getSavedEvaluatorSonnet46ThinkingLevel()
     : getSavedEvaluatorOpus46ThinkingLevel();
@@ -394,7 +417,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       if (config.extendedThinking.opus46Level !== undefined) {
         // Save to correct key based on current model (per-model persistence)
         const currentModel = useSettingsStore.getState().frontierLLM.model;
-        const key = currentModel === 'claude-sonnet-4-6' ? 'sonnet46ThinkingLevel' : 'opus46ThinkingLevel';
+        const key = currentModel === 'claude-fable-5'
+          ? 'fable5ThinkingLevel'
+          : currentModel === 'claude-sonnet-4-6'
+            ? 'sonnet46ThinkingLevel'
+            : 'opus46ThinkingLevel';
         localStorage.setItem(key, config.extendedThinking.opus46Level);
       }
     }
@@ -434,7 +461,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       if (config.extendedThinking.opus46Level !== undefined) {
         // Save to correct key based on current model (per-model persistence)
         const currentModel = useSettingsStore.getState().evaluatorLLM.model;
-        const key = currentModel === 'claude-sonnet-4-6' ? 'evaluatorSonnet46ThinkingLevel' : 'evaluatorOpus46ThinkingLevel';
+        const key = currentModel === 'claude-fable-5'
+          ? 'evaluatorFable5ThinkingLevel'
+          : currentModel === 'claude-sonnet-4-6'
+            ? 'evaluatorSonnet46ThinkingLevel'
+            : 'evaluatorOpus46ThinkingLevel';
         localStorage.setItem(key, config.extendedThinking.opus46Level);
       }
     }

@@ -13,6 +13,14 @@ export interface ApiKeysConfig {
   google: boolean;
 }
 
+// A server-side model fallback: Claude Fable 5 refused a request for safety, so the
+// API answered with the fallback model (Opus 4.8). Attached to the message/discovery
+// item it applies to, and shown as a small notice in the UI.
+export interface ModelSwitch {
+  fromModel: string;
+  toModel: string;
+}
+
 // Attachment types for files/images
 export interface Attachment {
   id: string;
@@ -49,6 +57,7 @@ export interface Message {
   executionTextPosition?: number; // Character position in content where execution occurred
   generatedFiles?: GeneratedFile[]; // Files created by code execution
   containerHint?: string; // Container context hint that was appended when this message was sent (for cache stability)
+  modelSwitch?: ModelSwitch; // Set when Fable 5 refused and the answer came from the Opus 4.8 fallback
 }
 
 // Discovery item types
@@ -67,6 +76,7 @@ export interface DiscoveryItem {
   turnId: string;
   sessionId: string; // Scopes discovery to a chat session
   modeId?: import('./discoveryModes').DiscoveryModeId; // Which mode generated this chip (optional for backward compat)
+  modelSwitch?: ModelSwitch; // Set when Fable 5 (evaluator) refused and Opus 4.8 produced this turn's items
 }
 
 // Adaptive thinking levels for Anthropic models that support effort
@@ -230,6 +240,14 @@ export interface StreamEvent {
 export interface ContainerIdEvent {
   turn_id: string;
   container_id: string;
+}
+
+// Event payload for a server-side model fallback (chat-model-switch). Snake_case to
+// match the Rust ModelSwitchEvent struct.
+export interface ModelSwitchEvent {
+  turn_id: string;
+  from_model: string;
+  to_model: string;
 }
 
 // Discovery mode type - re-exported from discoveryModes for convenience

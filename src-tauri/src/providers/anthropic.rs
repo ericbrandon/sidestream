@@ -6,6 +6,15 @@ use crate::mime_utils;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// Claude Fable 5 — Anthropic's most capable model, and the only one that runs
+/// safety classifiers that can refuse a request. When it does, we fall back to
+/// Opus 4.8 server-side. These constants keep the model-specific branches (fallback
+/// param, beta header, refusal-relay) in sync across the chat and discovery paths.
+pub const FABLE_5_MODEL: &str = "claude-fable-5";
+pub const FABLE_5_FALLBACK_MODEL: &str = "claude-opus-4-8";
+/// Beta header that enables the server-side `fallbacks` request parameter.
+pub const FABLE_5_FALLBACK_BETA: &str = "server-side-fallback-2026-06-01";
+
 /// Appended to the system prompt whenever code_execution is enabled.
 ///
 /// Anthropic's `code_execution` runs in a persistent container sandbox; files
@@ -117,6 +126,13 @@ pub enum AnthropicStreamEvent {
         block_type: String,
         content_block: serde_json::Value,
     },
+    /// Server-side fallback occurred: the requested model (e.g. Fable 5) refused for
+    /// safety and the API retried on another model (e.g. Opus 4.8). Delivered as a
+    /// `fallback` content block; carries no answer text of its own.
+    Fallback {
+        from_model: String,
+        to_model: String,
+    },
     ContentBlockDelta {
         text: Option<String>,
         thinking: Option<String>,
@@ -185,6 +201,15 @@ impl AnthropicClient {
         // Add container ID if provided (for code execution sandbox persistence)
         if let Some(container_id) = &config.container_id {
             body["container"] = serde_json::json!(container_id);
+        }
+
+        // Claude Fable 5 runs safety classifiers that can decline a request with
+        // stop_reason: "refusal". The server-side `fallbacks` parameter retries the
+        // refused request on Opus 4.8 in the same round trip (beta header set in
+        // llm_anthropic.rs). The switch surfaces as a `fallback` content block in the
+        // stream (see parse_sse_event), which we relay to the UI as a notice.
+        if config.model == FABLE_5_MODEL {
+            body["fallbacks"] = serde_json::json!([{ "model": FABLE_5_FALLBACK_MODEL }]);
         }
 
         // Add adaptive extended thinking if enabled (Opus 4.8 / Opus 4.6 / Sonnet 4.6).
@@ -310,15 +335,13 @@ impl AnthropicClient {
             body["max_tokens"] = serde_json::json!(16000);
         }
 
-        body
-    }
+        // Fable 5 fallback to Opus 4.8 on a safety refusal (see build_chat_request).
+        // Discovery can use Fable as the evaluator model, so mirror the fallback here.
+        if config.model == FABLE_5_MODEL {
+            body["fallbacks"] = serde_json::json!([{ "model": FABLE_5_FALLBACK_MODEL }]);
+        }
 
-    /// Send a streaming request and return the response
-    pub async fn send_streaming_request(
-        &self,
-        body: &serde_json::Value,
-    ) -> Result<reqwest::Response, String> {
-        self.send_streaming_request_with_beta(body, None).await
+        body
     }
 
     /// Send a streaming request with optional beta header
@@ -382,6 +405,24 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
                 .unwrap_or("")
                 .to_string();
             let content_block = parsed["content_block"].clone();
+            // A `fallback` content block marks a server-side model switch on a Fable 5
+            // safety refusal. It carries no answer text, so surface it as its own event
+            // rather than a normal content block. On a pre-output refusal it arrives
+            // first in the stream; on a mid-stream refusal it marks the boundary.
+            if block_type == "fallback" {
+                let from_model = content_block["from"]["model"]
+                    .as_str()
+                    .unwrap_or(FABLE_5_MODEL)
+                    .to_string();
+                let to_model = content_block["to"]["model"]
+                    .as_str()
+                    .unwrap_or(FABLE_5_FALLBACK_MODEL)
+                    .to_string();
+                return AnthropicStreamEvent::Fallback {
+                    from_model,
+                    to_model,
+                };
+            }
             AnthropicStreamEvent::ContentBlockStart {
                 block_type,
                 content_block,

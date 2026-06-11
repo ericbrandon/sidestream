@@ -4,6 +4,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { getDiscoveryMode, type DiscoveryModeId } from '../../lib/discoveryModes';
 import { DiscoveryCard } from './DiscoveryCard';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
+import { ModelSwitchNotice } from '../shared/ModelSwitchNotice';
 
 const EMPTY_MESSAGE_MIN_DURATION = 5000; // Minimum 5 seconds before dismissal
 
@@ -63,7 +64,7 @@ function EmptyTurnNotice({ message, onDismiss }: { message: EmptyTurnMessage; on
 }
 
 export function DiscoveryList() {
-  const { items, pendingTurnIds, sessionLoadedAt, activeSessionId, emptyTurnMessages, dismissEmptyMessage } = useDiscoveryStore();
+  const { items, pendingTurnIds, sessionLoadedAt, activeSessionId, emptyTurnMessages, dismissEmptyMessage, turnModelSwitches } = useDiscoveryStore();
   const discoveryMode = useSettingsStore((state) => state.discoveryMode);
   const modeConfig = getDiscoveryMode(discoveryMode);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,11 +146,16 @@ export function DiscoveryList() {
         const turnItems = sessionItems.filter((i) => i.turnId === turnId);
         const isPending = pendingTurnIds.includes(turnId);
 
+        // Fable 5 (evaluator) safety fallback for this turn — live map first, then
+        // fall back to a stamped item (set on reload from persisted discovery items).
+        const modelSwitch = turnModelSwitches[turnId] ?? turnItems.find((i) => i.modelSwitch)?.modelSwitch;
+
         return (
           <div key={turnId}>
             {turnIndex > 0 && (
               <div className="border-t-2 border-stone-400 my-4" />
             )}
+            <ModelSwitchNotice modelSwitch={modelSwitch} />
             {turnItems.map((item, itemIndex) => {
               // Render a separator line when the mode changes between chips
               const prevItem = itemIndex > 0 ? turnItems[itemIndex - 1] : null;
