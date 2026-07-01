@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { useShallow } from 'zustand/react/shallow';
 import { useChatStore } from '../stores/chatStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -132,6 +133,8 @@ function buildContainerContext(
 }
 
 export function useChat() {
+  // Subscribe only to what this hook uses — a bare useChatStore() re-rendered
+  // every consumer (ChatInput) on each keystroke and streaming delta
   const {
     messages,
     attachments,
@@ -147,16 +150,35 @@ export function useChat() {
     clearInput,
     clearAttachments,
     setStreaming,
-    streamingContent,
-    streamingThinking,
-    isStreaming,
     setPendingTurnId,
     clearStreamingContent,
     setAnthropicContainerId,
     setOpenaiContainerId,
-  } = useChatStore();
+  } = useChatStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      attachments: state.attachments,
+      addMessage: state.addMessage,
+      updateStreamingContent: state.updateStreamingContent,
+      addStreamingCitations: state.addStreamingCitations,
+      addStreamingInlineCitations: state.addStreamingInlineCitations,
+      appendStreamingThinking: state.appendStreamingThinking,
+      setExecutionStarted: state.setExecutionStarted,
+      appendExecutionOutput: state.appendExecutionOutput,
+      setExecutionCompleted: state.setExecutionCompleted,
+      setExecutionFailed: state.setExecutionFailed,
+      clearInput: state.clearInput,
+      clearAttachments: state.clearAttachments,
+      setStreaming: state.setStreaming,
+      setPendingTurnId: state.setPendingTurnId,
+      clearStreamingContent: state.clearStreamingContent,
+      setAnthropicContainerId: state.setAnthropicContainerId,
+      setOpenaiContainerId: state.setOpenaiContainerId,
+    }))
+  );
 
-  const { frontierLLM, customSystemPrompt } = useSettingsStore();
+  const frontierLLM = useSettingsStore((state) => state.frontierLLM);
+  const customSystemPrompt = useSettingsStore((state) => state.customSystemPrompt);
   const { triggerDiscovery } = useDiscovery();
 
   // Initialize streaming buffer with flush function
@@ -575,9 +597,6 @@ export function useChat() {
     sendMessage,
     sendTranscribedMessage,
     cancelStream,
-    isStreaming,
-    streamingContent,
-    streamingThinking,
   };
 }
 

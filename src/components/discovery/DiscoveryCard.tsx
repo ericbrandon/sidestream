@@ -30,9 +30,13 @@ ${stripCiteTags(item.fullSummary)}${sourceSection}`;
 }
 
 export function DiscoveryCard({ item }: DiscoveryCardProps) {
-  const { toggleExpanded, removeItem } = useDiscoveryStore();
-  const { appendToInput, setInput } = useChatStore();
-  const { forkCurrentSession } = useSessionStore();
+  // Select actions individually — a bare useStore() re-renders every card on
+  // any store change, including each keystroke in the chat input
+  const toggleExpanded = useDiscoveryStore((state) => state.toggleExpanded);
+  const removeItem = useDiscoveryStore((state) => state.removeItem);
+  const appendToInput = useChatStore((state) => state.appendToInput);
+  const setInput = useChatStore((state) => state.setInput);
+  const forkCurrentSession = useSessionStore((state) => state.forkCurrentSession);
   // Use the mode that generated this chip, not the current mode
   // Fall back to 'useful-informative' for items created before modeId was added
   const modeConfig = getDiscoveryMode(item.modeId || 'useful-informative');

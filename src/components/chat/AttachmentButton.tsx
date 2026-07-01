@@ -4,7 +4,7 @@ import { Tooltip } from '../shared/Tooltip';
 
 export function AttachmentButton() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { addAttachment } = useChatStore();
+  const addAttachment = useChatStore((state) => state.addAttachment);
 
   const handleClick = () => {
     fileInputRef.current?.click();

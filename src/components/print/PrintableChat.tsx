@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -227,7 +227,9 @@ function PrintableMessage({ message, showCitations }: { message: Message; showCi
   );
 }
 
-export function PrintableChat({ messages, discoveryItems, expandAll = false }: PrintableChatProps) {
+// Memoized: renders the entire conversation through ReactMarkdown, so it must
+// only re-render when the exported data actually changes
+export const PrintableChat = memo(function PrintableChat({ messages, discoveryItems, expandAll = false }: PrintableChatProps) {
   const showCitations = useSettingsStore((state) => state.showCitations);
   const turns = groupMessagesIntoTurns(messages, discoveryItems);
 
@@ -324,4 +326,4 @@ export function PrintableChat({ messages, discoveryItems, expandAll = false }: P
       ))}
     </div>
   );
-}
+});

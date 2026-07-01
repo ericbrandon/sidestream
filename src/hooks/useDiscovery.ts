@@ -35,8 +35,14 @@ interface DiscoveryModelSwitchEvent {
 const MAX_DISCOVERIES_PER_SEARCH = 5;
 
 export function useDiscovery() {
-  const { startTurn, addItem, completeTurn, markTurnEmpty, setModelSwitch } = useDiscoveryStore();
-  const { evaluatorLLM } = useSettingsStore();
+  // Select individually — a bare useStore() re-renders every consumer
+  // (ChatInput via useChat) on any store change
+  const startTurn = useDiscoveryStore((state) => state.startTurn);
+  const addItem = useDiscoveryStore((state) => state.addItem);
+  const completeTurn = useDiscoveryStore((state) => state.completeTurn);
+  const markTurnEmpty = useDiscoveryStore((state) => state.markTurnEmpty);
+  const setModelSwitch = useDiscoveryStore((state) => state.setModelSwitch);
+  const evaluatorLLM = useSettingsStore((state) => state.evaluatorLLM);
 
   // Track active listeners for cleanup
   const activeListenersRef = useRef<Map<string, UnlistenFn[]>>(new Map());

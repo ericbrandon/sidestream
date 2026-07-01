@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { LeftPane } from './LeftPane';
 import { RightPane } from './RightPane';
@@ -17,14 +18,25 @@ import { logError } from '../../lib/logger';
 import type { ApiKeysConfig } from '../../lib/types';
 
 export function AppLayout() {
-  const { isSettingsOpen, closeSettings, openSettings, setConfiguredProviders } =
-    useSettingsStore();
-  const settingsStore = useSettingsStore();
-  const { messages } = useChatStore();
-  const { items: allDiscoveryItems, activeSessionId } = useDiscoveryStore();
-  const { isSidebarOpen, toggleSidebar, createNewSession, sessionMetas } = useSessionStore();
+  // Per-field selectors: a bare useStore() subscribes to every store change,
+  // which made the whole app (incl. both PrintableChat copies) re-render on
+  // each keystroke into the chat input.
+  const isSettingsOpen = useSettingsStore((state) => state.isSettingsOpen);
+  const closeSettings = useSettingsStore((state) => state.closeSettings);
+  const openSettings = useSettingsStore((state) => state.openSettings);
+  const setConfiguredProviders = useSettingsStore((state) => state.setConfiguredProviders);
+  const messages = useChatStore((state) => state.messages);
+  const allDiscoveryItems = useDiscoveryStore((state) => state.items);
+  const activeSessionId = useDiscoveryStore((state) => state.activeSessionId);
+  const isSidebarOpen = useSessionStore((state) => state.isSidebarOpen);
+  const toggleSidebar = useSessionStore((state) => state.toggleSidebar);
+  const createNewSession = useSessionStore((state) => state.createNewSession);
+  const sessionMetas = useSessionStore((state) => state.sessionMetas);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [hasCheckedApiKeys, setHasCheckedApiKeys] = useState(false);
+  // Which printable copy is mounted; rendering the full chat through markdown
+  // is expensive, so neither copy stays in the tree between exports
+  const [pendingExport, setPendingExport] = useState<'print' | 'html' | null>(null);
 
   // Filter discovery items by current session for export
   const discoveryItems = useMemo(() => {
@@ -72,22 +84,38 @@ export function AppLayout() {
     openSettings(true); // true = highlightApiKeys
   }, [openSettings]);
 
-  // Export handlers using extracted utilities
+  // Print/HTML export need the printable DOM in place; flushSync commits the
+  // mount so the DOM is queryable/printable immediately after.
   const handlePrint = async () => {
     if (messages.length === 0) return;
+    flushSync(() => setPendingExport('print'));
     try {
       await printChat();
     } catch (error) {
       alert(`Print failed: ${error}`);
+      setPendingExport(null);
     }
   };
 
+  // webview.print() resolves as soon as the dialog opens, and WKWebView
+  // paginates lazily from the live DOM while it's up — so the printable copy
+  // must stay mounted until afterprint fires. If the event never fires, the
+  // copy just stays mounted (it's memoized, so it doesn't re-render on typing).
+  useEffect(() => {
+    const handleAfterPrint = () => setPendingExport(null);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
   const handleHtmlExport = async () => {
     if (messages.length === 0) return;
+    flushSync(() => setPendingExport('html'));
     try {
       await exportToHtml();
     } catch (error) {
       alert(`Export failed: ${error}`);
+    } finally {
+      setPendingExport(null);
     }
   };
 
@@ -99,7 +127,7 @@ export function AppLayout() {
         discoveryItems,
         activeSessionId,
         sessionMetas,
-        settingsStore,
+        settingsStore: useSettingsStore.getState(),
       });
     } catch (error) {
       alert(`Export failed: ${error}`);
@@ -108,14 +136,18 @@ export function AppLayout() {
 
   return (
     <>
-      {/* Printable version - hidden in normal view, shown when printing (expanded for print) */}
-      <div className="printable-chat-wrapper hidden print:block">
-        <PrintableChat messages={messages} discoveryItems={discoveryItems} expandAll={true} />
-      </div>
-      {/* Hidden collapsed version used for generating save-to-HTML export */}
-      <div className="printable-chat-collapsed hidden">
-        <PrintableChat messages={messages} discoveryItems={discoveryItems} expandAll={false} />
-      </div>
+      {/* Printable version - mounted only while printing (expanded, shown via print CSS) */}
+      {pendingExport === 'print' && (
+        <div className="printable-chat-wrapper hidden print:block">
+          <PrintableChat messages={messages} discoveryItems={discoveryItems} expandAll={true} />
+        </div>
+      )}
+      {/* Collapsed version - mounted only while generating the save-to-HTML export */}
+      {pendingExport === 'html' && (
+        <div className="printable-chat-collapsed hidden">
+          <PrintableChat messages={messages} discoveryItems={discoveryItems} expandAll={false} />
+        </div>
+      )}
 
       <div className="flex h-screen bg-stone-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 print:hidden">
         {/* Header */}

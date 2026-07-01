@@ -6,7 +6,7 @@ interface AttachmentPreviewProps {
 }
 
 export function AttachmentPreview({ attachment }: AttachmentPreviewProps) {
-  const { removeAttachment } = useChatStore();
+  const removeAttachment = useChatStore((state) => state.removeAttachment);
 
   return (
     <div className="relative group">
