@@ -39,15 +39,18 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     : null;
 
   return {
-    // Only adaptive-thinking models (Opus 4.8/4.6, Sonnet 4.6) accept the
-    // `thinking: {type: "adaptive"}` request the backend sends when this is true.
-    // Non-adaptive models like Haiku 4.5 reject it with a 400, so gate the flag the
-    // same way opus46ThinkingLevel is gated below. (The chat path ignores this flag
-    // and reads opus46ThinkingLevel instead, which is why only discovery broke.)
-    extendedThinkingEnabled:
-      provider === 'anthropic' && usesAdaptiveThinking(llm.model)
-        ? llm.extendedThinking.enabled
-        : false,
+    // Derive "thinking on?" from the effective (normalized) level, NOT the stored
+    // `.enabled` boolean. The boolean is read from a GLOBAL localStorage key at store
+    // init (evaluatorExtendedThinkingEnabled, default false) while the level is stored
+    // PER-MODEL, so after an app restart they can disagree: the level-based toggle
+    // shows "on" while `.enabled` is false, and the discovery request would then
+    // silently send no thinking (and no effort/max_tokens). Every other path already
+    // treats enabled as (level !== 'off') — the model-switch branch and auto-select —
+    // so deriving it here makes the send path agree with what the UI displays.
+    // effectiveOpus46Level is null for non-adaptive / non-Anthropic models (Haiku 4.5,
+    // which 400s on adaptive thinking), giving false. For always-on models (Fable 5,
+    // Sonnet 5) the level is never 'off', so this is always true.
+    extendedThinkingEnabled: effectiveOpus46Level !== null && effectiveOpus46Level !== 'off',
     // Anthropic: Adaptive thinking level for Opus 4.8 / Opus 4.6 / Sonnet 4.6 (off, low, medium, high, xhigh, max, adaptive)
     opus46ThinkingLevel: effectiveOpus46Level,
     // OpenAI: Reasoning level (normalized for model)

@@ -1,5 +1,5 @@
 import type { OpenAIReasoningLevel, GeminiThinkingLevel, Opus46ThinkingLevel } from './types';
-import { supportsExtendedThinking, isFable5 } from './models';
+import { supportsExtendedThinking, alwaysOnThinking } from './models';
 
 export interface ThinkingOption<T> {
   value: T;
@@ -122,16 +122,16 @@ export const OPUS_46_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] = [
   { value: 'adaptive', label: 'Adaptive', letter: 'A' },
 ];
 
-// Thinking levels for Claude Fable 5: same as Opus 4.8 but WITHOUT 'off'. Fable's
-// thinking is always on — an explicit thinking:{type:"disabled"} is a 400, and
-// simply omitting it (what 'off' would do) still runs adaptive thinking, so 'off'
-// would be a misleading UI label. Drop it and let Low be the floor.
-export const FABLE_5_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] =
+// Thinking levels for always-on models (Fable 5, Sonnet 5): same as Opus 4.8 but
+// WITHOUT 'off'. See alwaysOnThinking() in models.ts for why these two drop 'off'
+// (Fable can't be disabled; Sonnet 5's "off" would silently run adaptive). Low is
+// the floor.
+export const NO_OFF_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] =
   OPUS_46_THINKING_OPTIONS.filter((o) => o.value !== 'off');
 
 // Get thinking options based on Anthropic model
 export function getAnthropicThinkingOptions(model: string): ThinkingOption<Opus46ThinkingLevel>[] {
-  if (isFable5(model)) return FABLE_5_THINKING_OPTIONS;
+  if (alwaysOnThinking(model)) return NO_OFF_THINKING_OPTIONS;
   return supportsExtendedThinking(model) ? OPUS_46_THINKING_OPTIONS : [];
 }
 

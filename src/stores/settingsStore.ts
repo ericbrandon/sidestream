@@ -30,17 +30,6 @@ function getSavedDiscoveryMode(): DiscoveryModeId {
   return DEFAULT_DISCOVERY_MODE;
 }
 
-// Load saved extended thinking setting from localStorage (default true for first launch)
-function getSavedExtendedThinking(): boolean {
-  const saved = localStorage.getItem('extendedThinkingEnabled');
-  if (saved !== null) {
-    return saved === 'true';
-  }
-  // First launch - default to true and persist it
-  localStorage.setItem('extendedThinkingEnabled', 'true');
-  return true;
-}
-
 // Load saved web search setting from localStorage (default true for first launch)
 function getSavedWebSearch(): boolean {
   const saved = localStorage.getItem('webSearchEnabled');
@@ -89,6 +78,17 @@ function getSavedSonnet46ThinkingLevel(): Opus46ThinkingLevel {
   return 'high';
 }
 
+// Load saved thinking level for Sonnet 5 (default 'high'). Sonnet 5 benefits notably
+// from high-or-higher effort, so it defaults higher than the discovery-lighter models
+// and gets its own key. No 'off' (see alwaysOnThinking in models.ts) — Low is the floor.
+function getSavedSonnet5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('sonnet5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'high';
+}
+
 // Load saved thinking level for Fable 5 (default 'high'). Fable has no 'off' level
 // (thinking is always on), so it gets its own key — toggling between Opus and Fable
 // must not clobber each other's remembered level.
@@ -103,6 +103,7 @@ function getSavedFable5ThinkingLevel(): Opus46ThinkingLevel {
 // Get the saved adaptive thinking level for the given model
 function getSavedAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
   if (model === 'claude-fable-5') return getSavedFable5ThinkingLevel();
+  if (model === 'claude-sonnet-5') return getSavedSonnet5ThinkingLevel();
   return model === 'claude-sonnet-4-6'
     ? getSavedSonnet46ThinkingLevel()
     : getSavedOpus46ThinkingLevel();
@@ -176,6 +177,19 @@ function getSavedEvaluatorSonnet46ThinkingLevel(): Opus46ThinkingLevel {
   return 'low';
 }
 
+// Load saved evaluator thinking level for Sonnet 5 (default 'high'). Unlike the other
+// Anthropic evaluators — which default to 'low' to keep background discovery cheap —
+// Sonnet 5 defaults to 'high' here too, because it benefits notably from higher effort
+// and we want discovery to reflect that (the backend discovery effort is bumped to
+// match in providers/anthropic.rs build_discovery_request). Own key, full option set.
+function getSavedEvaluatorSonnet5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('evaluatorSonnet5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'high';
+}
+
 // Load saved evaluator thinking level for Fable 5 (default 'low' - lighter thinking
 // for discovery). Own key, no 'off' (see getSavedFable5ThinkingLevel).
 function getSavedEvaluatorFable5ThinkingLevel(): Opus46ThinkingLevel {
@@ -189,18 +203,10 @@ function getSavedEvaluatorFable5ThinkingLevel(): Opus46ThinkingLevel {
 // Get the saved evaluator adaptive thinking level for the given model
 function getSavedEvaluatorAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
   if (model === 'claude-fable-5') return getSavedEvaluatorFable5ThinkingLevel();
+  if (model === 'claude-sonnet-5') return getSavedEvaluatorSonnet5ThinkingLevel();
   return model === 'claude-sonnet-4-6'
     ? getSavedEvaluatorSonnet46ThinkingLevel()
     : getSavedEvaluatorOpus46ThinkingLevel();
-}
-
-// Load saved evaluator extended thinking setting (default false - discovery uses lighter thinking)
-function getSavedEvaluatorExtendedThinking(): boolean {
-  const saved = localStorage.getItem('evaluatorExtendedThinkingEnabled');
-  if (saved !== null) {
-    return saved === 'true';
-  }
-  return false;
 }
 
 // Load saved auto-select discovery model setting (default true for first launch)
@@ -352,7 +358,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     model: getSavedFrontierModel(),
     apiKeyConfigured: false,
     extendedThinking: {
-      enabled: getSavedExtendedThinking(),
+      // `enabled` is derived from the level, never stored independently — for adaptive
+      // Anthropic models thinking is on iff the level isn't 'off'. (Kept in sync with
+      // the send path in buildProviderThinkingParams; the old separate global key could
+      // desync from the per-model level after a restart.)
+      enabled: getSavedAdaptiveThinkingLevel(getSavedFrontierModel()) !== 'off',
       opus46Level: getSavedAdaptiveThinkingLevel(getSavedFrontierModel()),
     },
     reasoningLevel: getSavedReasoningLevel(),
@@ -363,7 +373,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     model: getSavedEvaluatorModel(),
     apiKeyConfigured: false,
     extendedThinking: {
-      enabled: getSavedEvaluatorExtendedThinking(),
+      // Derived from the level (see the frontier note above) — not a separate key.
+      enabled: getSavedEvaluatorAdaptiveThinkingLevel(getSavedEvaluatorModel()) !== 'off',
       opus46Level: getSavedEvaluatorAdaptiveThinkingLevel(getSavedEvaluatorModel()),
     },
     reasoningLevel: getSavedEvaluatorReasoningLevel(),
@@ -413,15 +424,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       localStorage.setItem('frontierModel', config.model);
     }
     if (config.extendedThinking !== undefined) {
-      localStorage.setItem('extendedThinkingEnabled', String(config.extendedThinking.enabled));
+      // `enabled` is not persisted separately — it's derived from the per-model level
+      // on read (see the store init / loadSettings), so only the level is stored.
       if (config.extendedThinking.opus46Level !== undefined) {
         // Save to correct key based on current model (per-model persistence)
         const currentModel = useSettingsStore.getState().frontierLLM.model;
         const key = currentModel === 'claude-fable-5'
           ? 'fable5ThinkingLevel'
-          : currentModel === 'claude-sonnet-4-6'
-            ? 'sonnet46ThinkingLevel'
-            : 'opus46ThinkingLevel';
+          : currentModel === 'claude-sonnet-5'
+            ? 'sonnet5ThinkingLevel'
+            : currentModel === 'claude-sonnet-4-6'
+              ? 'sonnet46ThinkingLevel'
+              : 'opus46ThinkingLevel';
         localStorage.setItem(key, config.extendedThinking.opus46Level);
       }
     }
@@ -457,15 +471,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       localStorage.setItem('evaluatorModel', config.model);
     }
     if (config.extendedThinking !== undefined) {
-      localStorage.setItem('evaluatorExtendedThinkingEnabled', String(config.extendedThinking.enabled));
+      // `enabled` is derived from the level on read, not stored separately.
       if (config.extendedThinking.opus46Level !== undefined) {
         // Save to correct key based on current model (per-model persistence)
         const currentModel = useSettingsStore.getState().evaluatorLLM.model;
         const key = currentModel === 'claude-fable-5'
           ? 'evaluatorFable5ThinkingLevel'
-          : currentModel === 'claude-sonnet-4-6'
-            ? 'evaluatorSonnet46ThinkingLevel'
-            : 'evaluatorOpus46ThinkingLevel';
+          : currentModel === 'claude-sonnet-5'
+            ? 'evaluatorSonnet5ThinkingLevel'
+            : currentModel === 'claude-sonnet-4-6'
+              ? 'evaluatorSonnet46ThinkingLevel'
+              : 'evaluatorOpus46ThinkingLevel';
         localStorage.setItem(key, config.extendedThinking.opus46Level);
       }
     }
@@ -541,7 +557,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ...state.frontierLLM,
         model: settings.frontierModel,
         extendedThinking: {
-          enabled: settings.extendedThinkingEnabled,
+          // Derived from the level, not settings.extendedThinkingEnabled — keeps the
+          // stored flag from disagreeing with the level the UI shows and the send path.
+          enabled: (settings.frontierOpus46ThinkingLevel ?? 'high') !== 'off',
           opus46Level: settings.frontierOpus46ThinkingLevel ?? 'high',
         },
         webSearchEnabled: settings.webSearchEnabled,
@@ -553,7 +571,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         model: settings.evaluatorModel,
         extendedThinking: {
           ...state.evaluatorLLM.extendedThinking,
-          enabled: settings.evaluatorExtendedThinkingEnabled ?? false,
+          // Derived from the level, not settings.evaluatorExtendedThinkingEnabled.
+          enabled: (settings.evaluatorOpus46ThinkingLevel ?? 'low') !== 'off',
           opus46Level: settings.evaluatorOpus46ThinkingLevel ?? 'low',
         },
         reasoningLevel: settings.evaluatorReasoningLevel ?? 'low',
@@ -603,9 +622,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           geminiThinkingLevel: bestModel.geminiThinkingLevel,
         };
 
-        // Persist to localStorage
+        // Persist to localStorage (enabled is derived from the level on read, not stored)
         localStorage.setItem('evaluatorModel', bestModel.model);
-        localStorage.setItem('evaluatorExtendedThinkingEnabled', String(bestModel.extendedThinkingEnabled));
         localStorage.setItem('evaluatorReasoningLevel', bestModel.reasoningLevel);
         localStorage.setItem('evaluatorGeminiThinkingLevel', bestModel.geminiThinkingLevel);
         localStorage.setItem('evaluatorOpus46ThinkingLevel', bestModel.opus46ThinkingLevel ?? 'low');

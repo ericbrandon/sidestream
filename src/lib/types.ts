@@ -80,12 +80,12 @@ export interface DiscoveryItem {
 }
 
 // Adaptive thinking levels for Anthropic models that support effort
-// (Opus 4.8, Opus 4.6, Sonnet 4.6).
+// (Opus 4.8, Opus 4.6, Sonnet 5, Sonnet 4.6).
 // - off: no thinking
 // - low/medium/high/xhigh/max: adaptive thinking with explicit effort level
 // - adaptive: adaptive thinking where Claude decides effort level
-// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.8.
-// (Type name kept as Opus46* — it's a stable wire format reused across all three
+// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.8/Sonnet 5.
+// (Type name kept as Opus46* — it's a stable wire format reused across all the
 // adaptive-thinking Anthropic models; renaming would force a session migration
 // for no functional gain.)
 export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'adaptive';

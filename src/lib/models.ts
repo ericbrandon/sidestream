@@ -9,6 +9,7 @@ export const ALL_MODELS: ModelDefinition[] = [
   { id: 'claude-fable-5', name: 'Claude Fable 5', provider: 'anthropic' },
   { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', provider: 'anthropic' },
   { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', provider: 'anthropic' },
   { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
@@ -72,6 +73,16 @@ export function isSonnet46(modelId: string): boolean {
   return modelId === 'claude-sonnet-4-6';
 }
 
+// Check if a model is Claude Sonnet 5. Shares the Opus 4.8 request surface (adaptive
+// thinking + effort, including xhigh; no sampling params, no budget thinking), and
+// unlike Fable it can be turned off (thinking:{type:"disabled"} is accepted). Sonnet 5
+// benefits notably from higher effort, so the app defaults its thinking level to
+// 'high' in BOTH the chat and discovery panes (see settingsStore.ts) — this is why it
+// gets its own localStorage keys rather than sharing Sonnet 4.6's ('low' discovery).
+export function isSonnet5(modelId: string): boolean {
+  return modelId === 'claude-sonnet-5';
+}
+
 // Check if a model is Claude Fable 5. Fable shares Opus 4.8's effort/adaptive-thinking
 // surface but with two differences relevant to this app:
 //  - thinking is ALWAYS on, so there is no "off" level (see thinkingOptions.ts).
@@ -81,14 +92,26 @@ export function isFable5(modelId: string): boolean {
   return modelId === 'claude-fable-5';
 }
 
-// Check if a model uses adaptive thinking (Fable 5, Opus 4.8, Opus 4.6, and Sonnet 4.6)
-export function usesAdaptiveThinking(modelId: string): boolean {
-  return isFable5(modelId) || isOpus48(modelId) || isOpus46(modelId) || isSonnet46(modelId);
+// Whether the app treats thinking as always-on for this model — i.e. it should NOT
+// offer an "off" option. Two different reasons converge on the same UI:
+//  - Fable 5: thinking cannot be disabled at all (thinking:{type:"disabled"} is a 400),
+//    and omitting the param still runs adaptive thinking.
+//  - Sonnet 5: off is technically legal (disabled is accepted), but it's a poor choice
+//    for this model AND the app implements "off" by omitting the thinking param — which
+//    on Sonnet 5 silently runs adaptive anyway (a documented Sonnet-5 default change).
+//    Rather than expose a misleading "off", we lock thinking on and floor at Low.
+export function alwaysOnThinking(modelId: string): boolean {
+  return isFable5(modelId) || isSonnet5(modelId);
 }
 
-// Check if a model supports extended thinking (Fable 5, Opus models, and Sonnet 4.6)
+// Check if a model uses adaptive thinking (Fable 5, Opus 4.8, Opus 4.6, Sonnet 5, and Sonnet 4.6)
+export function usesAdaptiveThinking(modelId: string): boolean {
+  return isFable5(modelId) || isOpus48(modelId) || isOpus46(modelId) || isSonnet5(modelId) || isSonnet46(modelId);
+}
+
+// Check if a model supports extended thinking (Fable 5, Opus models, Sonnet 5, and Sonnet 4.6)
 export function supportsExtendedThinking(modelId: string): boolean {
-  return isFable5(modelId) || modelId.includes('opus') || modelId === 'claude-sonnet-4-6';
+  return isFable5(modelId) || modelId.includes('opus') || isSonnet5(modelId) || isSonnet46(modelId);
 }
 
 // Get default evaluator model for a provider (discovery pane uses lighter/faster models)

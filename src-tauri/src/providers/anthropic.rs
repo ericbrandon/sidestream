@@ -327,6 +327,12 @@ impl AnthropicClient {
         if config.extended_thinking_enabled.unwrap_or(false) {
             let effort = if config.model.starts_with("claude-opus-4-8") {
                 "medium"
+            } else if config.model.starts_with("claude-sonnet-5") {
+                // Sonnet 5 benefits notably from higher effort, and the app defaults its
+                // evaluator thinking level to "high" (settingsStore.ts). Match that here
+                // so discovery actually thinks at "high" instead of the light "low"
+                // default the other models use — otherwise the UI level would be cosmetic.
+                "high"
             } else {
                 "low"
             };
@@ -624,6 +630,15 @@ pub fn calculate_max_tokens(model: &str, effort_level: Option<&str>) -> u32 {
     let level = effort_level.unwrap_or("off");
 
     if model.starts_with("claude-opus-4-8") {
+        match level {
+            "off" => 8192,
+            "xhigh" | "max" => 64000,
+            _ => 32000,
+        }
+    } else if model.starts_with("claude-sonnet-5") {
+        // Sonnet 5 shares Opus 4.8's request surface: it supports xhigh/max effort and
+        // uses the newer, ~1.0–1.35× more verbose tokenizer, so it needs the same
+        // headroom rather than 4.6's 16k cap. (128k output ceiling, so these are safe.)
         match level {
             "off" => 8192,
             "xhigh" | "max" => 64000,

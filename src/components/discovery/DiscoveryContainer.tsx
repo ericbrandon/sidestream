@@ -9,7 +9,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useChatStore } from '../../stores/chatStore';
 import { useDiscovery } from '../../hooks/useDiscovery';
 import { getAllDiscoveryModes, getDiscoveryMode, getBestModelForMode } from '../../lib/discoveryModes';
-import { getProviderFromModelId, supportsExtendedThinking } from '../../lib/models';
+import { getProviderFromModelId, supportsExtendedThinking, alwaysOnThinking } from '../../lib/models';
 import {
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
@@ -42,6 +42,11 @@ export function DiscoveryContainer() {
 
   // Determine provider for current evaluator model
   const provider = getProviderFromModelId(evaluatorLLM.model);
+  // Fable 5 and Sonnet 5 always think — the discovery on/off toggle is locked on for
+  // them (turning thinking "off" is either a lie or silently runs adaptive anyway).
+  const anthropicThinkingLockedOn = alwaysOnThinking(evaluatorLLM.model);
+  const anthropicThinkingOn =
+    anthropicThinkingLockedOn || evaluatorLLM.extendedThinking.opus46Level !== 'off';
   const geminiThinkingOptions = provider === 'google' ? getGeminiThinkingOptions(evaluatorLLM.model) : [];
   // Normalize the thinking level to a valid value for the current model
   const effectiveGeminiThinkingLevel = provider === 'google'
@@ -296,16 +301,20 @@ export function DiscoveryContainer() {
             )}
           </div>
         ) : supportsExtendedThinking(evaluatorLLM.model) ? (
-          /* Anthropic Opus 4.6 / Sonnet 4.6: Adaptive Thinking Toggle (off / adaptive) */
+          /* Anthropic adaptive thinking toggle (off / adaptive). Fable 5 and Sonnet 5
+             are locked on — see anthropicThinkingLockedOn. */
           <Tooltip
             content={
-              evaluatorLLM.extendedThinking.opus46Level !== 'off'
-                ? 'Thinking: Auto'
-                : 'Enable thinking'
+              anthropicThinkingLockedOn
+                ? 'Thinking: always on for this model'
+                : anthropicThinkingOn
+                  ? 'Thinking: Auto'
+                  : 'Thinking: Off'
             }
           >
             <button
               onClick={() => {
+                if (anthropicThinkingLockedOn) return;
                 const isCurrentlyOn = evaluatorLLM.extendedThinking.opus46Level !== 'off';
                 const newLevel = isCurrentlyOn ? 'off' : 'adaptive';
                 setEvaluatorLLM({
@@ -316,13 +325,15 @@ export function DiscoveryContainer() {
                   },
                 });
               }}
+              disabled={anthropicThinkingLockedOn}
               className={`
                 p-1.5 rounded transition-colors flex items-center gap-0.5
                 ${
-                  evaluatorLLM.extendedThinking.opus46Level !== 'off'
+                  anthropicThinkingOn
                     ? 'text-purple-600 bg-purple-50 hover:bg-purple-100 dark:text-purple-400 dark:bg-purple-900/50 dark:hover:bg-purple-900/70'
                     : 'text-stone-500 hover:text-purple-600 hover:bg-purple-50 dark:text-gray-400 dark:hover:text-purple-400 dark:hover:bg-purple-900/30'
                 }
+                ${anthropicThinkingLockedOn ? 'cursor-default' : ''}
               `}
               aria-label="Toggle adaptive thinking"
             >
@@ -340,7 +351,7 @@ export function DiscoveryContainer() {
                 />
               </svg>
               <span className="text-xs font-medium">
-                {evaluatorLLM.extendedThinking.opus46Level !== 'off' ? 'A' : ''}
+                {anthropicThinkingOn ? 'A' : ''}
               </span>
             </button>
           </Tooltip>
