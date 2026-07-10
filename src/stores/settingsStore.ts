@@ -14,9 +14,10 @@ import type {
 import type { UpdateInfo } from '../lib/updateChecker';
 
 export type SettingsTab = 'api-keys' | 'preferences' | 'personalize' | 'saved-chats' | 'about';
-import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode } from '../lib/discoveryModes';
+import { DEFAULT_DISCOVERY_MODE, DISCOVERY_MODES, getBestModelForMode, getDefaultEvaluatorModel } from '../lib/discoveryModes';
+import type { AutoSelectedModel } from '../lib/discoveryModes';
 import { getProviderFromModelId, getDefaultModelForProvider, getDefaultEvaluatorModelForProvider, usesAdaptiveThinking } from '../lib/models';
-import { migrateLegacyModelId } from '../lib/sessionMigration';
+import { migrateLegacyModelId, migrateFrontierModelId } from '../lib/sessionMigration';
 import { useSessionStore } from './sessionStore';
 import { useChatStore } from './chatStore';
 import type { LLMProvider } from '../lib/types';
@@ -42,12 +43,17 @@ function getSavedWebSearch(): boolean {
 }
 
 // Load saved reasoning level for OpenAI models (default 'low')
+// The chat pane's OpenAI reasoning level when the user hasn't chosen one.
+// Medium for every OpenAI model — it's also the API's own default for GPT-5.6.
+// (The discovery pane has its own defaults, derived from MODE_MODEL_PRIORITIES.)
+const DEFAULT_CHAT_REASONING_LEVEL: OpenAIReasoningLevel = 'medium';
+
 function getSavedReasoningLevel(): OpenAIReasoningLevel {
   const saved = localStorage.getItem('reasoningLevel');
-  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(saved)) {
+  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(saved)) {
     return saved as OpenAIReasoningLevel;
   }
-  return 'low';
+  return DEFAULT_CHAT_REASONING_LEVEL;
 }
 
 // Load saved thinking level for Gemini models (default 'medium' - Google's recommended
@@ -109,20 +115,73 @@ function getSavedAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
     : getSavedOpus46ThinkingLevel();
 }
 
-// Load saved frontier model from localStorage
+// Load saved frontier model from localStorage. Uses the frontier-specific
+// migration: gpt-5.4 is still valid for discovery but hidden from the chat
+// picker, so a saved frontier of gpt-5.4 moves to gpt-5.6-terra.
 function getSavedFrontierModel(): string {
   const saved = localStorage.getItem('frontierModel');
-  const migrated = migrateLegacyModelId(saved);
+  const migrated = migrateFrontierModelId(saved);
   if (saved && migrated !== saved) {
     localStorage.setItem('frontierModel', migrated);
   }
   return migrated;
 }
 
-// Load saved evaluator model from localStorage
+// All providers assumed available: API keys aren't known at store-construction
+// time. setConfiguredProviders re-derives against the real key set once they load.
+const ALL_PROVIDERS_AVAILABLE = { anthropic: true, openai: true, google: true };
+
+// The auto-picker's choice (model AND thinking levels) for the default discovery
+// mode, used to seed a fresh install. Single source of truth: MODE_MODEL_PRIORITIES.
+function getSeedEvaluatorChoice(): AutoSelectedModel | null {
+  return getBestModelForMode(DEFAULT_DISCOVERY_MODE, ALL_PROVIDERS_AVAILABLE);
+}
+
+// localStorage key holding the Anthropic thinking level for a given evaluator
+// model — these are persisted per-model, so the key depends on the model.
+function evaluatorAnthropicThinkingKey(model: string): string {
+  if (model === 'claude-fable-5') return 'evaluatorFable5ThinkingLevel';
+  if (model === 'claude-sonnet-5') return 'evaluatorSonnet5ThinkingLevel';
+  if (model === 'claude-sonnet-4-6') return 'evaluatorSonnet46ThinkingLevel';
+  return 'evaluatorOpus46ThinkingLevel';
+}
+
+// Persist an auto-selected evaluator choice (model + all three level families).
+// Writes the Anthropic level under the key belonging to `choice.model`, not
+// unconditionally under the Opus key.
+function persistEvaluatorChoice(choice: AutoSelectedModel): void {
+  localStorage.setItem('evaluatorModel', choice.model);
+  localStorage.setItem('evaluatorReasoningLevel', choice.reasoningLevel);
+  localStorage.setItem('evaluatorGeminiThinkingLevel', choice.geminiThinkingLevel);
+  localStorage.setItem(
+    evaluatorAnthropicThinkingKey(choice.model),
+    choice.opus46ThinkingLevel ?? 'low'
+  );
+}
+
+// Build the evaluatorLLM state from an auto-selected choice.
+function evaluatorLLMFromChoice(prev: LLMConfig, choice: AutoSelectedModel): LLMConfig {
+  return {
+    ...prev,
+    model: choice.model,
+    extendedThinking: {
+      ...prev.extendedThinking,
+      enabled: choice.extendedThinkingEnabled,
+      opus46Level: choice.opus46ThinkingLevel ?? 'low',
+    },
+    reasoningLevel: choice.reasoningLevel,
+    geminiThinkingLevel: choice.geminiThinkingLevel,
+  };
+}
+
+// Load saved evaluator model from localStorage. With nothing saved, the default
+// is DERIVED from the same priority table the auto-picker uses, so a fresh
+// install's discovery pane always agrees with what auto-select would choose for
+// the default mode. See also getSavedEvaluator*Level below, which seed from the
+// same choice so the LEVEL can't diverge from the table either.
 function getSavedEvaluatorModel(): string {
   const saved = localStorage.getItem('evaluatorModel');
-  if (!saved) return 'claude-haiku-4-5-20251001';
+  if (!saved) return getDefaultEvaluatorModel(ALL_PROVIDERS_AVAILABLE);
   const migrated = migrateLegacyModelId(saved);
   if (migrated !== saved) {
     localStorage.setItem('evaluatorModel', migrated);
@@ -141,29 +200,40 @@ function getSavedEvaluatorWebSearch(): boolean {
   return true;
 }
 
-// Load saved evaluator reasoning level for OpenAI models (default 'low')
+// Load saved evaluator reasoning level for OpenAI models. With nothing saved,
+// seed from the priority table (only meaningful if the seeded model is OpenAI —
+// otherwise the table's reasoningLevel is a harmless default that the model's
+// pane never reads).
 function getSavedEvaluatorReasoningLevel(): OpenAIReasoningLevel {
   const saved = localStorage.getItem('evaluatorReasoningLevel');
-  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(saved)) {
+  if (saved && ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(saved)) {
     return saved as OpenAIReasoningLevel;
   }
-  return 'low';
+  return getSeedEvaluatorChoice()?.reasoningLevel ?? 'low';
 }
 
-// Load saved evaluator thinking level for Gemini models (default 'low')
+// Load saved evaluator thinking level for Gemini models. With nothing saved,
+// seed from the priority table (see getSavedEvaluatorReasoningLevel).
 function getSavedEvaluatorGeminiThinkingLevel(): GeminiThinkingLevel {
   const saved = localStorage.getItem('evaluatorGeminiThinkingLevel');
   if (saved && ['minimal', 'low', 'medium', 'high'].includes(saved)) {
     return saved as GeminiThinkingLevel;
   }
-  return 'medium';
+  return getSeedEvaluatorChoice()?.geminiThinkingLevel ?? 'medium';
 }
 
-// Load saved evaluator thinking level for Opus 4.6 (default 'low' - lighter thinking for discovery)
+// Load saved evaluator thinking level for Opus 4.6/4.8 (lighter thinking for
+// discovery). With nothing saved, seed from the priority table so the level a
+// fresh install shows matches what auto-select would apply for the default mode.
 function getSavedEvaluatorOpus46ThinkingLevel(): Opus46ThinkingLevel {
   const saved = localStorage.getItem('evaluatorOpus46ThinkingLevel');
   if (saved && ['off', 'low', 'medium', 'high', 'max', 'adaptive'].includes(saved)) {
     return saved as Opus46ThinkingLevel;
+  }
+  const seed = getSeedEvaluatorChoice();
+  // Only adopt the table's level if the table's model actually uses this key.
+  if (seed && evaluatorAnthropicThinkingKey(seed.model) === 'evaluatorOpus46ThinkingLevel') {
+    return seed.opus46ThinkingLevel ?? 'low';
   }
   return 'low';
 }
@@ -271,15 +341,6 @@ function getSavedAllowChatGPTExtraHighThinking(): boolean {
   return false;
 }
 
-// Load saved allowChatGPT5Pro setting (default false)
-function getSavedAllowChatGPT5Pro(): boolean {
-  const saved = localStorage.getItem('allowChatGPT5Pro');
-  if (saved !== null) {
-    return saved === 'true';
-  }
-  return false;
-}
-
 // Compute voice model from configured providers
 // Priority: openai (Whisper) > gemini > none
 function computeVoiceModel(providers: ApiKeysConfig): VoiceModel {
@@ -321,8 +382,7 @@ interface SettingsState {
   voiceModel: VoiceModel; // Auto-determined from API keys
   voiceMode: VoiceMode; // User-configurable
   customSystemPrompt: string; // User's personalized system prompt
-  allowChatGPTExtraHighThinking: boolean; // Allow extra-high thinking for OpenAI models
-  allowChatGPT5Pro: boolean; // Allow GPT-5.5 Pro model
+  allowChatGPTExtraHighThinking: boolean; // Allow xhigh/max thinking for OpenAI models
   updateInfo: UpdateInfo | null; // Available update info
   showUpdateModal: boolean; // Whether to show the update modal
 
@@ -345,7 +405,6 @@ interface SettingsState {
   setVoiceMode: (mode: VoiceMode) => void;
   setCustomSystemPrompt: (prompt: string) => void;
   setAllowChatGPTExtraHighThinking: (enabled: boolean) => void;
-  setAllowChatGPT5Pro: (enabled: boolean) => void;
   setUpdateInfo: (info: UpdateInfo | null) => void;
   dismissUpdate: () => void;
 }
@@ -395,7 +454,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   voiceMode: getSavedVoiceMode(),
   customSystemPrompt: getSavedCustomSystemPrompt(),
   allowChatGPTExtraHighThinking: getSavedAllowChatGPTExtraHighThinking(),
-  allowChatGPT5Pro: getSavedAllowChatGPT5Pro(),
   updateInfo: null,
   showUpdateModal: false,
   openSettings: (highlightApiKeys = false) =>
@@ -475,14 +533,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       if (config.extendedThinking.opus46Level !== undefined) {
         // Save to correct key based on current model (per-model persistence)
         const currentModel = useSettingsStore.getState().evaluatorLLM.model;
-        const key = currentModel === 'claude-fable-5'
-          ? 'evaluatorFable5ThinkingLevel'
-          : currentModel === 'claude-sonnet-5'
-            ? 'evaluatorSonnet5ThinkingLevel'
-            : currentModel === 'claude-sonnet-4-6'
-              ? 'evaluatorSonnet46ThinkingLevel'
-              : 'evaluatorOpus46ThinkingLevel';
-        localStorage.setItem(key, config.extendedThinking.opus46Level);
+        localStorage.setItem(
+          evaluatorAnthropicThinkingKey(currentModel),
+          config.extendedThinking.opus46Level
+        );
       }
     }
     if (config.reasoningLevel !== undefined) {
@@ -520,14 +574,25 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       // Check if current evaluator model's provider is available
       const evaluatorProvider = getProviderFromModelId(state.evaluatorLLM.model);
       if (!providers[evaluatorProvider]) {
-        // Find first available provider and switch to its default evaluator model
-        const availableProvider = (Object.keys(providers) as LLMProvider[]).find(
-          (p) => providers[p]
-        );
-        if (availableProvider) {
-          const newModel = getDefaultEvaluatorModelForProvider(availableProvider);
-          updates.evaluatorLLM = { ...state.evaluatorLLM, model: newModel };
-          localStorage.setItem('evaluatorModel', newModel);
+        // Force-switch to the auto-picker's choice for the CURRENT discovery mode
+        // given the now-available providers. We take the whole choice — model AND
+        // thinking levels — because the existing levels belonged to a model of a
+        // different provider and are meaningless for the new one.
+        const choice = getBestModelForMode(state.discoveryMode, providers);
+        if (choice) {
+          updates.evaluatorLLM = evaluatorLLMFromChoice(state.evaluatorLLM, choice);
+          persistEvaluatorChoice(choice);
+        } else {
+          // discoveryMode is 'none' (no priority list) — fall back to the default
+          // mode's choice for whichever provider is available.
+          const availableProvider = (Object.keys(providers) as LLMProvider[]).find(
+            (p) => providers[p]
+          );
+          if (availableProvider) {
+            const newModel = getDefaultEvaluatorModelForProvider(availableProvider);
+            updates.evaluatorLLM = { ...state.evaluatorLLM, model: newModel };
+            localStorage.setItem('evaluatorModel', newModel);
+          }
         }
       }
 
@@ -609,24 +674,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const state = useSettingsStore.getState();
       const bestModel = getBestModelForMode(state.discoveryMode, state.configuredProviders);
       if (bestModel) {
-        // Update evaluator LLM with the best model and thinking settings
-        const newEvaluatorLLM = {
-          ...state.evaluatorLLM,
-          model: bestModel.model,
-          extendedThinking: {
-            ...state.evaluatorLLM.extendedThinking,
-            enabled: bestModel.extendedThinkingEnabled,
-            opus46Level: bestModel.opus46ThinkingLevel ?? 'low',
-          },
-          reasoningLevel: bestModel.reasoningLevel,
-          geminiThinkingLevel: bestModel.geminiThinkingLevel,
-        };
-
-        // Persist to localStorage (enabled is derived from the level on read, not stored)
-        localStorage.setItem('evaluatorModel', bestModel.model);
-        localStorage.setItem('evaluatorReasoningLevel', bestModel.reasoningLevel);
-        localStorage.setItem('evaluatorGeminiThinkingLevel', bestModel.geminiThinkingLevel);
-        localStorage.setItem('evaluatorOpus46ThinkingLevel', bestModel.opus46ThinkingLevel ?? 'low');
+        // Update evaluator LLM with the best model and thinking settings.
+        // (enabled is derived from the level on read, not stored)
+        const newEvaluatorLLM = evaluatorLLMFromChoice(state.evaluatorLLM, bestModel);
+        persistEvaluatorChoice(bestModel);
 
         set({ autoSelectDiscoveryModel: enabled, evaluatorLLM: newEvaluatorLLM });
         return;
@@ -659,26 +710,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAllowChatGPTExtraHighThinking: (enabled) => {
     localStorage.setItem('allowChatGPTExtraHighThinking', String(enabled));
     set({ allowChatGPTExtraHighThinking: enabled });
-  },
-
-  setAllowChatGPT5Pro: (enabled) => {
-    localStorage.setItem('allowChatGPT5Pro', String(enabled));
-
-    // If disabling GPT-5.5 Pro and it's currently selected, switch to GPT-5.4
-    if (!enabled) {
-      const state = useSettingsStore.getState();
-      if (state.frontierLLM.model === 'gpt-5.5-pro') {
-        const newModel = 'gpt-5.4';
-        localStorage.setItem('frontierModel', newModel);
-        set({
-          allowChatGPT5Pro: enabled,
-          frontierLLM: { ...state.frontierLLM, model: newModel },
-        });
-        return;
-      }
-    }
-
-    set({ allowChatGPT5Pro: enabled });
   },
 
   setUpdateInfo: (info) => {

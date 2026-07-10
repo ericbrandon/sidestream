@@ -9,7 +9,7 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { Tooltip } from '../shared/Tooltip';
 import { ContextMenu } from '../shared/ContextMenu';
 import { InlineModelPicker } from '../shared/InlineModelPicker';
-import { getProviderFromModelId, supportsExtendedThinking } from '../../lib/models';
+import { getProviderFromModelId, supportsExtendedThinking, CHAT_EXCLUDED_MODELS } from '../../lib/models';
 import {
   getGeminiThinkingOptions,
   getValidGeminiThinkingLevel,
@@ -37,13 +37,12 @@ export const ChatInput = memo(function ChatInput() {
     setLocalValue(storeInputValue);
   }, [storeInputValue]);
 
-  const { frontierLLM, setFrontierLLM, voiceMode, allowChatGPTExtraHighThinking, allowChatGPT5Pro } = useSettingsStore(
+  const { frontierLLM, setFrontierLLM, voiceMode, allowChatGPTExtraHighThinking } = useSettingsStore(
     useShallow((state) => ({
       frontierLLM: state.frontierLLM,
       setFrontierLLM: state.setFrontierLLM,
       voiceMode: state.voiceMode,
       allowChatGPTExtraHighThinking: state.allowChatGPTExtraHighThinking,
-      allowChatGPT5Pro: state.allowChatGPT5Pro,
     }))
   );
   const { sendMessage, sendTranscribedMessage, cancelStream } = useChat();
@@ -119,11 +118,9 @@ export const ChatInput = memo(function ChatInput() {
     [provider, frontierLLM.model]
   );
 
-  // Build list of models to exclude based on settings
-  const excludedModels = useMemo(
-    () => allowChatGPT5Pro ? [] : ['gpt-5.5-pro'],
-    [allowChatGPT5Pro]
-  );
+  // Models hidden from the main chat picker (gpt-5.4 lives on in the discovery
+  // pane only — see CHAT_EXCLUDED_MODELS in models.ts)
+  const excludedModels = CHAT_EXCLUDED_MODELS;
 
   const handleSubmit = useCallback(() => {
     if (localValue.trim() && !isStreaming) {

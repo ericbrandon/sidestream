@@ -12,7 +12,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
-  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt, allowChatGPTExtraHighThinking, setAllowChatGPTExtraHighThinking, allowChatGPT5Pro, setAllowChatGPT5Pro, setUpdateInfo } = useSettingsStore();
+  const { highlightApiKeys, lastSettingsTab, setLastSettingsTab, autoSelectDiscoveryModel, setAutoSelectDiscoveryModel, showCitations, setShowCitations, theme, setTheme, voiceMode, setVoiceMode, customSystemPrompt, setCustomSystemPrompt, allowChatGPTExtraHighThinking, setAllowChatGPTExtraHighThinking, setUpdateInfo } = useSettingsStore();
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [showLatestVersionAlert, setShowLatestVersionAlert] = useState(false);
 
@@ -204,32 +204,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     className="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-0 focus:ring-offset-0 dark:border-gray-500 dark:bg-gray-500 dark:checked:bg-blue-600 cursor-pointer"
                   />
                   <label htmlFor="allowExtraHighThinking" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
-                    Allow ChatGPT extra-high thinking
+                    Allow ChatGPT extra-high and max thinking
                   </label>
                 </div>
                 <p className="mt-1 ml-7 text-xs text-gray-500 dark:text-gray-400">
-                  This generally hidden thinking mode is very slow and expensive. We recommend leaving this option off.
-                </p>
-              </section>
-
-              <hr className="border-stone-200 dark:border-gray-700" />
-
-              {/* Allow ChatGPT 5.5 Pro */}
-              <section>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="allowChatGPT5Pro"
-                    checked={allowChatGPT5Pro}
-                    onChange={(e) => setAllowChatGPT5Pro(e.target.checked)}
-                    className="h-4 w-4 rounded border-gray-500 text-blue-600 focus:ring-0 focus:ring-offset-0 dark:border-gray-500 dark:bg-gray-500 dark:checked:bg-blue-600 cursor-pointer"
-                  />
-                  <label htmlFor="allowChatGPT5Pro" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
-                    Allow ChatGPT 5.5 Pro
-                  </label>
-                </div>
-                <p className="mt-1 ml-7 text-xs text-gray-500 dark:text-gray-400">
-                  This model is very slow, and extremely expensive - 12 times the cost of ChatGPT 5.4. We recommend leaving this option off.
+                  These generally hidden thinking modes are very slow and expensive. We recommend leaving this option off.
                 </p>
               </section>
 

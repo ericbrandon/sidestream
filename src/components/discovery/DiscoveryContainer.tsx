@@ -53,11 +53,11 @@ export function DiscoveryContainer() {
     ? getValidGeminiThinkingLevel(evaluatorLLM.geminiThinkingLevel, evaluatorLLM.model)
     : evaluatorLLM.geminiThinkingLevel;
 
-  // Discovery pane never shows xhigh thinking or GPT-5.5 Pro (regardless of user settings)
-  // Also respect web search constraints (off/minimal not available when web search is on)
+  // Discovery pane never shows xhigh/max thinking (regardless of user settings)
+  // Also respect web search constraints ('minimal' not available when web search is on)
   const discoveryReasoningOptions = provider === 'openai'
     ? getOpenAIReasoningOptions(evaluatorLLM.model, {
-        allowExtraHigh: false, // Never allow xhigh in discovery pane
+        allowExtraHigh: false, // Never allow xhigh/max in discovery pane
         webSearchEnabled: evaluatorLLM.webSearchEnabled,
       })
     : [];
@@ -65,7 +65,9 @@ export function DiscoveryContainer() {
   const effectiveDiscoveryReasoningLevel = provider === 'openai'
     ? getValidOpenAIReasoningLevel(evaluatorLLM.reasoningLevel, evaluatorLLM.model, evaluatorLLM.webSearchEnabled)
     : evaluatorLLM.reasoningLevel;
-  const discoveryExcludedModels = ['gpt-5.5-pro'];
+  // No discovery-specific exclusions since GPT-5.5 Pro was retired; the pane
+  // intentionally still offers gpt-5.4 (hidden from the main chat picker).
+  const discoveryExcludedModels: string[] = [];
 
   // Close dropdown when clicking outside
   useEffect(() => {

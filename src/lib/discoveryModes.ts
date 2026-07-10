@@ -1,6 +1,8 @@
 // Discovery mode configuration
 // All mode-specific values are defined here to avoid if-statements throughout the codebase
 
+import type { LLMProvider } from './types';
+
 export type DiscoveryModeId = 'none' | 'useful-informative' | 'skeptical-critical' | 'obscure-interesting' | 'amusing-entertaining' | 'fact-checker' | 'lateral-thinking';
 
 export interface DiscoveryModeConfig {
@@ -380,6 +382,10 @@ const MODEL_IDS = {
   opus48: 'claude-opus-4-8',
   opus46: 'claude-opus-4-6',
   gemini35Flash: 'gemini-3.5-flash',
+  gpt56Terra: 'gpt-5.6-terra',
+  // GPT-5.4 is retained ONLY as the 'obscure-interesting' auto-pick, where its
+  // output is preferred over 5.6. It is hidden from the main chat picker (see
+  // CHAT_EXCLUDED_MODELS in models.ts) but remains selectable in this pane.
   gpt54: 'gpt-5.4',
 } as const;
 
@@ -403,9 +409,10 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
   'useful-informative': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
-    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'low' } },
+    { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'low' } },
   ],
   'obscure-interesting': [
+    // Deliberately still GPT-5.4: its output for this mode is preferred over 5.6.
     { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'low' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
@@ -413,22 +420,22 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
   'amusing-entertaining': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'medium' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
+    { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
   ],
   'lateral-thinking': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
   'skeptical-critical': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
-    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
   ],
   'fact-checker': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
-    { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'high' } },
+    { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
 };
 
@@ -476,4 +483,36 @@ export function getBestModelForMode(
 
   // No configured providers available
   return null;
+}
+
+// Last-resort model if the priority table yields nothing (no providers configured
+// yet). Only reachable before any API key is registered.
+const FALLBACK_EVALUATOR_MODEL = 'claude-opus-4-8';
+
+/**
+ * The discovery pane's default evaluator model, DERIVED from the same
+ * MODE_MODEL_PRIORITIES table the auto-picker uses — so the model a fresh
+ * install shows is always the model auto-select would choose for the default
+ * mode. Do not hand-maintain a parallel list of defaults here; edit the table.
+ *
+ * `configuredProviders` may be all-true when key state isn't known yet (initial
+ * store construction); setConfiguredProviders re-derives once keys load.
+ */
+export function getDefaultEvaluatorModel(
+  configuredProviders: { anthropic: boolean; openai: boolean; google: boolean }
+): string {
+  return getBestModelForMode(DEFAULT_DISCOVERY_MODE, configuredProviders)?.model
+    ?? FALLBACK_EVALUATOR_MODEL;
+}
+
+/**
+ * Single-provider form of getDefaultEvaluatorModel: what the discovery pane
+ * should default to when only `provider` has a configured key.
+ */
+export function getDefaultEvaluatorModelForProvider(provider: LLMProvider): string {
+  return getDefaultEvaluatorModel({
+    anthropic: provider === 'anthropic',
+    openai: provider === 'openai',
+    google: provider === 'google',
+  });
 }

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile, ModelSwitch } from '../lib/types';
 import { buildSessionSettings } from '../lib/sessionHelpers';
-import { migrateLegacyModelId } from '../lib/sessionMigration';
+import { migrateFrontierModelId } from '../lib/sessionMigration';
 import { deduplicateCitations } from '../lib/citationHelpers';
 import { logError } from '../lib/logger';
 import { useChatStore } from './chatStore';
@@ -330,8 +330,10 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
         if (session) {
           const settingsStore = useSettingsStore.getState();
           const settings = buildSessionSettings(settingsStore);
-          // Use the model captured at stream start, not the current global model
-          settings.frontierModel = migrateLegacyModelId(stream.model);
+          // Use the model captured at stream start, not the current global model.
+          // Frontier-specific migration: this is a frontier slot, so a stream
+          // started on chat-hidden gpt-5.4 must not reinstate it (-> terra).
+          settings.frontierModel = migrateFrontierModelId(stream.model);
           const updatedSession: ChatSession = {
             ...session,
             messages: [...session.messages, assistantMessage],

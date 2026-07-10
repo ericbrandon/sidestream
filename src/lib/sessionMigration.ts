@@ -4,13 +4,23 @@ const LEGACY_OPUS_45_ID = 'claude-opus-4-5-20251101';
 const LEGACY_OPUS_47_ID = 'claude-opus-4-7';
 const REPLACEMENT_OPUS_ID = 'claude-opus-4-8';
 
-// Map of retired OpenAI GPT-5.x IDs to their replacement.
-// 5.2 and 5.1 both collapse to 5.4 (5.5 is 2x the price for marginal gains).
+// Map of retired OpenAI GPT-5.x IDs to their replacement in the 5.6 family
+// (Sol = flagship $5/$30, Terra = balanced $2.50/$15, Luna = light $1/$6):
+// - mid-tier line (5.1/5.2, and 5.4's price point) -> Terra (identical pricing to 5.4)
+// - flagship line (5.5) and pro (5-pro/5.5-pro) -> Sol (same price as 5.5; 5.6 has
+//   no separate pro model — "pro" is now a reasoning.mode request param)
+// - mini line -> Luna
+// NOTE: gpt-5.4 itself is deliberately NOT in this map. It is still a live model,
+// kept for the discovery pane (auto-pick, see discoveryModes.ts) — only the main
+// chat frontier slot migrates off it, via migrateFrontierModelId below.
 const LEGACY_GPT_IDS: Record<string, string> = {
-  'gpt-5.2': 'gpt-5.4',
-  'gpt-5.1': 'gpt-5.4',
-  'gpt-5-mini': 'gpt-5.4-mini',
-  'gpt-5-pro': 'gpt-5.5-pro',
+  'gpt-5.2': 'gpt-5.6-terra',
+  'gpt-5.1': 'gpt-5.6-terra',
+  'gpt-5-mini': 'gpt-5.6-luna',
+  'gpt-5.4-mini': 'gpt-5.6-luna',
+  'gpt-5-pro': 'gpt-5.6-sol',
+  'gpt-5.5-pro': 'gpt-5.6-sol',
+  'gpt-5.5': 'gpt-5.6-sol',
 };
 
 // Map of retired Gemini IDs to their replacement.
@@ -34,6 +44,15 @@ export function migrateLegacyModelId(modelId: string | undefined | null): string
   return modelId ?? REPLACEMENT_OPUS_ID;
 }
 
+// Frontier-slot-only migration. gpt-5.4 is still a valid model for the discovery
+// pane (evaluator slot), but it is hidden from the main chat picker, so a saved
+// FRONTIER selection of gpt-5.4 moves to the identically-priced gpt-5.6-terra.
+// Never apply this to evaluator/discovery model IDs. Idempotent.
+export function migrateFrontierModelId(modelId: string | undefined | null): string {
+  const migrated = migrateLegacyModelId(modelId);
+  return migrated === 'gpt-5.4' ? 'gpt-5.6-terra' : migrated;
+}
+
 // Translate a saved ChatSessionSettings object so it works on a build that no
 // longer supports Opus 4.5. Idempotent.
 export function migrateChatSessionSettings(s: ChatSessionSettings): ChatSessionSettings {
@@ -42,7 +61,7 @@ export function migrateChatSessionSettings(s: ChatSessionSettings): ChatSessionS
 
   return {
     ...s,
-    frontierModel: migrateLegacyModelId(s.frontierModel),
+    frontierModel: migrateFrontierModelId(s.frontierModel),
     evaluatorModel: migrateLegacyModelId(s.evaluatorModel),
     frontierOpus46ThinkingLevel:
       s.frontierOpus46ThinkingLevel ??

@@ -14,15 +14,33 @@ export const ALL_MODELS: ModelDefinition[] = [
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
   // OpenAI Models
-  { id: 'gpt-5.5', name: 'GPT-5.5', provider: 'openai' },
+  // GPT-5.4 is retained ONLY for the discovery pane (it remains the auto-pick in
+  // MODE_MODEL_PRIORITIES, see discoveryModes.ts) — the main chat picker hides it
+  // via CHAT_EXCLUDED_MODELS below. gpt-5.5 / gpt-5.4-mini / gpt-5.5-pro were
+  // retired with the 5.6 launch; see LEGACY_GPT_IDS in sessionMigration.ts.
+  { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', provider: 'openai' },
+  { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', provider: 'openai' },
+  { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', provider: 'openai' },
   { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai' },
-  { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', provider: 'openai' },
-  { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', provider: 'openai' },
 
   // Google Gemini Models
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', provider: 'google' },
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'google' },
 ];
+
+// Models that stay in ALL_MODELS (so the discovery pane can list them) but are
+// hidden from the MAIN CHAT model picker. gpt-5.4 is kept alive solely for the
+// discovery pane, where it remains the auto-pick (MODE_MODEL_PRIORITIES in
+// discoveryModes.ts); for chat it is superseded by the identically-priced
+// gpt-5.6-terra.
+export const CHAT_EXCLUDED_MODELS: string[] = ['gpt-5.4'];
+
+// Check if a model is in the GPT-5.6 family (Sol / Terra / Luna). These have a
+// different reasoning enum than earlier GPT-5.x ('minimal' removed, 'max' added)
+// and support explicit prompt-cache breakpoints (handled in providers/openai.rs).
+export function isGpt56Family(modelId: string): boolean {
+  return modelId.startsWith('gpt-5.6');
+}
 
 export const PROVIDER_LABELS: Record<LLMProvider, string> = {
   anthropic: 'Anthropic Claude',
@@ -45,9 +63,11 @@ export function getProviderFromModelId(modelId: string): LLMProvider {
 
 // Get default model for a provider (frontier pane uses top-tier models)
 export function getDefaultModelForProvider(provider: LLMProvider): string {
-  // OpenAI defaults to 5.4 rather than the top-listed 5.5: 5.5 is 2x the cost
-  // of 5.4 for marginal capability gains, so 5.4 is the better starting point.
-  if (provider === 'openai') return 'gpt-5.4';
+  // OpenAI defaults to Terra rather than the top-listed Sol: Sol is 2x the cost
+  // of Terra ($5/$30 vs $2.50/$15 per MTok) for marginal capability gains — the
+  // same reasoning that previously made 5.4 the default over 5.5. Terra is also
+  // priced identically to the old 5.4, so this default is cost-neutral.
+  if (provider === 'openai') return 'gpt-5.6-terra';
   // Anthropic defaults to Opus 4.8 explicitly, NOT the first list entry: Fable 5 is
   // listed first (dropdown order) but is pricier and can refuse, so it shouldn't be
   // an auto-selected default.
@@ -114,16 +134,7 @@ export function supportsExtendedThinking(modelId: string): boolean {
   return isFable5(modelId) || modelId.includes('opus') || isSonnet5(modelId) || isSonnet46(modelId);
 }
 
-// Get default evaluator model for a provider (discovery pane uses lighter/faster models)
-export function getDefaultEvaluatorModelForProvider(provider: LLMProvider): string {
-  switch (provider) {
-    case 'anthropic':
-      return 'claude-haiku-4-5-20251001';
-    case 'openai':
-      return 'gpt-5.4-mini';
-    case 'google':
-      return 'gemini-3.5-flash';
-    default:
-      return 'claude-haiku-4-5-20251001';
-  }
-}
+// The discovery pane's default evaluator model now lives in discoveryModes.ts,
+// where it is DERIVED from MODE_MODEL_PRIORITIES (the same table the auto-picker
+// reads) rather than hand-maintained here. Re-exported for convenience.
+export { getDefaultEvaluatorModel, getDefaultEvaluatorModelForProvider } from './discoveryModes';

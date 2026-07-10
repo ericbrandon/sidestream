@@ -107,16 +107,19 @@ pub struct ChatRequestConfig {
 }
 
 /// Reasoning effort levels for OpenAI reasoning models
-/// - GPT-5 series supports: none, minimal, low, medium, high, xhigh
+/// - GPT-5.6 family (Sol/Terra/Luna) supports: none, low, medium, high, xhigh, max
+///   (NO minimal — the API rejects it; see the guard in llm_openai.rs)
+/// - earlier GPT-5 series supports: none, minimal, low, medium, high, xhigh
 /// - o-series (o3, o4-mini) supports: low, medium, high only
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ReasoningEffort {
     None,    // GPT-5 only - no reasoning tokens
-    Minimal, // GPT-5 only - minimal reasoning
+    Minimal, // pre-5.6 GPT-5 only - minimal reasoning
     Low,
     Medium,
     High,
     XHigh,   // GPT-5 only - extra high reasoning
+    Max,     // GPT-5.6+ only - hardest quality-first workloads
 }
 
 impl ReasoningEffort {
@@ -128,6 +131,7 @@ impl ReasoningEffort {
             ReasoningEffort::Medium => "medium",
             ReasoningEffort::High => "high",
             ReasoningEffort::XHigh => "xhigh",
+            ReasoningEffort::Max => "max",
         }
     }
 }
@@ -334,11 +338,36 @@ impl OpenAIClient {
             }));
         }
 
+        // GPT-5.6+ supports explicit prompt-cache breakpoints (the analog of
+        // Anthropic's cache_control): mark the system prompt (stable all
+        // session) and the latest non-assistant message, so each turn's cache
+        // write becomes the next turn's ~90%-discounted read. Older models keep
+        // OpenAI's automatic implicit caching (>=1024-token prompts).
+        let explicit_caching = is_gpt_56_family(&config.model);
+        if explicit_caching {
+            if config.system_prompt.is_some() {
+                if let Some(first) = input_items.first_mut() {
+                    add_cache_breakpoint_to_message(first);
+                }
+            }
+            if let Some(last) = input_items.last_mut() {
+                if last["role"].as_str() != Some("assistant") && last["role"].as_str() != Some("system") {
+                    add_cache_breakpoint_to_message(last);
+                }
+            }
+        }
+
         let mut body = serde_json::json!({
             "model": config.model,
             "input": input_items,
             "stream": true
         });
+
+        // Explicit mode makes all 4 write slots ours (implicit mode spends one
+        // on an automatic latest-message breakpoint). Only valid on GPT-5.6+.
+        if explicit_caching {
+            body["prompt_cache_options"] = serde_json::json!({ "mode": "explicit" });
+        }
 
         // Add reasoning effort if enabled (for reasoning models like o3, o4-mini, gpt-5)
         // Include summary: "auto" to get reasoning summaries for ephemeral thinking UI
@@ -390,7 +419,7 @@ impl OpenAIClient {
 
     /// Build the request body for a discovery request
     pub fn build_discovery_request(&self, config: &DiscoveryRequestConfig) -> serde_json::Value {
-        let input_items = vec![
+        let mut input_items = vec![
             serde_json::json!({
                 "type": "message",
                 "role": "system",
@@ -403,14 +432,30 @@ impl OpenAIClient {
             }),
         ];
 
-        // Map reasoning level string to effort value (default to "low")
+        // Explicit cache breakpoints for GPT-5.6+: the discovery system prompt
+        // is stable across the session, and the conversation string grows by
+        // appending, so both are cacheable prefixes for the next request.
+        let explicit_caching = is_gpt_56_family(&config.model);
+        if explicit_caching {
+            for item in input_items.iter_mut() {
+                add_cache_breakpoint_to_message(item);
+            }
+        }
+
+        // Map reasoning level string to effort value (default to "low").
+        // "minimal" only exists pre-5.6; the discovery auto-pick table never
+        // uses it for 5.6 models, but bump it defensively if a user manually
+        // combined a stale saved level with a 5.6 model.
         let effort = match config.reasoning_level.as_deref() {
             Some("off") => "none",
-            Some("minimal") => "minimal",
+            Some("minimal") => {
+                if is_gpt_56_family(&config.model) { "low" } else { "minimal" }
+            }
             Some("low") => "low",
             Some("medium") => "medium",
             Some("high") => "high",
             Some("xhigh") => "xhigh",
+            Some("max") => "max",
             _ => "low", // Default
         };
 
@@ -425,6 +470,10 @@ impl OpenAIClient {
                 "type": "web_search"
             }]
         });
+
+        if explicit_caching {
+            body["prompt_cache_options"] = serde_json::json!({ "mode": "explicit" });
+        }
 
         // Add prompt cache key if provided
         if let Some(cache_key) = &config.prompt_cache_key {
@@ -820,7 +869,8 @@ fn text_references_filename(text: &str, filename: &str) -> bool {
 }
 
 /// Convert a reasoning level string from the frontend to ReasoningEffort
-/// Frontend sends: "off", "minimal", "low", "medium", "high", "xhigh" for GPT-5
+/// Frontend sends: "off", "low", "medium", "high", "xhigh", "max" for GPT-5.6
+///                 "off", "minimal", "low", "medium", "high", "xhigh" for earlier GPT-5
 ///                 "low", "medium", "high" for o-series
 pub fn string_to_reasoning_effort(level: &str) -> ReasoningEffort {
     match level.to_lowercase().as_str() {
@@ -830,6 +880,7 @@ pub fn string_to_reasoning_effort(level: &str) -> ReasoningEffort {
         "medium" => ReasoningEffort::Medium,
         "high" => ReasoningEffort::High,
         "xhigh" => ReasoningEffort::XHigh,
+        "max" => ReasoningEffort::Max,
         _ => ReasoningEffort::Medium, // Default for unknown values
     }
 }
@@ -841,6 +892,36 @@ pub fn supports_reasoning(model: &str) -> bool {
         || model.starts_with("o4")
         || model.starts_with("gpt-5")
         || model.contains("-o-")
+}
+
+/// Check if a model is in the GPT-5.6 family (Sol/Terra/Luna). These differ from
+/// earlier GPT-5.x in two ways this module cares about: the reasoning enum
+/// ("minimal" removed, "max" added) and support for explicit prompt-cache
+/// breakpoints (prompt_cache_options / prompt_cache_breakpoint).
+pub fn is_gpt_56_family(model: &str) -> bool {
+    model.starts_with("gpt-5.6")
+}
+
+/// Attach an explicit prompt-cache breakpoint (GPT-5.6+) to the last content
+/// part of a message item, converting plain-string content into a single
+/// input_text part first — breakpoints can only live on content parts
+/// (input_text / input_image / input_file). The analog of Anthropic's
+/// add_cache_control_to_last_message in providers/anthropic.rs.
+fn add_cache_breakpoint_to_message(item: &mut serde_json::Value) {
+    let breakpoint = serde_json::json!({ "mode": "explicit" });
+    let content = &mut item["content"];
+    if let Some(text) = content.as_str() {
+        let text = text.to_string();
+        *content = serde_json::json!([{
+            "type": "input_text",
+            "text": text,
+            "prompt_cache_breakpoint": breakpoint
+        }]);
+    } else if let Some(parts) = content.as_array_mut() {
+        if let Some(last_part) = parts.last_mut() {
+            last_part["prompt_cache_breakpoint"] = breakpoint;
+        }
+    }
 }
 
 /// Fetch file content from OpenAI Containers API and return as base64
@@ -875,6 +956,118 @@ pub async fn fetch_file_content_base64(api_key: &str, container_id: &str, file_i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn chat_config(model: &str) -> ChatRequestConfig {
+        ChatRequestConfig {
+            model: model.to_string(),
+            messages: vec![
+                serde_json::json!({"role": "user", "content": "hello"}),
+                serde_json::json!({"role": "assistant", "content": "hi there"}),
+                serde_json::json!({"role": "user", "content": "follow-up"}),
+            ],
+            system_prompt: Some("be helpful".to_string()),
+            reasoning_effort: Some(ReasoningEffort::Low),
+            web_search_enabled: false,
+            prompt_cache_key: Some("chat-test".to_string()),
+            code_interpreter_enabled: false,
+            container_id: None,
+        }
+    }
+
+    #[test]
+    fn gpt_56_chat_request_gets_explicit_cache_breakpoints() {
+        let client = OpenAIClient::new("sk-test".to_string());
+        let body = client.build_chat_request(&chat_config("gpt-5.6-terra"));
+
+        assert_eq!(body["prompt_cache_options"]["mode"], "explicit");
+
+        let items = body["input"].as_array().unwrap();
+        // System message: string content converted to an input_text part with a breakpoint
+        let system_parts = items[0]["content"].as_array().unwrap();
+        assert_eq!(system_parts[0]["type"], "input_text");
+        assert_eq!(system_parts[0]["prompt_cache_breakpoint"]["mode"], "explicit");
+
+        // Last (user) message gets a breakpoint; intermediate messages do not
+        let last_parts = items.last().unwrap()["content"].as_array().unwrap();
+        assert_eq!(last_parts.last().unwrap()["prompt_cache_breakpoint"]["mode"], "explicit");
+        assert!(items[1]["content"].is_string()); // user "hello" untouched
+        assert!(items[2]["content"].is_string()); // assistant "hi there" untouched
+    }
+
+    #[test]
+    fn pre_56_chat_request_has_no_cache_breakpoints() {
+        let client = OpenAIClient::new("sk-test".to_string());
+        let body = client.build_chat_request(&chat_config("gpt-5.4"));
+
+        assert!(body.get("prompt_cache_options").is_none());
+        for item in body["input"].as_array().unwrap() {
+            // No message content should have been converted or annotated
+            if let Some(parts) = item["content"].as_array() {
+                for part in parts {
+                    assert!(part.get("prompt_cache_breakpoint").is_none());
+                }
+            }
+        }
+        // Implicit cache routing key still present
+        assert_eq!(body["prompt_cache_key"], "chat-test");
+    }
+
+    #[test]
+    fn gpt_56_discovery_request_gets_breakpoints_and_max_effort() {
+        let client = OpenAIClient::new("sk-test".to_string());
+        let config = DiscoveryRequestConfig {
+            model: "gpt-5.6-luna".to_string(),
+            system_prompt: "discovery prompt".to_string(),
+            conversation: "user: hello".to_string(),
+            prompt_cache_key: Some("discovery".to_string()),
+            reasoning_level: Some("max".to_string()),
+        };
+        let body = client.build_discovery_request(&config);
+
+        assert_eq!(body["prompt_cache_options"]["mode"], "explicit");
+        assert_eq!(body["reasoning"]["effort"], "max");
+        for item in body["input"].as_array().unwrap() {
+            let parts = item["content"].as_array().unwrap();
+            assert_eq!(parts.last().unwrap()["prompt_cache_breakpoint"]["mode"], "explicit");
+        }
+    }
+
+    #[test]
+    fn gpt_56_discovery_request_bumps_minimal_to_low() {
+        let client = OpenAIClient::new("sk-test".to_string());
+        let config = DiscoveryRequestConfig {
+            model: "gpt-5.6-terra".to_string(),
+            system_prompt: "p".to_string(),
+            conversation: "c".to_string(),
+            prompt_cache_key: None,
+            reasoning_level: Some("minimal".to_string()),
+        };
+        let body = client.build_discovery_request(&config);
+        assert_eq!(body["reasoning"]["effort"], "low");
+
+        // Pre-5.6 models still pass minimal through
+        let config_54 = DiscoveryRequestConfig {
+            model: "gpt-5.4".to_string(),
+            system_prompt: "p".to_string(),
+            conversation: "c".to_string(),
+            prompt_cache_key: None,
+            reasoning_level: Some("minimal".to_string()),
+        };
+        let body_54 = client.build_discovery_request(&config_54);
+        assert_eq!(body_54["reasoning"]["effort"], "minimal");
+        assert!(body_54.get("prompt_cache_options").is_none());
+    }
+
+    #[test]
+    fn reasoning_effort_max_round_trips() {
+        assert_eq!(string_to_reasoning_effort("max"), ReasoningEffort::Max);
+        assert_eq!(ReasoningEffort::Max.as_str(), "max");
+        assert!(is_gpt_56_family("gpt-5.6-sol"));
+        assert!(is_gpt_56_family("gpt-5.6-terra"));
+        assert!(is_gpt_56_family("gpt-5.6-luna"));
+        assert!(!is_gpt_56_family("gpt-5.4"));
+        assert!(supports_reasoning("gpt-5.6-sol"));
+    }
 
     /// A real code-interpreter file: a `cfile_*` id and fetched bytes.
     fn real_file(filename: &str) -> GeneratedFile {

@@ -10,9 +10,9 @@ use crate::llm::{
 use crate::llm_logger;
 use crate::providers::anthropic::InlineCitation;
 use crate::providers::openai::{
-    parse_sse_event as openai_parse_sse_event, string_to_reasoning_effort, supports_reasoning,
-    fetch_file_content_base64, ChatRequestConfig as OpenAIChatRequestConfig, OpenAIClient, OpenAIStreamEvent,
-    ReasoningEffort,
+    is_gpt_56_family, parse_sse_event as openai_parse_sse_event, string_to_reasoning_effort,
+    supports_reasoning, fetch_file_content_base64, ChatRequestConfig as OpenAIChatRequestConfig,
+    OpenAIClient, OpenAIStreamEvent, ReasoningEffort,
 };
 
 /// Send chat message using OpenAI Responses API
@@ -42,12 +42,16 @@ pub async fn send_chat_message_openai(
     // Determine reasoning effort from the level string
     // For GPT-5: "off" maps to None reasoning, "low"/"medium"/"high" set effort
     // For o-series: "low"/"medium"/"high" only (no "off" option)
-    // NOTE: OpenAI doesn't allow "minimal" with web_search (per official docs), so bump to "low"
+    // NOTE: two cases where "minimal" must bump to "low" or the API 400s:
+    //  - web_search is on (OpenAI rejects "minimal" with web_search, per docs)
+    //  - GPT-5.6 family (Sol/Terra/Luna dropped "minimal" from the effort enum;
+    //    a stale saved level from an older model could still send it)
     let reasoning_effort: Option<ReasoningEffort> = if supports_reasoning(&model) {
         reasoning_level.as_ref().map(|level| {
             let effort = string_to_reasoning_effort(level);
-            // OpenAI API rejects "minimal" when web_search is enabled (per official docs)
-            if web_search_enabled && matches!(effort, ReasoningEffort::Minimal) {
+            if (web_search_enabled || is_gpt_56_family(&model))
+                && matches!(effort, ReasoningEffort::Minimal)
+            {
                 ReasoningEffort::Low
             } else {
                 effort

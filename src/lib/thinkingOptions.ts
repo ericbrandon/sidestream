@@ -1,5 +1,5 @@
 import type { OpenAIReasoningLevel, GeminiThinkingLevel, Opus46ThinkingLevel } from './types';
-import { supportsExtendedThinking, alwaysOnThinking } from './models';
+import { supportsExtendedThinking, alwaysOnThinking, isGpt56Family } from './models';
 
 export interface ThinkingOption<T> {
   value: T;
@@ -7,7 +7,7 @@ export interface ThinkingOption<T> {
   letter: string;
 }
 
-// Reasoning level options for standard OpenAI models
+// Reasoning level options for pre-5.6 OpenAI models (GPT-5.4)
 export const REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
   { value: 'off', label: 'Off', letter: '' },
   { value: 'minimal', label: 'Minimal', letter: 'm' },
@@ -17,9 +17,16 @@ export const REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
   { value: 'xhigh', label: 'Extra High', letter: 'X' },
 ];
 
-// Reasoning level options for GPT-5.5 Pro (only supports 'high')
-export const GPT5_PRO_REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
+// Reasoning level options for the GPT-5.6 family (Sol / Terra / Luna). 5.6
+// dropped 'minimal' and added 'max' above 'xhigh'; 'off' maps to effort "none"
+// in the Rust provider. The API rejects 'minimal' on these models.
+export const GPT_56_REASONING_OPTIONS: ThinkingOption<OpenAIReasoningLevel>[] = [
+  { value: 'off', label: 'Off', letter: '' },
+  { value: 'low', label: 'Low', letter: 'L' },
+  { value: 'medium', label: 'Medium', letter: 'M' },
   { value: 'high', label: 'High', letter: 'H' },
+  { value: 'xhigh', label: 'Extra High', letter: 'X' },
+  { value: 'max', label: 'Max', letter: 'M+' },
 ];
 
 // Thinking level options for Gemini 3.1 Pro (only LOW and HIGH - thinking cannot be disabled)
@@ -67,20 +74,20 @@ export function getOpenAIReasoningOptions(
 ): ThinkingOption<OpenAIReasoningLevel>[] {
   const { allowExtraHigh = false, webSearchEnabled = false } = options;
 
-  if (model === 'gpt-5.5-pro') {
-    return GPT5_PRO_REASONING_OPTIONS;
-  }
+  let result = isGpt56Family(model) ? GPT_56_REASONING_OPTIONS : REASONING_OPTIONS;
 
-  let result = REASONING_OPTIONS;
-
-  // Filter xhigh based on allowExtraHigh setting
+  // xhigh and max are both slow/expensive tiers hidden behind the same
+  // "allow extra-high thinking" setting
   if (!allowExtraHigh) {
-    result = result.filter(o => o.value !== 'xhigh');
+    result = result.filter(o => o.value !== 'xhigh' && o.value !== 'max');
   }
 
-  // Web search requires at least 'low' reasoning - filter out 'off' and 'minimal'
+  // The API rejects 'minimal' combined with web_search (verified empirically on
+  // gpt-5.4; 5.6 has no minimal at all). 'off' (effort none) works fine with web
+  // search — a real search executes — so it stays available: the web-search and
+  // thinking settings are otherwise orthogonal.
   if (webSearchEnabled) {
-    result = result.filter(o => o.value !== 'off' && o.value !== 'minimal');
+    result = result.filter(o => o.value !== 'minimal');
   }
 
   return result;
@@ -95,8 +102,14 @@ export function getValidOpenAIReasoningLevel(
   // Get options considering web search constraint (but allow all xhigh for validation)
   const opts = getOpenAIReasoningOptions(model, { allowExtraHigh: true, webSearchEnabled });
   const isValid = opts.some((o) => o.value === level);
-  // If current level is valid for this model, use it; otherwise use the first option
-  return isValid ? level : opts[0].value;
+  if (isValid) return level;
+  // Map levels the other model generation doesn't have to their nearest
+  // neighbor instead of falling to the first option (which would silently
+  // turn reasoning off): 'minimal' (pre-5.6 only) -> 'low', 'max' (5.6 only)
+  // -> 'xhigh'.
+  if (level === 'minimal' && opts.some((o) => o.value === 'low')) return 'low';
+  if (level === 'max' && opts.some((o) => o.value === 'xhigh')) return 'xhigh';
+  return opts[0].value;
 }
 
 // Helper to get display letter for current OpenAI reasoning level
