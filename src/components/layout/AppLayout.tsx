@@ -13,7 +13,7 @@ import { useDiscoveryStore } from '../../stores/discoveryStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { Tooltip } from '../shared/Tooltip';
 import { useResizablePanes } from '../../hooks/useResizablePanes';
-import { printChat, exportToHtml, exportToJson } from '../../lib/exportUtils';
+import { printChat, exportToHtml, exportToJson, deriveExportTitle } from '../../lib/exportUtils';
 import { logError } from '../../lib/logger';
 import type { ApiKeysConfig } from '../../lib/types';
 
@@ -111,7 +111,7 @@ export function AppLayout() {
     if (messages.length === 0) return;
     flushSync(() => setPendingExport('html'));
     try {
-      await exportToHtml();
+      await exportToHtml(deriveExportTitle(sessionMetas, activeSessionId, messages));
     } catch (error) {
       alert(`Export failed: ${error}`);
     } finally {
