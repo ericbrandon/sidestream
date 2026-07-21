@@ -24,12 +24,16 @@ const LEGACY_GPT_IDS: Record<string, string> = {
 };
 
 // Map of retired Gemini IDs to their replacement.
-// - Gemini 3 Flash Preview is superseded by the GA Gemini 3.5 Flash.
-// - Gemini 2.5 models were removed; Pro -> 3.1 Pro, Flash -> 3.5 Flash.
+// - Gemini 3.5 Flash was replaced by the GA Gemini 3.6 Flash (July 2026); the
+//   older Flash IDs forward straight to 3.6 rather than hopping through 3.5.
+//   3.5 Flash is NOT retired by Google (retirement listed as May 2027 or
+//   later) — the app simply moved its Flash slot to 3.6.
+// - Gemini 2.5 models were removed; Pro -> 3.1 Pro, Flash -> 3.6 Flash.
 const LEGACY_GEMINI_IDS: Record<string, string> = {
-  'gemini-3-flash-preview': 'gemini-3.5-flash',
+  'gemini-3-flash-preview': 'gemini-3.6-flash',
+  'gemini-3.5-flash': 'gemini-3.6-flash',
   'gemini-2.5-pro': 'gemini-3.1-pro-preview',
-  'gemini-2.5-flash': 'gemini-3.5-flash',
+  'gemini-2.5-flash': 'gemini-3.6-flash',
 };
 
 // Rewrite a legacy model ID to its current replacement. Idempotent.

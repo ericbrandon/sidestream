@@ -381,7 +381,7 @@ export function getAllDiscoveryModes(): DiscoveryModeConfig[] {
 const MODEL_IDS = {
   opus48: 'claude-opus-4-8',
   opus46: 'claude-opus-4-6',
-  gemini35Flash: 'gemini-3.5-flash',
+  gemini36Flash: 'gemini-3.6-flash',
   gpt56Terra: 'gpt-5.6-terra',
   // GPT-5.4 is retained ONLY as the 'obscure-interesting' auto-pick, where its
   // output is preferred over 5.6. It is hidden from the main chat picker (see
@@ -408,33 +408,33 @@ interface ModelChoice {
 const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoice[]> = {
   'useful-informative': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'low' } },
   ],
   'obscure-interesting': [
     // Deliberately still GPT-5.4: its output for this mode is preferred over 5.6.
     { model: MODEL_IDS.gpt54, provider: 'openai', thinking: { openaiReasoning: 'low' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
   ],
   'amusing-entertaining': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'medium' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'medium' } },
   ],
   'lateral-thinking': [
     { model: MODEL_IDS.opus46, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
   'skeptical-critical': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
   ],
   'fact-checker': [
     { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
-    { model: MODEL_IDS.gemini35Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
+    { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
 };

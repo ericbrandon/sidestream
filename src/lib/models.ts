@@ -25,7 +25,7 @@ export const ALL_MODELS: ModelDefinition[] = [
 
   // Google Gemini Models
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro', provider: 'google' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'google' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'google' },
 ];
 
 // Models that stay in ALL_MODELS (so the discovery pane can list them) but are
@@ -72,8 +72,8 @@ export function getDefaultModelForProvider(provider: LLMProvider): string {
   // listed first (dropdown order) but is pricier and can refuse, so it shouldn't be
   // an auto-selected default.
   if (provider === 'anthropic') return 'claude-opus-4-8';
-  // Gemini defaults to 3.5 Flash rather than the top-listed 3.1 Pro.
-  if (provider === 'google') return 'gemini-3.5-flash';
+  // Gemini defaults to 3.6 Flash rather than the top-listed 3.1 Pro.
+  if (provider === 'google') return 'gemini-3.6-flash';
   const models = ALL_MODELS.filter((m) => m.provider === provider);
   return models[0]?.id ?? 'claude-opus-4-8';
 }
