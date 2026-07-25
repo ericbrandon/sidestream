@@ -120,7 +120,7 @@ export function getOpenAIReasoningLetter(level: OpenAIReasoningLevel, model: str
 }
 
 // =============================================================================
-// Anthropic Claude Thinking Options (Opus 4.8 / Opus 4.6 / Sonnet 4.6)
+// Anthropic Claude Thinking Options (adaptive-thinking models; type name kept as Opus46 for wire compat)
 // =============================================================================
 
 // Adaptive thinking + effort levels for Anthropic models.
@@ -135,10 +135,10 @@ export const OPUS_46_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] = [
   { value: 'adaptive', label: 'Adaptive', letter: 'A' },
 ];
 
-// Thinking levels for always-on models (Fable 5, Sonnet 5): same as Opus 4.8 but
-// WITHOUT 'off'. See alwaysOnThinking() in models.ts for why these two drop 'off'
-// (Fable can't be disabled; Sonnet 5's "off" would silently run adaptive). Low is
-// the floor.
+// Thinking levels for always-on models (Fable 5, Opus 5, Sonnet 5): same as Opus 4.8
+// but WITHOUT 'off'. See alwaysOnThinking() in models.ts for why these drop 'off'
+// (Fable can't be disabled; Opus 5's and Sonnet 5's "off" would silently run adaptive,
+// since the app implements "off" by omitting the thinking param). Low is the floor.
 export const NO_OFF_THINKING_OPTIONS: ThinkingOption<Opus46ThinkingLevel>[] =
   OPUS_46_THINKING_OPTIONS.filter((o) => o.value !== 'off');
 

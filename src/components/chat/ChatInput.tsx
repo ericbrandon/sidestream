@@ -308,7 +308,7 @@ export const ChatInput = memo(function ChatInput() {
             )}
           </div>
         ) : hasAnthropicThinking ? (
-          /* Anthropic: Thinking Level Dropdown (Opus 4.6 / Sonnet 4.6) */
+          /* Anthropic: Thinking Level Dropdown (adaptive-thinking Claude models) */
           <div className="relative">
             <Tooltip content={`Thinking: ${effectiveAnthropicThinkingLevel}`}>
               <button

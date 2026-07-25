@@ -75,14 +75,8 @@ function getSavedOpus46ThinkingLevel(): Opus46ThinkingLevel {
   return 'high';
 }
 
-// Load saved thinking level for Sonnet 4.6 (default 'high' - same adaptive thinking as Opus 4.6)
-function getSavedSonnet46ThinkingLevel(): Opus46ThinkingLevel {
-  const saved = localStorage.getItem('sonnet46ThinkingLevel');
-  if (saved && ['off', 'low', 'medium', 'high', 'max', 'adaptive'].includes(saved)) {
-    return saved as Opus46ThinkingLevel;
-  }
-  return 'high';
-}
+// (Sonnet 4.6 was removed at the Opus 5 launch; its 'sonnet46ThinkingLevel' and
+// 'evaluatorSonnet46ThinkingLevel' localStorage keys are left orphaned — harmless.)
 
 // Load saved thinking level for Sonnet 5 (default 'high'). Sonnet 5 benefits notably
 // from high-or-higher effort, so it defaults higher than the discovery-lighter models
@@ -106,13 +100,25 @@ function getSavedFable5ThinkingLevel(): Opus46ThinkingLevel {
   return 'high';
 }
 
+// Load saved thinking level for Opus 5 (default 'high'). Own key, no 'off': thinking
+// is on by default on Opus 5 (omitting the param runs adaptive), so the app treats it
+// as always-on — see alwaysOnThinking() in models.ts. 'high' matches the other
+// frontier defaults; the migration guide notes low/medium are unusually strong on
+// this model, so stepping down is a reasonable user choice, not a quality cliff.
+function getSavedOpus5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('opus5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'high';
+}
+
 // Get the saved adaptive thinking level for the given model
 function getSavedAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
   if (model === 'claude-fable-5') return getSavedFable5ThinkingLevel();
+  if (model === 'claude-opus-5') return getSavedOpus5ThinkingLevel();
   if (model === 'claude-sonnet-5') return getSavedSonnet5ThinkingLevel();
-  return model === 'claude-sonnet-4-6'
-    ? getSavedSonnet46ThinkingLevel()
-    : getSavedOpus46ThinkingLevel();
+  return getSavedOpus46ThinkingLevel();
 }
 
 // Load saved frontier model from localStorage. Uses the frontier-specific
@@ -141,8 +147,8 @@ function getSeedEvaluatorChoice(): AutoSelectedModel | null {
 // model — these are persisted per-model, so the key depends on the model.
 function evaluatorAnthropicThinkingKey(model: string): string {
   if (model === 'claude-fable-5') return 'evaluatorFable5ThinkingLevel';
+  if (model === 'claude-opus-5') return 'evaluatorOpus5ThinkingLevel';
   if (model === 'claude-sonnet-5') return 'evaluatorSonnet5ThinkingLevel';
-  if (model === 'claude-sonnet-4-6') return 'evaluatorSonnet46ThinkingLevel';
   return 'evaluatorOpus46ThinkingLevel';
 }
 
@@ -238,15 +244,6 @@ function getSavedEvaluatorOpus46ThinkingLevel(): Opus46ThinkingLevel {
   return 'low';
 }
 
-// Load saved evaluator thinking level for Sonnet 4.6 (default 'low' - lighter thinking for discovery)
-function getSavedEvaluatorSonnet46ThinkingLevel(): Opus46ThinkingLevel {
-  const saved = localStorage.getItem('evaluatorSonnet46ThinkingLevel');
-  if (saved && ['off', 'low', 'medium', 'high', 'max', 'adaptive'].includes(saved)) {
-    return saved as Opus46ThinkingLevel;
-  }
-  return 'low';
-}
-
 // Load saved evaluator thinking level for Sonnet 5 (default 'high'). Unlike the other
 // Anthropic evaluators — which default to 'low' to keep background discovery cheap —
 // Sonnet 5 defaults to 'high' here too, because it benefits notably from higher effort
@@ -270,13 +267,23 @@ function getSavedEvaluatorFable5ThinkingLevel(): Opus46ThinkingLevel {
   return 'low';
 }
 
+// Load saved evaluator thinking level for Opus 5 (default 'low' - lighter thinking for
+// discovery, and Opus 5 stays accurate at low effort per its migration guide). Own
+// key, no 'off' (thinking is always on for Opus 5 — see getSavedOpus5ThinkingLevel).
+function getSavedEvaluatorOpus5ThinkingLevel(): Opus46ThinkingLevel {
+  const saved = localStorage.getItem('evaluatorOpus5ThinkingLevel');
+  if (saved && ['low', 'medium', 'high', 'xhigh', 'max', 'adaptive'].includes(saved)) {
+    return saved as Opus46ThinkingLevel;
+  }
+  return 'low';
+}
+
 // Get the saved evaluator adaptive thinking level for the given model
 function getSavedEvaluatorAdaptiveThinkingLevel(model: string): Opus46ThinkingLevel {
   if (model === 'claude-fable-5') return getSavedEvaluatorFable5ThinkingLevel();
+  if (model === 'claude-opus-5') return getSavedEvaluatorOpus5ThinkingLevel();
   if (model === 'claude-sonnet-5') return getSavedEvaluatorSonnet5ThinkingLevel();
-  return model === 'claude-sonnet-4-6'
-    ? getSavedEvaluatorSonnet46ThinkingLevel()
-    : getSavedEvaluatorOpus46ThinkingLevel();
+  return getSavedEvaluatorOpus46ThinkingLevel();
 }
 
 // Load saved auto-select discovery model setting (default true for first launch)
@@ -489,10 +496,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         const currentModel = useSettingsStore.getState().frontierLLM.model;
         const key = currentModel === 'claude-fable-5'
           ? 'fable5ThinkingLevel'
-          : currentModel === 'claude-sonnet-5'
-            ? 'sonnet5ThinkingLevel'
-            : currentModel === 'claude-sonnet-4-6'
-              ? 'sonnet46ThinkingLevel'
+          : currentModel === 'claude-opus-5'
+            ? 'opus5ThinkingLevel'
+            : currentModel === 'claude-sonnet-5'
+              ? 'sonnet5ThinkingLevel'
               : 'opus46ThinkingLevel';
         localStorage.setItem(key, config.extendedThinking.opus46Level);
       }

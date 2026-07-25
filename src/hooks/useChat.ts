@@ -8,6 +8,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { useDiscovery } from './useDiscovery';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
+import { appendModelSwitchHop } from '../lib/modelSwitch';
 import { logError, getUserFriendlyErrorMessage } from '../lib/logger';
 import {
   initStreamingBuffer,
@@ -357,23 +358,30 @@ export function useChat() {
         }
       });
 
-      // Listen for server-side model fallback (Fable 5 refused → Opus 4.8 answered)
+      // Listen for server-side model fallback (Fable 5 / Opus 5 refused → a fallback
+      // model answered). A chained turn (Fable → Opus 5 → Opus 4.8) delivers one
+      // event per hop, so this accumulates rather than replaces. Sticky-routed turns
+      // (served directly by the fallback model, no fallback block) arrive as a single
+      // synthesized event at turn end.
       const unlistenModelSwitch = await listen<ModelSwitchEvent>('chat-model-switch', (event) => {
         const { turn_id: turnId, from_model, to_model } = event.payload;
-        const modelSwitch = { fromModel: from_model, toModel: to_model };
-        const backgroundStore = useBackgroundStreamStore.getState();
+        const hop = { fromModel: from_model, toModel: to_model };
 
         // Always record on the background stream (source of truth → persisted on the message)
-        backgroundStore.setChatModelSwitch(turnId, modelSwitch);
+        useBackgroundStreamStore.getState().appendChatModelSwitchHop(turnId, hop);
 
-        // Mirror to the live store for the in-progress banner if this turn is on screen
+        // Mirror the ACCUMULATED switch to the live store for the in-progress banner
+        // if this turn is on screen (re-read state: append just updated it)
+        const backgroundStore = useBackgroundStreamStore.getState();
         const stream = backgroundStore.getStreamByTurnId(turnId);
         const activeSessionId = useSessionStore.getState().activeSessionId;
         const onScreen = stream
           ? stream.sessionId === activeSessionId
           : useChatStore.getState().pendingTurnId === turnId;
         if (onScreen) {
-          useChatStore.getState().setStreamingModelSwitch(modelSwitch);
+          useChatStore
+            .getState()
+            .setStreamingModelSwitch(stream?.modelSwitch ?? appendModelSwitchHop(null, hop));
         }
       });
 

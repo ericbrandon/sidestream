@@ -379,7 +379,9 @@ export function getAllDiscoveryModes(): DiscoveryModeConfig[] {
 
 // Model IDs for auto-selection
 const MODEL_IDS = {
-  opus48: 'claude-opus-4-8',
+  // Opus 5 replaced Opus 4.8 in the priority tables at the Opus 5 launch: drop-in
+  // at the same price, and it stays accurate at low effort (good for discovery).
+  opus5: 'claude-opus-5',
   opus46: 'claude-opus-4-6',
   gemini36Flash: 'gemini-3.6-flash',
   gpt56Terra: 'gpt-5.6-terra',
@@ -407,7 +409,7 @@ interface ModelChoice {
 // Each mode has a prioritized list of model choices with their thinking configurations
 const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoice[]> = {
   'useful-informative': [
-    { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
+    { model: MODEL_IDS.opus5, provider: 'anthropic', thinking: { anthropicOpus46Level: 'low' } },
     { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'low' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'low' } },
   ],
@@ -428,12 +430,12 @@ const MODE_MODEL_PRIORITIES: Record<Exclude<DiscoveryModeId, 'none'>, ModelChoic
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
   'skeptical-critical': [
-    { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
+    { model: MODEL_IDS.opus5, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
     { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
   ],
   'fact-checker': [
-    { model: MODEL_IDS.opus48, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
+    { model: MODEL_IDS.opus5, provider: 'anthropic', thinking: { anthropicOpus46Level: 'high' } },
     { model: MODEL_IDS.gemini36Flash, provider: 'google', thinking: { geminiThinking: 'high' } },
     { model: MODEL_IDS.gpt56Terra, provider: 'openai', thinking: { openaiReasoning: 'high' } },
   ],
@@ -487,7 +489,7 @@ export function getBestModelForMode(
 
 // Last-resort model if the priority table yields nothing (no providers configured
 // yet). Only reachable before any API key is registered.
-const FALLBACK_EVALUATOR_MODEL = 'claude-opus-4-8';
+const FALLBACK_EVALUATOR_MODEL = 'claude-opus-5';
 
 /**
  * The discovery pane's default evaluator model, DERIVED from the same

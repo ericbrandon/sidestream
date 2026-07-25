@@ -8,6 +8,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useBackgroundStreamStore } from '../stores/backgroundStreamStore';
 import { getDiscoveryMode } from '../lib/discoveryModes';
 import { buildProviderThinkingParams } from '../lib/llmParameters';
+import { appendModelSwitchHop } from '../lib/modelSwitch';
 import { logError } from '../lib/logger';
 import type { DiscoveryItem, Message, ModelSwitch } from '../lib/types';
 
@@ -186,14 +187,17 @@ export function useDiscovery() {
         (event) => {
           if (event.payload.turnId !== turnId) return;
 
-          const modelSwitch: ModelSwitch = {
+          // One event per fallback hop — a chained turn (Fable 5 → Opus 5 → Opus 4.8)
+          // delivers several, so accumulate into the turn's switch chain.
+          const hop = {
             fromModel: event.payload.fromModel,
             toModel: event.payload.toModel,
           };
+          const merged = appendModelSwitchHop(turnModelSwitchRef.current.get(turnId), hop);
           // Ref drives background-item stamping (works even if switched away)
-          turnModelSwitchRef.current.set(turnId, modelSwitch);
+          turnModelSwitchRef.current.set(turnId, merged);
           // Store map drives the live chip notice (session-guarded inside setModelSwitch)
-          setModelSwitch(turnId, sessionId, modelSwitch);
+          setModelSwitch(turnId, sessionId, merged);
         }
       );
 

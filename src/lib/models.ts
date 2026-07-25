@@ -3,14 +3,17 @@ import type { ModelDefinition, LLMProvider } from './types';
 export const ALL_MODELS: ModelDefinition[] = [
   // Anthropic Models
   // Fable 5 is listed first so it sits at the top of the model dropdowns. This is
-  // display order ONLY — getDefaultModelForProvider returns Opus 4.8 explicitly (not
-  // models[0]), so the pricier, refusal-capable Fable 5 is never an auto-selected
-  // default. Keep that function in sync if you reorder this list.
+  // display order ONLY — getDefaultModelForProvider returns Opus 5 explicitly (not
+  // models[0]), so the pricier Fable 5 is never an auto-selected default. Keep that
+  // function in sync if you reorder this list. Opus 4.8 stays listed: it is still a
+  // live model and remains a fallback target for safety refusals.
   { id: 'claude-fable-5', name: 'Claude Fable 5', provider: 'anthropic' },
+  { id: 'claude-opus-5', name: 'Claude Opus 5', provider: 'anthropic' },
   { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', provider: 'anthropic' },
   { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic' },
   { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', provider: 'anthropic' },
-  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'anthropic' },
+  // Sonnet 4.6 was removed at the Opus 5 launch — saved sessions forward to Sonnet 5
+  // via LEGACY_SONNET_46_ID in sessionMigration.ts.
   { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', provider: 'anthropic' },
 
   // OpenAI Models
@@ -68,14 +71,27 @@ export function getDefaultModelForProvider(provider: LLMProvider): string {
   // same reasoning that previously made 5.4 the default over 5.5. Terra is also
   // priced identically to the old 5.4, so this default is cost-neutral.
   if (provider === 'openai') return 'gpt-5.6-terra';
-  // Anthropic defaults to Opus 4.8 explicitly, NOT the first list entry: Fable 5 is
-  // listed first (dropdown order) but is pricier and can refuse, so it shouldn't be
-  // an auto-selected default.
-  if (provider === 'anthropic') return 'claude-opus-4-8';
+  // Anthropic defaults to Opus 5 explicitly, NOT the first list entry: Fable 5 is
+  // listed first (dropdown order) but is pricier, so it shouldn't be an auto-selected
+  // default. Opus 5 is a drop-in for Opus 4.8 at the same price; like Fable it can
+  // refuse for safety, which is why both carry the fallbacks:"default" wiring.
+  if (provider === 'anthropic') return 'claude-opus-5';
   // Gemini defaults to 3.6 Flash rather than the top-listed 3.1 Pro.
   if (provider === 'google') return 'gemini-3.6-flash';
   const models = ALL_MODELS.filter((m) => m.provider === provider);
-  return models[0]?.id ?? 'claude-opus-4-8';
+  return models[0]?.id ?? 'claude-opus-5';
+}
+
+// Check if a model is Claude Opus 5. Shares Opus 4.8's request surface (adaptive
+// thinking + effort incl. xhigh/max, no sampling params, no budget thinking) with two
+// differences relevant to this app:
+//  - thinking is ON when the thinking param is omitted (unlike 4.8, where omitting it
+//    meant no thinking) — so the app's "off" level would silently run adaptive; we
+//    treat thinking as always-on (see alwaysOnThinking).
+//  - safety classifiers can refuse a request; we send fallbacks:"default" so the API
+//    retries on Anthropic's recommended fallback (see providers/anthropic.rs).
+export function isOpus5(modelId: string): boolean {
+  return modelId === 'claude-opus-5';
 }
 
 // Check if a model is Opus 4.8 (supports adaptive thinking + effort, no sampling params, no budget thinking)
@@ -88,17 +104,12 @@ export function isOpus46(modelId: string): boolean {
   return modelId === 'claude-opus-4-6';
 }
 
-// Check if a model is Sonnet 4.6 (supports adaptive thinking + effort, same as Opus 4.6)
-export function isSonnet46(modelId: string): boolean {
-  return modelId === 'claude-sonnet-4-6';
-}
-
 // Check if a model is Claude Sonnet 5. Shares the Opus 4.8 request surface (adaptive
 // thinking + effort, including xhigh; no sampling params, no budget thinking), and
 // unlike Fable it can be turned off (thinking:{type:"disabled"} is accepted). Sonnet 5
 // benefits notably from higher effort, so the app defaults its thinking level to
 // 'high' in BOTH the chat and discovery panes (see settingsStore.ts) — this is why it
-// gets its own localStorage keys rather than sharing Sonnet 4.6's ('low' discovery).
+// gets its own localStorage keys with a 'high' default.
 export function isSonnet5(modelId: string): boolean {
   return modelId === 'claude-sonnet-5';
 }
@@ -113,25 +124,29 @@ export function isFable5(modelId: string): boolean {
 }
 
 // Whether the app treats thinking as always-on for this model — i.e. it should NOT
-// offer an "off" option. Two different reasons converge on the same UI:
+// offer an "off" option. Three models converge on the same UI for related reasons:
 //  - Fable 5: thinking cannot be disabled at all (thinking:{type:"disabled"} is a 400),
 //    and omitting the param still runs adaptive thinking.
 //  - Sonnet 5: off is technically legal (disabled is accepted), but it's a poor choice
 //    for this model AND the app implements "off" by omitting the thinking param — which
 //    on Sonnet 5 silently runs adaptive anyway (a documented Sonnet-5 default change).
 //    Rather than expose a misleading "off", we lock thinking on and floor at Low.
+//  - Opus 5: same omission trap as Sonnet 5 (thinking is on by default), and a true
+//    "disabled" is doubly unattractive: it's rejected at xhigh/max effort, and per the
+//    migration guide it can emit tool calls as plain text (the call silently never
+//    runs) or leak thinking tags — bad news for an app with web_search/code_execution.
 export function alwaysOnThinking(modelId: string): boolean {
-  return isFable5(modelId) || isSonnet5(modelId);
+  return isFable5(modelId) || isSonnet5(modelId) || isOpus5(modelId);
 }
 
-// Check if a model uses adaptive thinking (Fable 5, Opus 4.8, Opus 4.6, Sonnet 5, and Sonnet 4.6)
+// Check if a model uses adaptive thinking (Fable 5, Opus 5, Opus 4.8, Opus 4.6, and Sonnet 5)
 export function usesAdaptiveThinking(modelId: string): boolean {
-  return isFable5(modelId) || isOpus48(modelId) || isOpus46(modelId) || isSonnet5(modelId) || isSonnet46(modelId);
+  return isFable5(modelId) || isOpus5(modelId) || isOpus48(modelId) || isOpus46(modelId) || isSonnet5(modelId);
 }
 
-// Check if a model supports extended thinking (Fable 5, Opus models, Sonnet 5, and Sonnet 4.6)
+// Check if a model supports extended thinking (Fable 5, Opus models, and Sonnet 5)
 export function supportsExtendedThinking(modelId: string): boolean {
-  return isFable5(modelId) || modelId.includes('opus') || isSonnet5(modelId) || isSonnet46(modelId);
+  return isFable5(modelId) || modelId.includes('opus') || isSonnet5(modelId);
 }
 
 // The discovery pane's default evaluator model now lives in discoveryModes.ts,

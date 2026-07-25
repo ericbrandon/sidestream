@@ -13,12 +13,24 @@ export interface ApiKeysConfig {
   google: boolean;
 }
 
-// A server-side model fallback: Claude Fable 5 refused a request for safety, so the
-// API answered with the fallback model (Opus 4.8). Attached to the message/discovery
+// One server-side fallback handoff: `fromModel` refused a request for safety and the
+// API retried it on `toModel` within the same call.
+export interface ModelSwitchHop {
+  fromModel: string;
+  toModel: string;
+}
+
+// A server-side model fallback for one turn: the requested model (Fable 5 or Opus 5)
+// refused for safety, so the API answered with a fallback model. Since the Opus 5
+// launch a single turn can chain — e.g. Fable 5 → Opus 5 → Opus 4.8 — so `hops`
+// carries every handoff in order. `fromModel`/`toModel` summarize the chain (first
+// requested model → final serving model) and keep older persisted sessions, which
+// stored only those two fields, loading unchanged. Attached to the message/discovery
 // item it applies to, and shown as a small notice in the UI.
 export interface ModelSwitch {
   fromModel: string;
   toModel: string;
+  hops?: ModelSwitchHop[];
 }
 
 // Attachment types for files/images
@@ -80,11 +92,11 @@ export interface DiscoveryItem {
 }
 
 // Adaptive thinking levels for Anthropic models that support effort
-// (Opus 4.8, Opus 4.6, Sonnet 5, Sonnet 4.6).
-// - off: no thinking
+// (Opus 5, Opus 4.8, Opus 4.6, Sonnet 5).
+// - off: no thinking (not offered for always-on models: Fable 5, Opus 5, Sonnet 5)
 // - low/medium/high/xhigh/max: adaptive thinking with explicit effort level
 // - adaptive: adaptive thinking where Claude decides effort level
-// Note: xhigh is the recommended starting point for coding/agentic on Opus 4.8/Sonnet 5.
+// Note: xhigh is the recommended starting point for coding/agentic on Opus 5/Opus 4.8/Sonnet 5.
 // (Type name kept as Opus46* — it's a stable wire format reused across all the
 // adaptive-thinking Anthropic models; renaming would force a session migration
 // for no functional gain.)
@@ -93,7 +105,7 @@ export type Opus46ThinkingLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 
 // Extended thinking configuration (for Anthropic Claude models)
 export interface ExtendedThinkingConfig {
   enabled: boolean;
-  opus46Level: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
+  opus46Level: Opus46ThinkingLevel; // For the adaptive-thinking Claude models (legacy field name)
 }
 
 // Reasoning level options for OpenAI models
@@ -265,12 +277,12 @@ export interface ChatSessionSettings {
   // Frontier/chat model thinking settings (optional for backward compatibility)
   frontierReasoningLevel?: OpenAIReasoningLevel;
   frontierGeminiThinkingLevel?: GeminiThinkingLevel;
-  frontierOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
+  frontierOpus46ThinkingLevel?: Opus46ThinkingLevel; // For the adaptive-thinking Claude models (legacy field name)
   // Evaluator/discovery pane thinking settings (optional for backward compatibility)
   evaluatorExtendedThinkingEnabled?: boolean;
   evaluatorReasoningLevel?: OpenAIReasoningLevel;
   evaluatorGeminiThinkingLevel?: GeminiThinkingLevel;
-  evaluatorOpus46ThinkingLevel?: Opus46ThinkingLevel; // For Opus 4.8 / Opus 4.6 / Sonnet 4.6
+  evaluatorOpus46ThinkingLevel?: Opus46ThinkingLevel; // For the adaptive-thinking Claude models (legacy field name)
   // Claude code execution container ID (persists sandbox state across requests)
   anthropicContainerId?: string;
   // OpenAI code interpreter container ID (persists file access across requests)

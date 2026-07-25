@@ -5,8 +5,9 @@ use tauri::Emitter;
 use crate::commands::get_api_key_async;
 use crate::llm_logger;
 use crate::providers::anthropic::{
-    parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
-    DiscoveryRequestConfig as AnthropicDiscoveryRequestConfig, FABLE_5_FALLBACK_BETA, FABLE_5_MODEL,
+    parse_sse_event as anthropic_parse_sse_event, runs_safety_classifiers, AnthropicClient,
+    AnthropicStreamEvent, DiscoveryRequestConfig as AnthropicDiscoveryRequestConfig,
+    SAFETY_FALLBACK_BETA,
 };
 use crate::providers::openai::{
     parse_sse_event as openai_parse_sse_event, OpenAIClient, OpenAIStreamEvent,
@@ -53,14 +54,46 @@ pub struct DiscoveryErrorEvent {
     pub error: String,
 }
 
-/// Payload for discovery-model-switch event: Fable 5 (as the evaluator model)
-/// refused for safety and the API fell back to Opus 4.8 for this discovery turn.
+/// Payload for discovery-model-switch event: the evaluator model (Fable 5 or Opus 5)
+/// refused for safety and the API handed this discovery turn to a fallback model.
+/// A chained turn emits one event per hop; the frontend accumulates them.
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveryModelSwitchEvent {
     pub turn_id: String,
     pub from_model: String,
     pub to_model: String,
+}
+
+/// Discovery-side twin of llm_anthropic::emit_sticky_model_switch: after a turn
+/// falls back, later requests are sticky-routed directly to the fallback model with
+/// no `fallback` block — the only signal is `message_start` naming a different model.
+/// Emitted at turn end so a real pre-output fallback (blocks follow) isn't doubled.
+fn emit_sticky_discovery_model_switch(
+    window: &tauri::Window,
+    turn_id: &str,
+    requested_model: &str,
+    served_model: Option<&str>,
+    saw_fallback_block: bool,
+) {
+    if saw_fallback_block || !runs_safety_classifiers(requested_model) {
+        return;
+    }
+    let Some(served) = served_model else { return };
+    if served.is_empty() || served == requested_model {
+        return;
+    }
+    llm_logger::log_feature_used(
+        "discovery",
+        &format!("Sticky fallback routing: requested {} but served by {}", requested_model, served),
+    );
+    if let Err(err) = window.emit("discovery-model-switch", DiscoveryModelSwitchEvent {
+        turn_id: turn_id.to_string(),
+        from_model: requested_model.to_string(),
+        to_model: served.to_string(),
+    }) {
+        eprintln!("Failed to emit discovery-model-switch event: {}", err);
+    }
 }
 
 /// State for incremental JSON parsing
@@ -261,10 +294,11 @@ async fn discover_resources_anthropic(
 
     llm_logger::log_request("discovery", &model, &body);
 
-    // Fable 5 can refuse for safety; enable the server-side `fallbacks` param (set in
-    // build_discovery_request) so the discovery retries on Opus 4.8 in one round trip.
-    let beta_header = if model == FABLE_5_MODEL {
-        Some(FABLE_5_FALLBACK_BETA)
+    // Fable 5 and Opus 5 can refuse for safety; enable the server-side `fallbacks`
+    // param (set to "default" in build_discovery_request) so the discovery retries on
+    // Anthropic's recommended fallback for the refusal category in one round trip.
+    let beta_header = if runs_safety_classifiers(&model) {
+        Some(SAFETY_FALLBACK_BETA)
     } else {
         None
     };
@@ -288,6 +322,9 @@ async fn discover_resources_anthropic(
     let mut sse_buffer = String::new();
     let mut full_response = String::new();
     let mut parse_state = JsonParseState::new();
+    // Sticky fallback-routing detection (see emit_sticky_discovery_model_switch)
+    let mut served_model: Option<String> = None;
+    let mut saw_fallback_block = false;
 
     while let Some(chunk) = stream.next().await {
         let chunk = match chunk {
@@ -321,6 +358,7 @@ async fn discover_resources_anthropic(
                     match anthropic_parse_sse_event(data) {
                         AnthropicStreamEvent::Done | AnthropicStreamEvent::MessageStop => {
                             llm_logger::log_response_complete("discovery", &full_response);
+                            emit_sticky_discovery_model_switch(window, &turn_id, &model, served_model.as_deref(), saw_fallback_block);
                             if let Err(err) = window.emit(
                                 "discovery-done",
                                 DiscoveryDoneEvent {
@@ -331,9 +369,17 @@ async fn discover_resources_anthropic(
                             }
                             return Ok(());
                         }
+                        AnthropicStreamEvent::MessageStart { model: start_model, .. } => {
+                            // Track the serving model for sticky-routing detection
+                            if start_model.is_some() {
+                                served_model = start_model;
+                            }
+                        }
                         AnthropicStreamEvent::Fallback { from_model, to_model } => {
-                            // Fable 5 refused this discovery for safety; Opus 4.8 produced
-                            // the items instead. Tell the UI so it can flag the chip.
+                            // The evaluator refused this discovery for safety; a fallback
+                            // model produced the items instead. Tell the UI so it can flag
+                            // the chip. Chained turns emit one event per hop.
+                            saw_fallback_block = true;
                             llm_logger::log_feature_used("discovery", &format!("Model fallback: {} -> {}", from_model, to_model));
                             if let Err(err) = window.emit(
                                 "discovery-model-switch",
@@ -375,6 +421,7 @@ async fn discover_resources_anthropic(
     }
 
     llm_logger::log_response_complete("discovery", &full_response);
+    emit_sticky_discovery_model_switch(window, &turn_id, &model, served_model.as_deref(), saw_fallback_block);
     if let Err(err) = window.emit(
         "discovery-done",
         DiscoveryDoneEvent {

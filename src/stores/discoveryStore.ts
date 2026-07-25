@@ -40,8 +40,11 @@ interface DiscoveryState {
   sessionLoadedAt: number | null; // Timestamp to trigger scroll to bottom on session load
   activeSessionId: string | null; // Track which session discoveries belong to
   emptyTurnMessages: EmptyTurnMessage[]; // Transient messages for turns with no discoveries
-  // Per-turn Fable 5 → Opus 4.8 safety fallbacks (keyed by turnId). The fallback block
-  // arrives before any items, so addItem stamps each item from this map for persistence.
+  // Per-turn safety fallbacks (keyed by turnId): the evaluator (Fable 5 / Opus 5)
+  // refused and a fallback model produced the items — possibly via a chained handoff.
+  // On a pre-output refusal the fallback block(s) arrive before any items, so addItem
+  // stamps each item from this map for persistence; setModelSwitch also re-stamps
+  // already-added items for the mid-stream-refusal edge case.
   turnModelSwitches: Record<string, ModelSwitch>;
 
   // Derived - true if any turns are pending
@@ -204,6 +207,13 @@ export const useDiscoveryStore = create<DiscoveryState>((set) => ({
 
     set((state) => ({
       turnModelSwitches: { ...state.turnModelSwitches, [turnId]: modelSwitch },
+      // Re-stamp items already added for this turn: on a chained fallback the second
+      // hop can arrive after early items were stamped with a one-hop switch (items are
+      // normally stamped from the map at add time, before any items exist — this is
+      // the mid-stream-refusal edge case).
+      items: state.items.map((item) =>
+        item.turnId === turnId ? { ...item, modelSwitch } : item
+      ),
     }));
   },
 }));

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile, ModelSwitch } from '../lib/types';
+import type { Citation, InlineCitation, DiscoveryItem, Message, ChatSession, GeneratedFile, ModelSwitch, ModelSwitchHop } from '../lib/types';
+import { appendModelSwitchHop } from '../lib/modelSwitch';
 import { buildSessionSettings } from '../lib/sessionHelpers';
 import { migrateFrontierModelId } from '../lib/sessionMigration';
 import { deduplicateCitations } from '../lib/citationHelpers';
@@ -27,7 +28,7 @@ interface BackgroundChatStream {
   executionStartTime: number | null;
   executionTextPosition: number | null;
   streamingGeneratedFiles: GeneratedFile[];
-  modelSwitch: ModelSwitch | null; // Set if Fable 5 refused and Opus 4.8 answered this turn
+  modelSwitch: ModelSwitch | null; // Set if the requested model (Fable 5 / Opus 5) refused and a fallback answered; accumulates hops on chained fallbacks
 }
 
 interface BackgroundDiscoveryStream {
@@ -54,7 +55,7 @@ interface BackgroundStreamState {
   appendExecutionOutput: (turnId: string, output: string) => void;
   setExecutionCompleted: (turnId: string, files?: GeneratedFile[]) => void;
   setExecutionFailed: (turnId: string, error: string) => void;
-  setChatModelSwitch: (turnId: string, modelSwitch: ModelSwitch) => void;
+  appendChatModelSwitchHop: (turnId: string, hop: ModelSwitchHop) => void;
   completeChatStream: (turnId: string) => Promise<void>;
   cancelChatStream: (turnId: string) => void;
 
@@ -229,13 +230,18 @@ export const useBackgroundStreamStore = create<BackgroundStreamState>((set, get)
     });
   },
 
-  setChatModelSwitch: (turnId, modelSwitch) => {
+  appendChatModelSwitchHop: (turnId, hop) => {
     set((state) => {
       const stream = state.chatStreams.get(turnId);
       if (!stream) return state;
 
       const newStreams = new Map(state.chatStreams);
-      newStreams.set(turnId, { ...stream, modelSwitch });
+      // Accumulate rather than replace: a chained fallback turn (Fable 5 → Opus 5 →
+      // Opus 4.8) delivers one chat-model-switch event per hop.
+      newStreams.set(turnId, {
+        ...stream,
+        modelSwitch: appendModelSwitchHop(stream.modelSwitch, hop),
+      });
       return { chatStreams: newStreams };
     });
   },

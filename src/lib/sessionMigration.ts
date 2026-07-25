@@ -4,6 +4,14 @@ const LEGACY_OPUS_45_ID = 'claude-opus-4-5-20251101';
 const LEGACY_OPUS_47_ID = 'claude-opus-4-7';
 const REPLACEMENT_OPUS_ID = 'claude-opus-4-8';
 
+// Sonnet 4.6 was removed from the app at the Opus 5 launch (it had no functional
+// role — no discovery-mode default depended on it, unlike Opus 4.6). Saved sessions
+// and persisted picker selections forward to Sonnet 5, which is the same sticker
+// price ($3/$15) so the migration is cost-neutral. Sonnet 4.6 is NOT retired by
+// Anthropic — the app simply no longer offers it.
+const LEGACY_SONNET_46_ID = 'claude-sonnet-4-6';
+const REPLACEMENT_SONNET_ID = 'claude-sonnet-5';
+
 // Map of retired OpenAI GPT-5.x IDs to their replacement in the 5.6 family
 // (Sol = flagship $5/$30, Terra = balanced $2.50/$15, Luna = light $1/$6):
 // - mid-tier line (5.1/5.2, and 5.4's price point) -> Terra (identical pricing to 5.4)
@@ -43,6 +51,7 @@ const LEGACY_GEMINI_IDS: Record<string, string> = {
 export function migrateLegacyModelId(modelId: string | undefined | null): string {
   if (modelId === LEGACY_OPUS_45_ID) return REPLACEMENT_OPUS_ID;
   if (modelId === LEGACY_OPUS_47_ID) return REPLACEMENT_OPUS_ID;
+  if (modelId === LEGACY_SONNET_46_ID) return REPLACEMENT_SONNET_ID;
   if (modelId && modelId in LEGACY_GPT_IDS) return LEGACY_GPT_IDS[modelId];
   if (modelId && modelId in LEGACY_GEMINI_IDS) return LEGACY_GEMINI_IDS[modelId];
   return modelId ?? REPLACEMENT_OPUS_ID;

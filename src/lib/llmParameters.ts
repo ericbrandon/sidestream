@@ -26,7 +26,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     ? getValidOpenAIReasoningLevel(llm.reasoningLevel, llm.model, llm.webSearchEnabled)
     : null;
 
-  // For Anthropic models with adaptive thinking (Opus 4.6, Sonnet 4.6), get the effective thinking level
+  // For Anthropic models with adaptive thinking, get the effective thinking level
   const effectiveOpus46Level = provider === 'anthropic' && usesAdaptiveThinking(llm.model)
     ? getValidAnthropicThinkingLevel(llm.extendedThinking.opus46Level, llm.model)
     : null;
@@ -51,7 +51,7 @@ export function buildProviderThinkingParams(llm: LLMConfig): ProviderThinkingPar
     // which 400s on adaptive thinking), giving false. For always-on models (Fable 5,
     // Sonnet 5) the level is never 'off', so this is always true.
     extendedThinkingEnabled: effectiveOpus46Level !== null && effectiveOpus46Level !== 'off',
-    // Anthropic: Adaptive thinking level for Opus 4.8 / Opus 4.6 / Sonnet 4.6 (off, low, medium, high, xhigh, max, adaptive)
+    // Anthropic: Adaptive thinking level for adaptive-thinking Claude models (off, low, medium, high, xhigh, max, adaptive)
     opus46ThinkingLevel: effectiveOpus46Level,
     // OpenAI: Reasoning level (normalized for model)
     reasoningLevel: effectiveReasoningLevel,

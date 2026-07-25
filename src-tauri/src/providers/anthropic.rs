@@ -6,14 +6,25 @@ use crate::mime_utils;
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// Claude Fable 5 — Anthropic's most capable model, and the only one that runs
-/// safety classifiers that can refuse a request. When it does, we fall back to
-/// Opus 4.8 server-side. These constants keep the model-specific branches (fallback
-/// param, beta header, refusal-relay) in sync across the chat and discovery paths.
+/// Models that run safety classifiers which can refuse a request (HTTP 200 with
+/// stop_reason: "refusal"). Since the Opus 5 launch that's BOTH Fable 5 and Opus 5.
+/// For these we send `fallbacks: "default"` — Anthropic's server-side routing picks
+/// the recommended fallback per refusal category (e.g. a cyber refusal goes straight
+/// to Opus 4.8; other categories on Fable may land on Opus 5, which can itself hand
+/// off to Opus 4.8). A single turn can therefore contain MULTIPLE `fallback` content
+/// blocks — one per hop — and the UI accumulates them into a chain.
 pub const FABLE_5_MODEL: &str = "claude-fable-5";
-pub const FABLE_5_FALLBACK_MODEL: &str = "claude-opus-4-8";
-/// Beta header that enables the server-side `fallbacks` request parameter.
-pub const FABLE_5_FALLBACK_BETA: &str = "server-side-fallback-2026-06-01";
+pub const OPUS_5_MODEL: &str = "claude-opus-5";
+/// Beta header for the `fallbacks` parameter. `-2026-07-01` gates the `"default"`
+/// routing mode we use (it is a superset of `-2026-06-01`, which only accepts the
+/// explicit model-list form). Any other `server-side-fallback-*` date is a 400.
+pub const SAFETY_FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
+
+/// Whether a model runs refusal-capable safety classifiers, and therefore should
+/// carry `fallbacks: "default"` plus SAFETY_FALLBACK_BETA on every request.
+pub fn runs_safety_classifiers(model: &str) -> bool {
+    model == FABLE_5_MODEL || model == OPUS_5_MODEL
+}
 
 /// Appended to the system prompt whenever code_execution is enabled.
 ///
@@ -100,7 +111,7 @@ pub struct ChatRequestConfig {
     pub container_id: Option<String>,
 }
 
-/// Configuration for adaptive extended thinking (Opus 4.8 / Opus 4.6 / Sonnet 4.6)
+/// Configuration for adaptive extended thinking (Opus 5 / Opus 4.8 / Opus 4.6 / Sonnet 5 / Fable 5)
 pub struct ThinkingConfig {
     pub effort_level: String,  // "off", "low", "medium", "high", "xhigh", "max", "adaptive"
 }
@@ -118,6 +129,7 @@ pub struct DiscoveryRequestConfig {
 pub enum AnthropicStreamEvent {
     MessageStart {
         container_id: Option<String>, // Container ID for code execution sandbox persistence
+        model: Option<String>, // Model named on message_start — used to detect sticky fallback routing
     },
     MessageDelta {
         container_id: Option<String>, // Container ID appears here in streaming responses
@@ -203,19 +215,20 @@ impl AnthropicClient {
             body["container"] = serde_json::json!(container_id);
         }
 
-        // Claude Fable 5 runs safety classifiers that can decline a request with
-        // stop_reason: "refusal". The server-side `fallbacks` parameter retries the
-        // refused request on Opus 4.8 in the same round trip (beta header set in
-        // llm_anthropic.rs). The switch surfaces as a `fallback` content block in the
-        // stream (see parse_sse_event), which we relay to the UI as a notice.
-        if config.model == FABLE_5_MODEL {
-            body["fallbacks"] = serde_json::json!([{ "model": FABLE_5_FALLBACK_MODEL }]);
+        // Fable 5 and Opus 5 run safety classifiers that can decline a request with
+        // stop_reason: "refusal". `fallbacks: "default"` retries the refused request
+        // server-side on Anthropic's recommended fallback for the refusal category,
+        // in the same round trip (beta header set in llm_anthropic.rs). Each handoff
+        // surfaces as a `fallback` content block in the stream (see parse_sse_event),
+        // which we relay to the UI as a notice; a chained turn emits one per hop.
+        if runs_safety_classifiers(&config.model) {
+            body["fallbacks"] = serde_json::json!("default");
         }
 
-        // Add adaptive extended thinking if enabled (Opus 4.8 / Opus 4.6 / Sonnet 4.6).
+        // Add adaptive extended thinking if enabled (adaptive-thinking Anthropic models).
         // display: "summarized" is required on Opus 4.8 (inherited from 4.7) to receive
         // thinking text in the stream — its default is "omitted" — and is the existing
-        // default on 4.6/Sonnet 4.6, so setting it explicitly is a no-op for those.
+        // default on 4.6, so setting it explicitly is a no-op there.
         if let Some(thinking) = &config.extended_thinking {
             if thinking.effort_level != "off" {
                 body["thinking"] = serde_json::json!({
@@ -316,7 +329,7 @@ impl AnthropicClient {
             ]
         });
 
-        // Add adaptive extended thinking if enabled (Opus 4.8 / Opus 4.6 / Sonnet 4.6).
+        // Add adaptive extended thinking if enabled (adaptive-thinking Anthropic models).
         // Discovery uses a low/medium effort to keep cost and latency reasonable.
         // Opus 4.8 gets "medium" because it inherits 4.7's strict low-effort
         // calibration (per the Opus 4.7/4.8 migration guides), and discovery benefits
@@ -334,17 +347,29 @@ impl AnthropicClient {
                 // default the other models use — otherwise the UI level would be cosmetic.
                 "high"
             } else {
+                // Includes Opus 5: per its migration guide it stays accurate at low
+                // effort (notably in review/eval-shaped tasks), so discovery doesn't
+                // need 4.8's "medium" headroom.
                 "low"
             };
             body["thinking"] = serde_json::json!({"type": "adaptive"});
             body["output_config"] = serde_json::json!({"effort": effort});
             body["max_tokens"] = serde_json::json!(16000);
+        } else if config.model.starts_with(OPUS_5_MODEL) {
+            // Opus 5 thinks by default even when the thinking param is omitted — there
+            // is no true "off" via omission (and `disabled` has its own failure modes:
+            // tool calls as plain text, tag leakage). With the evaluator thinking
+            // toggle off we still cap cost with low effort, and raise max_tokens from
+            // the 4096 default because thinking spend shares the output budget —
+            // otherwise items would truncate.
+            body["output_config"] = serde_json::json!({"effort": "low"});
+            body["max_tokens"] = serde_json::json!(16000);
         }
 
-        // Fable 5 fallback to Opus 4.8 on a safety refusal (see build_chat_request).
-        // Discovery can use Fable as the evaluator model, so mirror the fallback here.
-        if config.model == FABLE_5_MODEL {
-            body["fallbacks"] = serde_json::json!([{ "model": FABLE_5_FALLBACK_MODEL }]);
+        // Safety-refusal fallback, mirroring build_chat_request: discovery can use
+        // Fable 5 or Opus 5 as the evaluator model, so both get `fallbacks: "default"`.
+        if runs_safety_classifiers(&config.model) {
+            body["fallbacks"] = serde_json::json!("default");
         }
 
         body
@@ -403,7 +428,11 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
             let container_id = parsed["message"]["container"]["id"]
                 .as_str()
                 .map(|s| s.to_string());
-            AnthropicStreamEvent::MessageStart { container_id }
+            // The serving model. Matters for sticky fallback routing: after a turn
+            // falls back, later turns are served DIRECTLY by the fallback model with
+            // no `fallback` block — this field is the only stream-side signal.
+            let model = parsed["message"]["model"].as_str().map(|s| s.to_string());
+            AnthropicStreamEvent::MessageStart { container_id, model }
         }
         "content_block_start" => {
             let block_type = parsed["content_block"]["type"]
@@ -411,18 +440,22 @@ pub fn parse_sse_event(data: &str) -> AnthropicStreamEvent {
                 .unwrap_or("")
                 .to_string();
             let content_block = parsed["content_block"].clone();
-            // A `fallback` content block marks a server-side model switch on a Fable 5
-            // safety refusal. It carries no answer text, so surface it as its own event
-            // rather than a normal content block. On a pre-output refusal it arrives
-            // first in the stream; on a mid-stream refusal it marks the boundary.
+            // A `fallback` content block marks a server-side model switch on a safety
+            // refusal (Fable 5 or Opus 5 declining). It carries no answer text, so
+            // surface it as its own event rather than a normal content block. On a
+            // pre-output refusal it arrives first in the stream; on a mid-stream
+            // refusal it marks the boundary. A chained turn (e.g. Fable → Opus 5 →
+            // Opus 4.8) emits one block PER HOP. Don't default missing model fields
+            // to Fable/Opus 4.8 — on a second hop that would mislabel the switch;
+            // empty string means "unknown" and the UI copes.
             if block_type == "fallback" {
                 let from_model = content_block["from"]["model"]
                     .as_str()
-                    .unwrap_or(FABLE_5_MODEL)
+                    .unwrap_or("")
                     .to_string();
                 let to_model = content_block["to"]["model"]
                     .as_str()
-                    .unwrap_or(FABLE_5_FALLBACK_MODEL)
+                    .unwrap_or("")
                     .to_string();
                 return AnthropicStreamEvent::Fallback {
                     from_model,
@@ -629,7 +662,18 @@ pub fn add_cache_control_to_last_message(messages: &mut Vec<serde_json::Value>) 
 pub fn calculate_max_tokens(model: &str, effort_level: Option<&str>) -> u32 {
     let level = effort_level.unwrap_or("off");
 
-    if model.starts_with("claude-opus-4-8") {
+    if model.starts_with("claude-opus-5") {
+        // Opus 5: same request surface and headroom needs as 4.8 (same tokenizer,
+        // ≥64k recommended at xhigh/max). One difference: thinking is ON by default
+        // and max_tokens caps thinking + answer together, so there is no cheap "off"
+        // tier — the UI never offers "off" for Opus 5 (alwaysOnThinking in models.ts),
+        // and if a stale level ever leaks through we still give it full headroom
+        // rather than 8192, which would truncate mid-answer.
+        match level {
+            "xhigh" | "max" => 64000,
+            _ => 32000,
+        }
+    } else if model.starts_with("claude-opus-4-8") {
         match level {
             "off" => 8192,
             "xhigh" | "max" => 64000,
@@ -644,7 +688,7 @@ pub fn calculate_max_tokens(model: &str, effort_level: Option<&str>) -> u32 {
             "xhigh" | "max" => 64000,
             _ => 32000,
         }
-    } else if model.starts_with("claude-opus-4-6") || model.starts_with("claude-sonnet-4-6") {
+    } else if model.starts_with("claude-opus-4-6") {
         match level {
             "off" => 8192,
             _ => 16384,

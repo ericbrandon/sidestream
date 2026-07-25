@@ -9,10 +9,50 @@ use crate::mime_utils;
 use crate::providers::anthropic::{
     add_cache_control_to_last_message, calculate_max_tokens as anthropic_calculate_max_tokens,
     fetch_file_metadata, fetch_file_content_base64, is_code_execution_block, is_code_execution_result, parse_code_execution_result,
-    parse_sse_event as anthropic_parse_sse_event, AnthropicClient, AnthropicStreamEvent,
-    ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation, ThinkingConfig,
-    FABLE_5_FALLBACK_BETA, FABLE_5_MODEL,
+    parse_sse_event as anthropic_parse_sse_event, runs_safety_classifiers, AnthropicClient,
+    AnthropicStreamEvent, ChatRequestConfig as AnthropicChatRequestConfig, InlineCitation,
+    ThinkingConfig, SAFETY_FALLBACK_BETA,
 };
+
+/// Emit a synthesized model-switch notice for a sticky-routed turn.
+///
+/// After a conversation falls back for safety, the API routes later turns DIRECTLY
+/// to the fallback model for ~1 hour ("sticky routing"). Those turns carry no
+/// `fallback` content block — the only signal is `message_start` naming a different
+/// model than the one we requested. We wait until the turn ends to emit, so a real
+/// pre-output fallback (where `message_start` also names the fallback model AND
+/// `fallback` blocks follow) isn't double-reported: if any fallback block was seen,
+/// the hops already tell the story and this stays silent.
+///
+/// Only called for models that run safety classifiers (Fable 5 / Opus 5). Those IDs
+/// have no dated variants, so a mismatch here is a genuine model switch — for other
+/// models the API may echo a dated full ID (e.g. Haiku), which would false-positive.
+fn emit_sticky_model_switch(
+    window: &tauri::Window,
+    turn_id: &str,
+    requested_model: &str,
+    served_model: Option<&str>,
+    saw_fallback_block: bool,
+) {
+    if saw_fallback_block || !runs_safety_classifiers(requested_model) {
+        return;
+    }
+    let Some(served) = served_model else { return };
+    if served.is_empty() || served == requested_model {
+        return;
+    }
+    llm_logger::log_feature_used(
+        "chat",
+        &format!("Sticky fallback routing: requested {} but served by {}", requested_model, served),
+    );
+    if let Err(err) = window.emit("chat-model-switch", ModelSwitchEvent {
+        turn_id: turn_id.to_string(),
+        from_model: requested_model.to_string(),
+        to_model: served.to_string(),
+    }) {
+        eprintln!("Failed to emit chat-model-switch event: {}", err);
+    }
+}
 
 /// Send chat message using Anthropic API
 pub async fn send_chat_message_anthropic(
@@ -22,7 +62,7 @@ pub async fn send_chat_message_anthropic(
     model: String,
     messages: Vec<ChatMessage>,
     system_prompt: Option<String>,
-    opus46_thinking_level: Option<String>,  // Adaptive thinking effort for Opus 4.8 / Opus 4.6 / Sonnet 4.6: "off", "low", "medium", "high", "xhigh", "max", "adaptive". (Param name kept for serde compat with the JS-side `opus46ThinkingLevel`.)
+    opus46_thinking_level: Option<String>,  // Adaptive thinking effort for Opus 5 / Opus 4.8 / Opus 4.6 (and always-on Fable 5 / Sonnet 5): "off", "low", "medium", "high", "xhigh", "max", "adaptive". (Param name kept for serde compat with the JS-side `opus46ThinkingLevel`.)
     web_search_enabled: bool,
     code_execution_enabled: bool,
     turn_id: String,
@@ -78,10 +118,11 @@ pub async fn send_chat_message_anthropic(
     if web_search_enabled {
         beta_parts.push("web-fetch-2025-09-10");
     }
-    // Fable 5 can refuse for safety; enable the server-side `fallbacks` param (set in
-    // build_chat_request) so the request is retried on Opus 4.8 in one round trip.
-    if model == FABLE_5_MODEL {
-        beta_parts.push(FABLE_5_FALLBACK_BETA);
+    // Fable 5 and Opus 5 can refuse for safety; enable the server-side `fallbacks`
+    // param (set to "default" in build_chat_request) so the request is retried on
+    // Anthropic's recommended fallback for the refusal category in one round trip.
+    if runs_safety_classifiers(&model) {
+        beta_parts.push(SAFETY_FALLBACK_BETA);
     }
     let beta_header_str = beta_parts.join(",");
     let beta_header = if beta_header_str.is_empty() {
@@ -107,6 +148,10 @@ pub async fn send_chat_message_anthropic(
     let mut current_execution_tool_name: Option<String> = None;
     // Accumulate input JSON for tool use blocks (code comes via input_json_delta)
     let mut pending_tool_input_json: String = String::new();
+    // Sticky fallback-routing detection (see emit_sticky_model_switch): the model
+    // message_start named, and whether any `fallback` block arrived this turn.
+    let mut served_model: Option<String> = None;
+    let mut saw_fallback_block = false;
 
     loop {
         tokio::select! {
@@ -134,12 +179,17 @@ pub async fn send_chat_message_anthropic(
                                     match anthropic_parse_sse_event(data) {
                                         AnthropicStreamEvent::Done => {
                                             llm_logger::log_response_complete("chat", &full_response);
+                                            emit_sticky_model_switch(window, &turn_id, &model, served_model.as_deref(), saw_fallback_block);
                                             if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
                                             return Ok(());
                                         }
-                                        AnthropicStreamEvent::MessageStart { container_id } => {
+                                        AnthropicStreamEvent::MessageStart { container_id, model: start_model } => {
+                                            // Track the serving model for sticky-routing detection
+                                            if start_model.is_some() {
+                                                served_model = start_model;
+                                            }
                                             // Emit container ID to frontend for sandbox persistence
                                             if let Some(id) = container_id {
                                                 llm_logger::log_feature_used("chat", &format!("Container ID received: {}", id));
@@ -152,8 +202,10 @@ pub async fn send_chat_message_anthropic(
                                             }
                                         }
                                         AnthropicStreamEvent::Fallback { from_model, to_model } => {
-                                            // Fable 5 refused for safety; the API answered with the
-                                            // fallback model. Tell the UI so it can show a notice.
+                                            // A safety refusal handed this turn to a fallback model. A
+                                            // chained turn (Fable → Opus 5 → Opus 4.8) emits one of these
+                                            // per hop; the frontend accumulates them into a chain.
+                                            saw_fallback_block = true;
                                             llm_logger::log_feature_used("chat", &format!("Model fallback: {} -> {}", from_model, to_model));
                                             if let Err(err) = window.emit("chat-model-switch", ModelSwitchEvent {
                                                 turn_id: turn_id.clone(),
@@ -448,6 +500,7 @@ pub async fn send_chat_message_anthropic(
                                         }
                                         AnthropicStreamEvent::MessageStop => {
                                             llm_logger::log_response_complete("chat", &full_response);
+                                            emit_sticky_model_switch(window, &turn_id, &model, served_model.as_deref(), saw_fallback_block);
                                             if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id: turn_id.clone() }) {
                                                 eprintln!("Failed to emit chat-stream-done event: {}", err);
                                             }
@@ -467,6 +520,7 @@ pub async fn send_chat_message_anthropic(
     }
 
     llm_logger::log_response_complete("chat", &full_response);
+    emit_sticky_model_switch(window, &turn_id, &model, served_model.as_deref(), saw_fallback_block);
     if let Err(err) = window.emit("chat-stream-done", StreamEvent { turn_id }) {
         eprintln!("Failed to emit chat-stream-done event: {}", err);
     }
